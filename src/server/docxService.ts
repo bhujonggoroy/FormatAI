@@ -17,6 +17,12 @@ import {
   MathRun,
   MathFraction,
   MathRadical,
+  MathSum,
+  MathSuperScript,
+  MathSubScript,
+  MathSubSuperScript,
+  MathRoundBrackets,
+  MathSquareBrackets,
 } from "docx";
 
 export const UNICODE_MATH_REPLACEMENTS: Record<string, string> = {
@@ -63,15 +69,51 @@ const SUBSCRIPTS: Record<string, string> = {
 
 /**
  * Eliminates tree-diagram characters from Google NotebookLM (e.g. | | ├──, └──)
- * and turns them into clean Markdown outline hierarchy.
+ * and normalizes lists, display math, and inline math into clean Markdown outline hierarchy.
  */
 export function cleanNotebookLMTreeArtifacts(text: string): string {
   if (!text) return text;
-  const lines = text.split('\n');
+  let s = text;
+
+  // 1. Normalize display equations: \[ ... \] or \\[ ... \\] (single- or multi-line)
+  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]/g, (_, math) => {
+    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `\n\n$$\n${cleaned}\n$$\n\n`;
+  });
+
+  // 2. Normalize inline equations: \( ... \) or \\( ... \\)
+  s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `$${cleaned}$`;
+  });
+
+  // 3. Normalize unicode bullets and list items
+  s = s.replace(/^([ \t]*)[•⁃◦▪▫–—]\s+/gm, "$1- ");
+  s = s.replace(/^([ \t]*)\*\s{2,}/gm, "$1- ");
+
+  const lines = s.split('\n');
   const result: string[] = [];
+
+  let inDisplayMath = false;
 
   for (let line of lines) {
     let trimmed = line.trim();
+
+    if (trimmed.startsWith("$$")) {
+      if (trimmed.endsWith("$$") && trimmed.length >= 4) {
+        result.push(line);
+        continue;
+      }
+      inDisplayMath = !inDisplayMath;
+      result.push(line);
+      continue;
+    }
+
+    if (inDisplayMath) {
+      result.push(line);
+      continue;
+    }
+
     // Filter out standalone vertical pipes or tree lines
     if (!trimmed || trimmed === '|' || trimmed === '│') {
       continue;
@@ -102,18 +144,36 @@ export function cleanNotebookLMTreeArtifacts(text: string): string {
       trimmed = trimmed.replace(/^[|│]\s+/, '');
     }
 
-    result.push(trimmed);
+    result.push(line);
   }
 
   return result.join('\n');
 }
 
 /**
- * Standardizes pseudo-math strings (like √[p(1-p)/n] or 1/√n or p̂) into standard LaTeX
+ * Standardizes pseudo-math strings into standard LaTeX.
+ * First normalizes any bracketed equations (\[ ... \] or \( ... \)) into standard $$ or $,
+ * and strictly isolates existing math blocks ($$...$$ and $...$) so they are never corrupted.
  */
 export function standardizeMathToLatex(text: string): string {
   if (!text) return text;
   let s = text;
+
+  // 1. Normalize bracketed display math: \[ ... \] or \\[ ... \\]
+  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]/g, (_, math) => {
+    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `\n\n$$\n${cleaned}\n$$\n\n`;
+  });
+
+  // 2. Normalize bracketed inline math: \( ... \) or \\( ... \\)
+  s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `$${cleaned}$`;
+  });
+
+  // 3. Normalize bullet styles
+  s = s.replace(/^([ \t]*)[•⁃◦▪▫–—]\s+/gm, "$1- ");
+  s = s.replace(/^([ \t]*)\*\s{2,}/gm, "$1- ");
 
   // Hat variables: p̂ -> \hat{p}
   s = s.replace(/p̂/g, '\\hat{p}');
@@ -152,21 +212,22 @@ export function standardizeMathToLatex(text: string): string {
   s = s.replace(/\bParameter\s*\(\s*\\?theta\s*\)/g, 'Parameter ($\\theta$)');
   s = s.replace(/\bStatistic\s*\(\s*T\s*\)/g, 'Statistic ($T$)');
 
-  // Auto-wrap un-delimited fractions outside of existing $...$ blocks
-  s = s.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, (m) => `$${m}$`);
-
-  // Auto-wrap un-delimited Greek letters, accents, sub/superscripted variables outside existing $ blocks
+  // Auto-wrap un-delimited fractions, Greek letters, accents ONLY outside existing $ blocks
   const parts = s.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g);
   s = parts.map((part, idx) => {
+    // Odd index is inside an existing math block or code block - DO NOT TOUCH
     if (idx % 2 === 1) return part;
     let p = part;
-    
+
     // Normal distributions e.g. Z ~ N(0,1) or Z \sim N(0,1)
     p = p.replace(/\b([A-Z])\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, '$$$1 \\sim N($2)$$');
 
     // Subscripted variables like t_\nu, t_n, U_i outside $
     p = p.replace(/\b([tTUuXxYyZz])_([0-9a-zA-Z]|\\[a-zA-Z]+)\b/g, '$$$1_$2$$');
     p = p.replace(/\b([tTUuXxYyZz])_\{([^{}]+)\}\b/g, '$$$1_{$2}$$');
+
+    // Auto-wrap un-delimited fractions outside of existing $...$ blocks
+    p = p.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, (m) => `$${m}$`);
 
     // Greek letters with optional subscripts/superscripts (e.g. \chi^2_\nu, \chi^2_{n_i}, \sigma_1^2, \theta)
     p = p.replace(
@@ -252,97 +313,167 @@ function cleanMathSymbols(text: string): string {
   s = s.replace(/\\bar\{([a-zA-Z0-9])\}/g, "$1̄");
   s = s.replace(/\\vec\{([a-zA-Z0-9])\}/g, "$1⃗");
   s = s.replace(/\\tilde\{([a-zA-Z0-9])\}/g, "$1̃");
+  s = s.replace(/\\bar\s+([a-zA-Z0-9])/g, "$1̄");
+  s = s.replace(/\\hat\s+([a-zA-Z0-9])/g, "$1̂");
   s = s.replace(/\\text\{([^}]+)\}/g, "$1");
   s = s.replace(/\\mathbf\{([^}]+)\}/g, "$1");
   s = s.replace(/\\mathit\{([^}]+)\}/g, "$1");
   s = s.replace(/\\,/g, " ");
   s = s.replace(/\\;/g, " ");
-  s = s.replace(/\\quad/g, "   ");
+  s = s.replace(/\\!/g, "");
+  s = s.replace(/\\quad/g, "  ");
+  s = s.replace(/\\qquad/g, "    ");
   return s;
 }
 
 /**
- * Parses LaTeX math strings recursively into Docx Math objects (Fractions, Radicals, Runs)
+ * Parses LaTeX math strings recursively into native Word Docx Math objects
+ * Supports fractions, radicals, summations, integrals, products, and round/square brackets.
  */
 function parseLatexComponents(latex: string): any[] {
   const components: any[] = [];
   let i = 0;
 
-  while (i < latex.length) {
-    // Fraction: \frac{num}{den}
-    if (latex.startsWith("\\frac{", i)) {
-      let p = i + 6;
+  function readGroup(startIdx: number): { content: string; nextIdx: number } {
+    if (latex[startIdx] === "{") {
+      let p = startIdx + 1;
       let depth = 1;
-      const numStart = p;
+      const start = p;
       while (p < latex.length && depth > 0) {
         if (latex[p] === "{") depth++;
         else if (latex[p] === "}") depth--;
         p++;
       }
-      const num = latex.slice(numStart, p - 1);
+      return { content: latex.slice(start, p - 1), nextIdx: p };
+    }
+    return { content: latex[startIdx] || "", nextIdx: startIdx + 1 };
+  }
 
-      if (latex[p] === "{") {
-        p++;
-        depth = 1;
-        const denStart = p;
-        while (p < latex.length && depth > 0) {
-          if (latex[p] === "{") depth++;
-          else if (latex[p] === "}") depth--;
-          p++;
-        }
-        const den = latex.slice(denStart, p - 1);
+  while (i < latex.length) {
+    // Fraction: \frac{num}{den}
+    if (latex.startsWith("\\frac", i)) {
+      let p = i + 5;
+      while (p < latex.length && /\s/.test(latex[p])) p++;
+      const numRes = readGroup(p);
+      p = numRes.nextIdx;
+      while (p < latex.length && /\s/.test(latex[p])) p++;
+      const denRes = readGroup(p);
+      i = denRes.nextIdx;
 
-        const numComp = parseLatexComponents(num);
-        const denComp = parseLatexComponents(den);
-
-        components.push(
-          new MathFraction({
-            numerator: numComp.length > 0 ? numComp : [new MathRun(cleanMathSymbols(num))],
-            denominator: denComp.length > 0 ? denComp : [new MathRun(cleanMathSymbols(den))],
-          })
-        );
-        i = p;
-        continue;
-      }
+      const numComp = parseLatexComponents(numRes.content);
+      const denComp = parseLatexComponents(denRes.content);
+      components.push(
+        new MathFraction({
+          numerator: numComp.length > 0 ? numComp : [new MathRun(cleanMathSymbols(numRes.content))],
+          denominator: denComp.length > 0 ? denComp : [new MathRun(cleanMathSymbols(denRes.content))],
+        })
+      );
+      continue;
     }
 
     // Radical: \sqrt{inner} or \sqrt[deg]{inner}
     if (latex.startsWith("\\sqrt", i)) {
       let p = i + 5;
-      let degree = "";
+      while (p < latex.length && /\s/.test(latex[p])) p++;
       if (latex[p] === "[") {
         const closeB = latex.indexOf("]", p);
-        if (closeB !== -1) {
-          degree = latex.slice(p + 1, closeB);
-          p = closeB + 1;
-        }
+        if (closeB !== -1) p = closeB + 1;
       }
-      if (latex[p] === "{") {
-        p++;
-        let depth = 1;
-        const innerStart = p;
-        while (p < latex.length && depth > 0) {
-          if (latex[p] === "{") depth++;
-          else if (latex[p] === "}") depth--;
-          p++;
-        }
-        const inner = latex.slice(innerStart, p - 1);
-        const innerComp = parseLatexComponents(inner);
-
-        components.push(
-          new MathRadical({
-            children: innerComp.length > 0 ? innerComp : [new MathRun(cleanMathSymbols(inner))],
-          })
-        );
-        i = p;
-        continue;
-      }
+      while (p < latex.length && /\s/.test(latex[p])) p++;
+      const innerRes = readGroup(p);
+      i = innerRes.nextIdx;
+      const innerComp = parseLatexComponents(innerRes.content);
+      components.push(
+        new MathRadical({
+          children: innerComp.length > 0 ? innerComp : [new MathRun(cleanMathSymbols(innerRes.content))],
+        })
+      );
+      continue;
     }
 
-    // Standard run text up to next special command
-    const nextCmd = latex.slice(i + 1).search(/\\(frac|sqrt)/);
-    const sliceEnd = nextCmd === -1 ? latex.length : i + 1 + nextCmd;
-    const textPart = latex.slice(i, sliceEnd);
+    // Summation / Product / Integral: \sum or \prod or \int
+    if (latex.startsWith("\\sum", i) || latex.startsWith("\\prod", i) || latex.startsWith("\\int", i)) {
+      const isSum = latex.startsWith("\\sum", i);
+      let p = i + (isSum ? 4 : (latex.startsWith("\\prod", i) ? 5 : 4));
+      let subContent = "";
+      let supContent = "";
+
+      for (let k = 0; k < 2; k++) {
+        while (p < latex.length && /\s/.test(latex[p])) p++;
+        if (latex[p] === "_") {
+          p++;
+          while (p < latex.length && /\s/.test(latex[p])) p++;
+          const subRes = readGroup(p);
+          subContent = subRes.content;
+          p = subRes.nextIdx;
+        } else if (latex[p] === "^") {
+          p++;
+          while (p < latex.length && /\s/.test(latex[p])) p++;
+          const supRes = readGroup(p);
+          supContent = supRes.content;
+          p = supRes.nextIdx;
+        }
+      }
+
+      i = p;
+      const subComp = subContent ? parseLatexComponents(subContent) : [];
+      const supComp = supContent ? parseLatexComponents(supContent) : [];
+      components.push(
+        new MathSum({
+          subScript: subComp.length > 0 ? subComp : (subContent ? [new MathRun(cleanMathSymbols(subContent))] : undefined),
+          superScript: supComp.length > 0 ? supComp : (supContent ? [new MathRun(cleanMathSymbols(supContent))] : undefined),
+          children: [new MathRun(isSum ? "∑" : (latex.startsWith("\\prod") ? "∏" : "∫"))],
+        })
+      );
+      continue;
+    }
+
+    // Left/Right brackets: \left( ... \right)
+    if (latex.startsWith("\\left(", i)) {
+      let p = i + 6;
+      let depth = 1;
+      const start = p;
+      while (p < latex.length && depth > 0) {
+        if (latex.startsWith("\\left(", p)) { depth++; p += 6; }
+        else if (latex.startsWith("\\right)", p)) { depth--; p += 7; }
+        else { p++; }
+      }
+      const inner = latex.slice(start, p - 7);
+      i = p;
+      const innerComp = parseLatexComponents(inner);
+      components.push(
+        new MathRoundBrackets({
+          children: innerComp.length > 0 ? innerComp : [new MathRun(cleanMathSymbols(inner))],
+        })
+      );
+      continue;
+    }
+
+    // Left/Right square brackets: \left[ ... \right]
+    if (latex.startsWith("\\left[", i)) {
+      let p = i + 6;
+      let depth = 1;
+      const start = p;
+      while (p < latex.length && depth > 0) {
+        if (latex.startsWith("\\left[", p)) { depth++; p += 6; }
+        else if (latex.startsWith("\\right]", p)) { depth--; p += 7; }
+        else { p++; }
+      }
+      const inner = latex.slice(start, p - 7);
+      i = p;
+      const innerComp = parseLatexComponents(inner);
+      components.push(
+        new MathSquareBrackets({
+          children: innerComp.length > 0 ? innerComp : [new MathRun(cleanMathSymbols(inner))],
+        })
+      );
+      continue;
+    }
+
+    // Read standard characters up to next command or bracket
+    const nextSpecial = latex.slice(i + 1).search(/\\(frac|sqrt|sum|prod|int|left\(|left\[)/);
+    const sliceEnd = nextSpecial === -1 ? latex.length : i + 1 + nextSpecial;
+    let textPart = latex.slice(i, sliceEnd);
     if (textPart) {
       components.push(new MathRun(cleanMathSymbols(textPart)));
     }
@@ -363,7 +494,7 @@ export function parseLatexToDocxMath(latex: string): DocxMath {
 }
 
 /**
- * Parses markdown inline formatting (bold, italic, code, and LaTeX math $...$)
+ * Parses markdown inline formatting (bold, italic, code, and LaTeX math $...$ or \(...\))
  * into mixed TextRun and native DocxMath objects.
  */
 export function parseInlineRunsAndMath(
@@ -376,16 +507,19 @@ export function parseInlineRunsAndMath(
 ): (TextRun | DocxMath)[] {
   const elements: (TextRun | DocxMath)[] = [];
 
-  // Match either inline math ($...$) or markdown tokens (**...**, *...*, `...`)
-  const regex = /(\$[^$]+\$|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+  // Match inline math ($...$ or \(...\)), bold (**...**), italic (*...*), or code (`...`)
+  const regex = /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
   const tokens = text.split(regex);
 
   for (const token of tokens) {
     if (!token) continue;
 
-    // Inline Math: $...$
-    if (token.startsWith('$') && token.endsWith('$') && token.length >= 3) {
-      const mathExpr = token.slice(1, -1);
+    // Inline Math: $...$ or \(...\)
+    const isDollarMath = token.startsWith('$') && token.endsWith('$') && token.length >= 3 && !token.startsWith('$$');
+    const parenMathMatch = token.match(/^(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)$/);
+
+    if (isDollarMath || parenMathMatch) {
+      const mathExpr = isDollarMath ? token.slice(1, -1) : parenMathMatch![1].trim();
 
       if (equationFormat === "native") {
         try {
@@ -511,6 +645,8 @@ export function parseInlineRunsAndMath(
     : [new TextRun({ text, font: fontName, size: baseSizePt * 2, color: baseColor })];
 }
 
+let isPythonDocxAvailable: boolean | null = null;
+
 /**
  * Builds a professionally formatted Word (.docx) document from Markdown notes
  */
@@ -524,8 +660,8 @@ export async function buildDocxFromMarkdown(
   const bodyColor = "2D3748";
   const equationFormat = options.equationFormat || "native";
 
-  // If native equation format is requested, attempt high-fidelity OMML generation via Python service
-  if (equationFormat === "native") {
+  // If native equation format is requested and Python OMML generator is available, use it
+  if (equationFormat === "native" && isPythonDocxAvailable !== false) {
     try {
       const pythonDocx = await new Promise<Buffer>((resolve, reject) => {
         const proc = spawn("python3", ["generate_docx_cli.py"], {
@@ -539,14 +675,19 @@ export async function buildDocxFromMarkdown(
 
         proc.on("close", (code) => {
           if (code === 0 && chunks.length > 0) {
+            isPythonDocxAvailable = true;
             resolve(Buffer.concat(chunks));
           } else {
             const errStr = Buffer.concat(errChunks).toString("utf-8");
+            isPythonDocxAvailable = false;
             reject(new Error(errStr || `Python CLI exited with code ${code}`));
           }
         });
 
-        proc.on("error", (err) => reject(err));
+        proc.on("error", (err) => {
+          isPythonDocxAvailable = false;
+          reject(err);
+        });
 
         const payload = JSON.stringify({
           markdown: markdownText,
@@ -563,6 +704,7 @@ export async function buildDocxFromMarkdown(
         return pythonDocx;
       }
     } catch (pythonErr: any) {
+      isPythonDocxAvailable = false;
       console.warn("Python OMML engine fallback to TS docx:", pythonErr.message);
     }
   }
@@ -642,7 +784,7 @@ export async function buildDocxFromMarkdown(
     const stripped = line.trim();
     if (!stripped) continue;
 
-    // Display Equation Block: $$ ... $$ (single-line or multi-line) or \[ ... \]
+    // Display Equation Block: $$ ... $$ (single-line or multi-line) or \[ ... \] / \\[ ... \\]
     if (stripped.startsWith('$$')) {
       let mathExpr = '';
       if (stripped.endsWith('$$') && stripped.length >= 4) {
@@ -667,9 +809,9 @@ export async function buildDocxFromMarkdown(
       }
 
       if (mathExpr) {
+        // Strip trailing spacing commands if any
+        mathExpr = mathExpr.replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
         const mathObj = parseLatexToDocxMath(mathExpr);
-        // Format with native Word Equation tool (Paragraph with m:oMath)
-        // NO Table tool: saves significant vertical space, simplifies editing, and prevents extra page printing costs
         children.push(
           new Paragraph({
             alignment: AlignmentType.CENTER,
@@ -681,9 +823,30 @@ export async function buildDocxFromMarkdown(
       continue;
     }
 
-    if (stripped.startsWith('\\[') && stripped.endsWith('\\]') && stripped.length >= 4) {
-      const mathExpr = stripped.slice(2, -2).trim();
+    // Bracketed display math: \[ ... \] or \\[ ... \\]
+    if (/^(?:\\)+\[/.test(stripped)) {
+      let mathExpr = '';
+      if (/(?:\\)+\]$/.test(stripped)) {
+        mathExpr = stripped.replace(/^(?:\\)+\[/, '').replace(/(?:\\)+\]$/, '').trim();
+      } else {
+        const mathLines: string[] = [];
+        mathLines.push(stripped.replace(/^(?:\\)+\[/, '').trim());
+        i++;
+        while (i < lines.length) {
+          const nextTrimmed = lines[i].trim();
+          if (/(?:\\)+\]$/.test(nextTrimmed)) {
+            const endPart = nextTrimmed.replace(/(?:\\)+\]$/, '').trim();
+            if (endPart) mathLines.push(endPart);
+            break;
+          }
+          mathLines.push(lines[i]);
+          i++;
+        }
+        mathExpr = mathLines.join(' ').trim();
+      }
+
       if (mathExpr) {
+        mathExpr = mathExpr.replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
         const mathObj = parseLatexToDocxMath(mathExpr);
         children.push(
           new Paragraph({
@@ -729,11 +892,44 @@ export async function buildDocxFromMarkdown(
         })
       );
     }
-    // Nested Bullet List (indented with spaces)
-    else if (/^\s*[-*]\s+/.test(rawLine)) {
-      const indentSpaces = rawLine.match(/^(\s*)/)![0].length;
+    // Heading 4 (#### ...)
+    else if (stripped.startsWith('#### ')) {
+      const headingText = stripped.slice(5).trim();
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_4,
+          spacing: { before: 180, after: 60 },
+          children: parseInlineRunsAndMath(headingText, font, 11.5, "334155", equationFormat, { bold: true }),
+        })
+      );
+    }
+    // Heading 5 (##### ...)
+    else if (stripped.startsWith('##### ')) {
+      const headingText = stripped.slice(6).trim();
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_5,
+          spacing: { before: 140, after: 50 },
+          children: parseInlineRunsAndMath(headingText, font, 11, "475569", equationFormat, { bold: true }),
+        })
+      );
+    }
+    // Heading 6 (###### ...)
+    else if (stripped.startsWith('###### ')) {
+      const headingText = stripped.slice(7).trim();
+      children.push(
+        new Paragraph({
+          heading: HeadingLevel.HEADING_6,
+          spacing: { before: 120, after: 40 },
+          children: parseInlineRunsAndMath(headingText, font, 10.5, "64748B", equationFormat, { bold: true }),
+        })
+      );
+    }
+    // Bullet List (- or * or unicode bullet • ⁃ ◦ ▪ ▫ – —)
+    else if (/^\s*[-*•⁃◦▪▫–—]\s+/.test(rawLine)) {
+      const indentSpaces = (rawLine.match(/^(\s*)/)?.[0].length) || 0;
       const bulletLevel = Math.min(3, Math.floor(indentSpaces / 2));
-      const itemText = stripped.replace(/^[-*]\s+/, '').trim();
+      const itemText = stripped.replace(/^[-*•⁃◦▪▫–—]\s+/, '').trim();
 
       children.push(
         new Paragraph({
@@ -743,16 +939,16 @@ export async function buildDocxFromMarkdown(
         })
       );
     }
-    // Numbered List (1. 2. etc.)
-    else if (/^\d+\.\s+/.test(stripped)) {
-      const match = stripped.match(/^\d+\.\s+/)!;
+    // Numbered List (1. 2. or 1) 2) etc.)
+    else if (/^\s*\d+[\.\)]\s+/.test(stripped)) {
+      const match = stripped.match(/^\s*(\d+[\.\)])\s+/)!;
       const itemText = stripped.slice(match[0].length).trim();
       children.push(
         new Paragraph({
           spacing: { before: 30, after: 50, line: 276 },
           children: [
             new TextRun({
-              text: match[0],
+              text: match[1] + " ",
               bold: true,
               font: font,
               size: 22,

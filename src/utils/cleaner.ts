@@ -1,64 +1,104 @@
 /**
  * Instant client-side NotebookLM note cleaner and LaTeX normalizer.
- * Provides real-time preview before or in addition to Gemini AI processing.
+ * Provides real-time preview before or in addition to multi-provider AI processing.
+ * Handles real-world NotebookLM exports, including:
+ * - Display equations: \[ ... \], \\[ ... \\], $$ ... $$
+ * - Inline equations: \( ... \), \\( ... \\), $ ... $
+ * - Trailing spacing artifacts (\quad, \qquad, \;, \,, \!) before closing delimiters
+ * - Unicode bullets (•, ⁃, ◦, ▪, ▫, –, —) and multi-space asterisks (*   )
+ * - All heading levels (H1 to H6)
+ * - Tree diagram branches (| | ├──, └──, │)
  */
 
 export function cleanClientSideNotebookLM(text: string): string {
   if (!text) return "";
 
-  const lines = text.split("\n");
+  let s = text;
+
+  // 1. Normalize display equations: \[ ... \] or \\[ ... \\] (single-line or multi-line)
+  // Strip trailing \quad, \qquad, \;, \,, etc. right before closing delimiter
+  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]/g, (_, math) => {
+    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `\n\n$$\n${cleaned}\n$$\n\n`;
+  });
+
+  // 2. Normalize inline equations: \( ... \) or \\( ... \\)
+  s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `$${cleaned}$`;
+  });
+
+  // 3. Normalize unicode bullets and list items
+  s = s.replace(/^([ \t]*)[•⁃◦▪▫–—]\s+/gm, "$1- ");
+  s = s.replace(/^([ \t]*)\*\s{2,}/gm, "$1- ");
+
+  const lines = s.split("\n");
   const cleaned: string[] = [];
 
-  for (const rawLine of lines) {
-    let line = rawLine;
+  let inDisplayMath = false;
+
+  for (let i = 0; i < lines.length; i++) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    // Track $$ display math blocks to never touch math interiors
+    if (trimmed.startsWith("$$")) {
+      if (trimmed.endsWith("$$") && trimmed.length >= 4) {
+        cleaned.push(rawLine);
+        continue;
+      }
+      inDisplayMath = !inDisplayMath;
+      cleaned.push(rawLine);
+      continue;
+    }
+
+    if (inDisplayMath) {
+      cleaned.push(rawLine);
+      continue;
+    }
 
     // Detect and strip NotebookLM tree-drawing artifacts (├──, └──, │, |)
-    if (/([│|├└┌┬─+\-]{2,}|[│|]\s*├──|[│|]\s*└──|[│|]\s*├─|[│|]\s*└─)/.test(line)) {
-      // Calculate hierarchy level
+    if (/([│|├└┌┬─+\-]{2,}|[│|]\s*├──|[│|]\s*└──|[│|]\s*├─|[│|]\s*└─)/.test(rawLine)) {
       let indentLevel = 0;
-      if (/([│|]\s*){2,}/.test(line) || /^\s{4,}/.test(line)) {
+      if (/([│|]\s*){2,}/.test(rawLine) || /^\s{4,}/.test(rawLine)) {
         indentLevel = 1;
       }
 
-      // Strip pipes, tree drawing branches, and whitespace
-      const content = line
+      const content = rawLine
         .replace(/^[│|\s+─├└┌┬\-]+/g, "")
-        .replace(/^\s*[-*•]\s*/, "")
+        .replace(/^\s*[-*•⁃◦▪▫–—]\s*/, "")
         .trim();
 
       if (content) {
-        const prefix = indentLevel > 0 ? "    - " : "- ";
-        cleaned.push(prefix + normalizeLineMath(content));
+        // If section number, promote to Heading 3
+        if (/^\d+(\.\d+)+\s+/.test(content)) {
+          cleaned.push(`### ${content}`);
+        } else {
+          const prefix = indentLevel > 0 ? "    - " : "- ";
+          cleaned.push(prefix + normalizeLineMath(content));
+        }
       }
       continue;
     }
 
-    // Lines that start with single pipe or branch marker: | Title or | - Item
-    if (/^[│|]\s*/.test(line) && !line.includes("|", 1)) {
-      const content = line.replace(/^[│|]\s*/, "").trim();
+    // Lines starting with single pipe or branch marker: | Title or | - Item
+    if (/^[│|]\s*/.test(rawLine) && !rawLine.includes("|", 1)) {
+      const content = rawLine.replace(/^[│|]\s*/, "").trim();
       if (content) {
         cleaned.push(normalizeLineMath(content));
       }
       continue;
     }
 
-    cleaned.push(normalizeLineMath(line));
+    cleaned.push(normalizeLineMath(rawLine));
   }
 
   return cleaned.join("\n");
 }
 
 /**
- * Normalizes equations, Greek letters, and statistical symbols in a line of text.
- * Fixes patterns like:
- * - **Parameter ($\theta$):** -> **Parameter** ($\theta$):
- * - **Statistic ($T$):** -> **Statistic** ($T$):
- * - Parameter (\theta) -> Parameter ($\theta$)
- * - population mean \mu -> population mean $\mu$
- * - population variance \sigma^2 -> population variance $\sigma^2$
- * - sample mean \bar{X} -> sample mean $\bar{X}$
- * - sample variance S^2 -> sample variance $S^2$
- * - sample proportion \hat{p} -> sample proportion $\hat{p}$
+ * Normalizes equations, Greek letters, and statistical symbols in text.
+ * Strictly avoids touching already-delimited math blocks ($...$ or $$...$$).
  */
 function normalizeLineMath(line: string): string {
   let s = line;
@@ -75,18 +115,15 @@ function normalizeLineMath(line: string): string {
   s = s.replace(/X̄/g, '\\bar{X}');
   s = s.replace(/ŷ/g, '\\hat{y}');
 
-  // Multiplier fraction & square roots
+  // Multiplier fraction & square roots outside existing math
   s = s.replace(/√\[([^[\]]+)\]/g, '\\sqrt{$1}');
   s = s.replace(/√\(([^()]+)\)/g, '\\sqrt{$1}');
   s = s.replace(/√([a-zA-Z0-9]+)/g, '\\sqrt{$1}');
 
-  // Auto-wrap un-delimited fractions outside existing $ blocks
-  s = s.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, (m) => `$${m}$`);
-
-  // Process sections outside of existing $...$ or `...` blocks
+  // Process sections strictly outside of existing $...$, $$...$$, or `...` blocks
   const parts = s.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g);
   s = parts.map((part, idx) => {
-    // Math/code blocks are at odd indices
+    // Math/code blocks are at odd indices - DO NOT MODIFY
     if (idx % 2 === 1) return part;
 
     let p = part;
@@ -97,6 +134,9 @@ function normalizeLineMath(line: string): string {
     // Subscripted variables like t_\nu, t_n, U_i outside $
     p = p.replace(/\b([tTUuXxYyZz])_([0-9a-zA-Z]|\\[a-zA-Z]+)\b/g, '$$$1_$2$$');
     p = p.replace(/\b([tTUuXxYyZz])_\{([^{}]+)\}\b/g, '$$$1_{$2}$$');
+
+    // Auto-wrap un-delimited fractions outside existing $ blocks
+    p = p.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, (m) => `$${m}$`);
 
     // Auto-wrap Greek letters with sub/superscripts: \theta, \mu, \sigma_1^2, \chi^2_\nu, etc.
     p = p.replace(

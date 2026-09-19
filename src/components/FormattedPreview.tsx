@@ -100,16 +100,29 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   };
 
   function renderInline(text: string) {
-    // Splits by inline math ($...$), bold (**...**), italic (*...*), and inline code (`...`)
-    const parts = text.split(/(\$[^$]+\$|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+    // Splits by display math ($$...$$), inline math ($...$ or \(...\)), bold (**...**), italic (*...*), and inline code (`...`)
+    const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
 
     return parts.map((part, i) => {
       if (!part) return null;
 
       // Inline LaTeX math: $...$
-      if (part.startsWith("$") && part.endsWith("$") && part.length >= 3) {
+      if (part.startsWith("$") && part.endsWith("$") && part.length >= 3 && !part.startsWith("$$")) {
         const mathContent = part.slice(1, -1);
         return <MathComponent key={i} math={mathContent} display={false} />;
+      }
+
+      // Inline LaTeX math: \(...\) or \\(...\\)
+      const inlineParenMatch = part.match(/^(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)$/);
+      if (inlineParenMatch) {
+        const mathContent = inlineParenMatch[1].trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+        return <MathComponent key={i} math={mathContent} display={false} />;
+      }
+
+      // Display LaTeX math if embedded: $$...$$
+      if (part.startsWith("$$") && part.endsWith("$$") && part.length >= 4) {
+        const mathContent = part.slice(2, -2).trim();
+        return <MathComponent key={i} math={mathContent} display={true} />;
       }
 
       // Bold: **...**
@@ -200,7 +213,46 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Unwrapped equation block starting with math commands (e.g. \frac{...} or \sqrt{...} or SE(\hat{p}) = ...)
+    // Display equation block: \[...\] or \\[...\\] (single or multi-line)
+    if (/^(?:\\)+\[/.test(trimmed)) {
+      let mathContent = "";
+      const singleMatch = trimmed.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]$/);
+      if (singleMatch) {
+        mathContent = singleMatch[1].trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+        i++;
+      } else {
+        const mathLines: string[] = [];
+        const first = trimmed.replace(/^(?:\\)+\[\s*/, "").trim();
+        if (first) mathLines.push(first);
+        i++;
+        while (i < lines.length) {
+          const nextTrimmed = lines[i].trim();
+          if (/(?:\\)+\]$/.test(nextTrimmed)) {
+            const endPart = nextTrimmed.replace(/(?:\\)+\]$/, "").trim();
+            if (endPart) mathLines.push(endPart);
+            i++;
+            break;
+          }
+          mathLines.push(lines[i]);
+          i++;
+        }
+        mathContent = mathLines.join(" ").trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+      }
+
+      if (mathContent) {
+        renderedElements.push(
+          <div
+            key={`eq-bracket-${i}`}
+            className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
+          >
+            <MathComponent math={mathContent} display={true} />
+          </div>
+        );
+      }
+      continue;
+    }
+
+    // Unwrapped equation block starting with math commands (e.g. \frac{...} or \sqrt{...})
     if (
       (trimmed.startsWith("\\frac") ||
         trimmed.startsWith("\\sqrt") ||
@@ -220,7 +272,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Heading 1
+    // Heading 1 (# ...)
     if (trimmed.startsWith("# ")) {
       renderedElements.push(
         <h1
@@ -238,7 +290,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Heading 2
+    // Heading 2 (## ...)
     if (trimmed.startsWith("## ")) {
       renderedElements.push(
         <h2
@@ -256,7 +308,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Heading 3
+    // Heading 3 (### ...)
     if (trimmed.startsWith("### ")) {
       renderedElements.push(
         <h3
@@ -265,11 +317,59 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           style={{ fontFamily: getCssFontFamily(fontFamily) }}
         >
           <span
-            className="w-1.5 h-1.5 rounded-full inline-block"
+            className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
             style={{ backgroundColor: accentColor }}
           />
           {renderInline(trimmed.slice(4))}
         </h3>
+      );
+      i++;
+      continue;
+    }
+
+    // Heading 4 (#### ...)
+    if (trimmed.startsWith("#### ")) {
+      renderedElements.push(
+        <h4
+          key={`h4-${i}`}
+          className="text-xs font-bold uppercase tracking-wider text-slate-700 mt-3.5 mb-1.5 flex items-center gap-1.5"
+          style={{ fontFamily: getCssFontFamily(fontFamily) }}
+        >
+          <span
+            className="w-1 h-1 rounded-full inline-block shrink-0 bg-slate-400"
+          />
+          {renderInline(trimmed.slice(5))}
+        </h4>
+      );
+      i++;
+      continue;
+    }
+
+    // Heading 5 (##### ...)
+    if (trimmed.startsWith("##### ")) {
+      renderedElements.push(
+        <h5
+          key={`h5-${i}`}
+          className="text-xs font-semibold text-slate-600 mt-3 mb-1"
+          style={{ fontFamily: getCssFontFamily(fontFamily) }}
+        >
+          {renderInline(trimmed.slice(6))}
+        </h5>
+      );
+      i++;
+      continue;
+    }
+
+    // Heading 6 (###### ...)
+    if (trimmed.startsWith("###### ")) {
+      renderedElements.push(
+        <h6
+          key={`h6-${i}`}
+          className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mt-2.5 mb-1"
+          style={{ fontFamily: getCssFontFamily(fontFamily) }}
+        >
+          {renderInline(trimmed.slice(7))}
+        </h6>
       );
       i++;
       continue;
@@ -347,10 +447,10 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     }
 
     // Bullet list item
-    if (/^\s*[-*]\s+/.test(rawLine)) {
+    if (/^\s*[-*•⁃◦▪▫–—]\s+/.test(rawLine)) {
       const indent = rawLine.match(/^(\s*)/)![0].length;
       const marginClass = indent >= 4 ? "ml-8" : indent >= 2 ? "ml-5" : "ml-2";
-      const strippedBullet = trimmed.replace(/^[-*]\s+/, "");
+      const strippedBullet = trimmed.replace(/^[-*•⁃◦▪▫–—]\s+/, "");
 
       renderedElements.push(
         <div
@@ -366,8 +466,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     }
 
     // Numbered list item
-    if (/^\d+\.\s+/.test(trimmed)) {
-      const match = trimmed.match(/^(\d+\.\s+)/)!;
+    if (/^\s*\d+[\.\)]\s+/.test(trimmed)) {
+      const match = trimmed.match(/^(\d+[\.\)]\s+)/)!;
       renderedElements.push(
         <div
           key={`num-${i}`}
