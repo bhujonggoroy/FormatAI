@@ -404,41 +404,41 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   const estimatedPages = Math.max(1, Math.ceil(wordCount / 380));
 
   return (
-    <div className="border border-slate-200 rounded-2xl bg-white shadow-xs overflow-hidden flex flex-col transition-all">
+    <div className="border border-slate-200/90 rounded-xl bg-white shadow-xs overflow-hidden flex flex-col h-full transition-all">
       {/* Top Seamless Toolbar */}
-      <div className="bg-slate-50 border-b border-slate-200 px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+      <div className="bg-slate-50/70 border-b border-slate-100 px-4 py-2.5 flex flex-wrap items-center justify-between gap-2.5">
         <div className="flex items-center gap-2 flex-wrap">
-          <div className="flex items-center gap-1.5 text-blue-900 font-semibold text-xs">
-            <BookOpen className="w-4 h-4 text-blue-800" />
-            <span>Word Document Sheet</span>
+          <div className="flex items-center gap-1.5 text-slate-800 font-bold text-xs uppercase tracking-wider">
+            <BookOpen className="w-3.5 h-3.5 text-blue-800" />
+            <span>Word Sheet Preview</span>
           </div>
 
           {/* Sync status indicator badge */}
           {isAiPolished ? (
-            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium">
+            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-semibold">
               <Check className="w-3 h-3 text-emerald-600" />
               <span>AI Polished</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-medium">
+            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 font-medium">
               <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
-              <span>Real-Time Sync</span>
+              <span>Live Sync</span>
             </span>
           )}
 
           {/* Active Font Badge */}
-          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 font-medium">
-            Font: <span className="font-semibold text-slate-900">{fontFamily}</span>
+          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200/60 text-slate-600 font-medium font-serif">
+            {fontFamily}
           </span>
 
           {/* Word Count */}
-          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-600 font-mono">
+          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200/50 text-slate-500 font-mono">
             {wordCount} words
           </span>
 
           {/* Formula Count */}
           {mathFormulaCount > 0 && (
-            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-medium">
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-indigo-50 text-indigo-700 font-medium border border-indigo-100">
               <Sigma className="w-3 h-3 text-indigo-600" />
               {mathFormulaCount} formulas
             </span>
@@ -446,9 +446,9 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         </div>
 
         {/* Action & View Controls */}
-        <div className="flex items-center gap-2 flex-wrap">
+        <div className="flex items-center gap-2">
           {/* Zoom controls */}
-          <div className="hidden sm:flex items-center bg-slate-200/70 rounded-lg p-0.5 text-xs text-slate-600">
+          <div className="hidden sm:flex items-center bg-slate-200/60 rounded-lg p-0.5 text-xs text-slate-600">
             <button
               onClick={() => setZoomLevel((z) => Math.max(75, z - 10))}
               className="p-1 hover:text-slate-900 rounded disabled:opacity-40"
@@ -469,7 +469,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           </div>
 
           {/* View Mode Toggle: Document Sheet vs LaTeX Code */}
-          <div className="flex items-center bg-slate-200/70 p-0.5 rounded-lg">
+          <div className="flex items-center bg-slate-200/60 p-0.5 rounded-lg">
             <button
               onClick={() => setViewMode("rendered")}
               className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
@@ -494,23 +494,10 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             </button>
           </div>
 
-          {/* AI Polish Trigger Button if not yet polished */}
-          {onTriggerAiPolish && !isAiPolished && (
-            <button
-              onClick={onTriggerAiPolish}
-              disabled={isAiPolishing}
-              className="inline-flex items-center gap-1 text-xs font-medium text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors shadow-2xs disabled:opacity-50"
-              title="Enhance notes & normalize equations with Gemini AI"
-            >
-              <Sparkles className={`w-3.5 h-3.5 text-blue-600 ${isAiPolishing ? "animate-spin" : ""}`} />
-              <span>{isAiPolishing ? "Polishing..." : "AI Polish"}</span>
-            </button>
-          )}
-
           {/* Copy Button */}
           <button
             onClick={handleCopy}
-            className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors shadow-2xs"
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 transition-colors shadow-2xs"
             title="Copy formatted markdown with LaTeX"
           >
             {copied ? (
@@ -520,22 +507,12 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             )}
             <span>{copied ? "Copied" : "Copy"}</span>
           </button>
-
-          {/* Download DOCX */}
-          <button
-            onClick={onDownloadDocx}
-            disabled={isDownloading}
-            className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-900 hover:bg-blue-800 disabled:opacity-50 px-3 py-1 rounded-lg shadow-xs transition-all"
-          >
-            <FileDown className="w-3.5 h-3.5" />
-            <span>{isDownloading ? "Generating..." : "Download .docx"}</span>
-          </button>
         </div>
       </div>
 
       {/* Main Preview Container */}
       {viewMode === "rendered" ? (
-        <div className="p-4 sm:p-6 md:p-8 bg-slate-100/90 overflow-y-auto max-h-[640px] flex justify-center">
+        <div className="p-4 sm:p-6 md:p-8 bg-slate-100/60 overflow-y-auto flex-1 flex justify-center">
           {/* Simulated Office Word Paper Sheet */}
           <div
             className="w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-300/80 p-6 sm:p-12 md:p-14 text-slate-800 relative transition-transform duration-150 origin-top"
@@ -574,7 +551,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         </div>
       ) : (
         /* Source LaTeX / Markdown View */
-        <div className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto max-h-[640px] leading-relaxed select-text">
+        <div className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto flex-1 leading-relaxed select-text">
           <pre className="whitespace-pre-wrap">{markdown}</pre>
         </div>
       )}
