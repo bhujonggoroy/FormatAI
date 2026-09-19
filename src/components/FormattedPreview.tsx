@@ -1,0 +1,596 @@
+import React, { useState, useMemo } from "react";
+import {
+  Copy,
+  Check,
+  FileDown,
+  BookOpen,
+  Code,
+  Eye,
+  Sparkles,
+  Sigma,
+  ZoomIn,
+  ZoomOut,
+  Maximize2,
+  RefreshCw,
+  FileText,
+  Layers,
+  ChevronRight,
+} from "lucide-react";
+import katex from "katex";
+
+interface FormattedPreviewProps {
+  markdown: string;
+  docTitle: string;
+  fontFamily: string;
+  accentColor: string;
+  equationFormat?: string;
+  isAiPolished?: boolean;
+  onTriggerAiPolish?: () => void;
+  isAiPolishing?: boolean;
+  onDownloadDocx: () => void;
+  isDownloading: boolean;
+}
+
+function getCssFontFamily(font: string): string {
+  switch (font) {
+    case "Times New Roman":
+      return '"Times New Roman", Times, "Cambria Math", Georgia, serif';
+    case "Calibri":
+      return 'Calibri, "Segoe UI", Arial, sans-serif';
+    case "Arial":
+      return 'Arial, "Helvetica Neue", Helvetica, sans-serif';
+    case "Georgia":
+      return 'Georgia, "Times New Roman", serif';
+    case "Aptos":
+      return 'Aptos, Calibri, "Segoe UI", sans-serif';
+    default:
+      return font ? `"${font}", serif` : '"Times New Roman", Times, serif';
+  }
+}
+
+export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
+  markdown,
+  docTitle,
+  fontFamily = "Times New Roman",
+  accentColor = "#1A365D",
+  equationFormat = "native",
+  isAiPolished = false,
+  onTriggerAiPolish,
+  isAiPolishing = false,
+  onDownloadDocx,
+  isDownloading,
+}) => {
+  const [copied, setCopied] = useState(false);
+  const [viewMode, setViewMode] = useState<"rendered" | "source">("rendered");
+  const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  const handleCopy = () => {
+    navigator.clipboard.writeText(markdown);
+    setCopied(true);
+    setTimeout(() => setCopied(false), 2000);
+  };
+
+  // Helper component to render KaTeX formula safely
+  const MathComponent: React.FC<{ math: string; display?: boolean }> = ({
+    math,
+    display = false,
+  }) => {
+    const cleanMath = math.trim();
+    const html = useMemo(() => {
+      try {
+        return katex.renderToString(cleanMath, {
+          displayMode: display,
+          throwOnError: false,
+        });
+      } catch (err) {
+        return `<span class="text-rose-700 font-mono text-xs">${cleanMath}</span>`;
+      }
+    }, [cleanMath, display]);
+
+    return (
+      <span
+        className={
+          display
+            ? "block my-2 overflow-x-auto text-center"
+            : "inline-block px-1 align-baseline"
+        }
+        dangerouslySetInnerHTML={{ __html: html }}
+      />
+    );
+  };
+
+  function renderInline(text: string) {
+    // Splits by inline math ($...$), bold (**...**), italic (*...*), and inline code (`...`)
+    const parts = text.split(/(\$[^$]+\$|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+
+    return parts.map((part, i) => {
+      if (!part) return null;
+
+      // Inline LaTeX math: $...$
+      if (part.startsWith("$") && part.endsWith("$") && part.length >= 3) {
+        const mathContent = part.slice(1, -1);
+        return <MathComponent key={i} math={mathContent} display={false} />;
+      }
+
+      // Bold: **...**
+      if (part.startsWith("**") && part.endsWith("**") && part.length >= 4) {
+        return (
+          <strong key={i} className="font-bold text-slate-900">
+            {renderInline(part.slice(2, -2))}
+          </strong>
+        );
+      }
+
+      // Italic: *...*
+      if (part.startsWith("*") && part.endsWith("*") && part.length >= 2) {
+        return (
+          <em key={i} className="italic text-slate-800">
+            {renderInline(part.slice(1, -1))}
+          </em>
+        );
+      }
+
+      // Inline code: `...`
+      if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
+        return (
+          <code
+            key={i}
+            className="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-xs text-rose-700 border border-slate-200"
+          >
+            {part.slice(1, -1)}
+          </code>
+        );
+      }
+
+      return <span key={i}>{part}</span>;
+    });
+  }
+
+  // Parse lines into structured elements including tables, math blocks, headings, lists
+  const lines = markdown.split("\n");
+
+  const renderedElements: React.ReactNode[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const trimmed = rawLine.trim();
+
+    if (!trimmed) {
+      renderedElements.push(<div key={`empty-${i}`} className="h-2.5" />);
+      i++;
+      continue;
+    }
+
+    // Display equation block: $$...$$ (single or multi-line)
+    if (trimmed.startsWith("$$")) {
+      let mathContent = "";
+      if (trimmed.endsWith("$$") && trimmed.length >= 4) {
+        mathContent = trimmed.slice(2, -2).trim();
+        i++;
+      } else {
+        const mathLines: string[] = [];
+        const first = trimmed.slice(2).trim();
+        if (first) mathLines.push(first);
+        i++;
+        while (i < lines.length) {
+          const nextTrimmed = lines[i].trim();
+          if (nextTrimmed.endsWith("$$")) {
+            const endPart = nextTrimmed.slice(0, -2).trim();
+            if (endPart) mathLines.push(endPart);
+            i++;
+            break;
+          }
+          mathLines.push(lines[i]);
+          i++;
+        }
+        mathContent = mathLines.join(" ").trim();
+      }
+
+      if (mathContent) {
+        renderedElements.push(
+          <div
+            key={`eq-${i}`}
+            className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
+          >
+            <MathComponent math={mathContent} display={true} />
+          </div>
+        );
+      }
+      continue;
+    }
+
+    // Unwrapped equation block starting with math commands (e.g. \frac{...} or \sqrt{...} or SE(\hat{p}) = ...)
+    if (
+      (trimmed.startsWith("\\frac") ||
+        trimmed.startsWith("\\sqrt") ||
+        trimmed.startsWith("\\sum") ||
+        trimmed.startsWith("\\int")) &&
+      !trimmed.startsWith("$")
+    ) {
+      renderedElements.push(
+        <div
+          key={`eq-auto-${i}`}
+          className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
+        >
+          <MathComponent math={trimmed} display={true} />
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Heading 1
+    if (trimmed.startsWith("# ")) {
+      renderedElements.push(
+        <h1
+          key={`h1-${i}`}
+          className="text-2xl font-bold tracking-tight mt-6 mb-3 pb-1 border-b border-slate-200"
+          style={{
+            color: accentColor,
+            fontFamily: getCssFontFamily(fontFamily),
+          }}
+        >
+          {renderInline(trimmed.slice(2))}
+        </h1>
+      );
+      i++;
+      continue;
+    }
+
+    // Heading 2
+    if (trimmed.startsWith("## ")) {
+      renderedElements.push(
+        <h2
+          key={`h2-${i}`}
+          className="text-lg font-bold tracking-tight mt-5 mb-2"
+          style={{
+            color: accentColor === "#1A365D" ? "#2B6CB0" : accentColor,
+            fontFamily: getCssFontFamily(fontFamily),
+          }}
+        >
+          {renderInline(trimmed.slice(3))}
+        </h2>
+      );
+      i++;
+      continue;
+    }
+
+    // Heading 3
+    if (trimmed.startsWith("### ")) {
+      renderedElements.push(
+        <h3
+          key={`h3-${i}`}
+          className="text-sm font-bold text-slate-800 mt-4 mb-1.5 flex items-center gap-1.5"
+          style={{ fontFamily: getCssFontFamily(fontFamily) }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full inline-block"
+            style={{ backgroundColor: accentColor }}
+          />
+          {renderInline(trimmed.slice(4))}
+        </h3>
+      );
+      i++;
+      continue;
+    }
+
+    // Markdown Table detection: | col1 | col2 |
+    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+      const tableRows: string[][] = [];
+      let isHeader = true;
+
+      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+        const rowText = lines[i].trim();
+        // Skip separator row: |---|---|
+        if (/^\|[-:\s|]+\|$/.test(rowText)) {
+          i++;
+          continue;
+        }
+        const cells = rowText
+          .slice(1, -1)
+          .split("|")
+          .map((c) => c.trim());
+        tableRows.push(cells);
+        i++;
+      }
+
+      if (tableRows.length > 0) {
+        renderedElements.push(
+          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-lg border border-slate-200">
+            <table className="w-full text-xs text-left border-collapse">
+              <thead>
+                <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-900 font-bold">
+                  {tableRows[0].map((h, cIdx) => (
+                    <th key={cIdx} className="px-3 py-2 border-r border-slate-200 last:border-r-0">
+                      {renderInline(h)}
+                    </th>
+                  ))}
+                </tr>
+              </thead>
+              <tbody>
+                {tableRows.slice(1).map((row, rIdx) => (
+                  <tr
+                    key={rIdx}
+                    className={`border-b border-slate-100 last:border-b-0 ${
+                      rIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"
+                    }`}
+                  >
+                    {row.map((cell, cIdx) => (
+                      <td key={cIdx} className="px-3 py-2 border-r border-slate-100 last:border-r-0 text-slate-700">
+                        {renderInline(cell)}
+                      </td>
+                    ))}
+                  </tr>
+                ))}
+              </tbody>
+            </table>
+          </div>
+        );
+        continue;
+      }
+    }
+
+    // Blockquote or formula callout
+    if (trimmed.startsWith("> ")) {
+      renderedElements.push(
+        <blockquote
+          key={`quote-${i}`}
+          className="my-3 p-3.5 bg-blue-50/50 border-l-4 rounded-r-lg text-sm text-slate-800 font-medium shadow-2xs leading-relaxed"
+          style={{ borderColor: accentColor }}
+        >
+          {renderInline(trimmed.slice(2))}
+        </blockquote>
+      );
+      i++;
+      continue;
+    }
+
+    // Bullet list item
+    if (/^\s*[-*]\s+/.test(rawLine)) {
+      const indent = rawLine.match(/^(\s*)/)![0].length;
+      const marginClass = indent >= 4 ? "ml-8" : indent >= 2 ? "ml-5" : "ml-2";
+      const strippedBullet = trimmed.replace(/^[-*]\s+/, "");
+
+      renderedElements.push(
+        <div
+          key={`bullet-${i}`}
+          className={`flex items-start gap-2 text-sm text-slate-800 my-1.5 ${marginClass} leading-relaxed`}
+        >
+          <span className="text-slate-400 mt-1 select-none text-xs leading-none">•</span>
+          <div className="flex-1">{renderInline(strippedBullet)}</div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Numbered list item
+    if (/^\d+\.\s+/.test(trimmed)) {
+      const match = trimmed.match(/^(\d+\.\s+)/)!;
+      renderedElements.push(
+        <div
+          key={`num-${i}`}
+          className="flex items-start gap-2 text-sm text-slate-800 my-1.5 ml-1 leading-relaxed"
+        >
+          <span className="font-bold text-xs mt-0.5" style={{ color: accentColor }}>
+            {match[1]}
+          </span>
+          <div className="flex-1">{renderInline(trimmed.slice(match[0].length))}</div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Code block marker
+    if (trimmed.startsWith("```")) {
+      i++;
+      continue;
+    }
+
+    // Standard paragraph
+    renderedElements.push(
+      <p key={`p-${i}`} className="text-sm text-slate-800 my-2 leading-relaxed">
+        {renderInline(trimmed)}
+      </p>
+    );
+    i++;
+  }
+
+  const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
+  const mathFormulaCount = (markdown.match(/\$[^$]+\$/g) || []).length;
+  // Estimate page count for document simulation (roughly 350-400 words per page in 11pt)
+  const estimatedPages = Math.max(1, Math.ceil(wordCount / 380));
+
+  return (
+    <div className="border border-slate-200 rounded-2xl bg-white shadow-xs overflow-hidden flex flex-col transition-all">
+      {/* Top Seamless Toolbar */}
+      <div className="bg-slate-50 border-b border-slate-200 px-4 sm:px-5 py-2.5 flex flex-wrap items-center justify-between gap-3">
+        <div className="flex items-center gap-2 flex-wrap">
+          <div className="flex items-center gap-1.5 text-blue-900 font-semibold text-xs">
+            <BookOpen className="w-4 h-4 text-blue-800" />
+            <span>Word Document Sheet</span>
+          </div>
+
+          {/* Sync status indicator badge */}
+          {isAiPolished ? (
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-medium">
+              <Check className="w-3 h-3 text-emerald-600" />
+              <span>AI Polished</span>
+            </span>
+          ) : (
+            <span className="inline-flex items-center gap-1.5 text-[11px] px-2.5 py-0.5 rounded-full bg-blue-100 text-blue-800 font-medium">
+              <span className="w-1.5 h-1.5 rounded-full bg-blue-600 animate-pulse" />
+              <span>Real-Time Sync</span>
+            </span>
+          )}
+
+          {/* Active Font Badge */}
+          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200/80 text-slate-700 font-medium">
+            Font: <span className="font-semibold text-slate-900">{fontFamily}</span>
+          </span>
+
+          {/* Word Count */}
+          <span className="text-[11px] px-2 py-0.5 rounded-md bg-slate-200/70 text-slate-600 font-mono">
+            {wordCount} words
+          </span>
+
+          {/* Formula Count */}
+          {mathFormulaCount > 0 && (
+            <span className="inline-flex items-center gap-1 text-[11px] px-2 py-0.5 rounded-md bg-indigo-100 text-indigo-800 font-medium">
+              <Sigma className="w-3 h-3 text-indigo-600" />
+              {mathFormulaCount} formulas
+            </span>
+          )}
+        </div>
+
+        {/* Action & View Controls */}
+        <div className="flex items-center gap-2 flex-wrap">
+          {/* Zoom controls */}
+          <div className="hidden sm:flex items-center bg-slate-200/70 rounded-lg p-0.5 text-xs text-slate-600">
+            <button
+              onClick={() => setZoomLevel((z) => Math.max(75, z - 10))}
+              className="p-1 hover:text-slate-900 rounded disabled:opacity-40"
+              disabled={zoomLevel <= 75}
+              title="Zoom out"
+            >
+              <ZoomOut className="w-3.5 h-3.5" />
+            </button>
+            <span className="px-1.5 text-[11px] font-mono select-none">{zoomLevel}%</span>
+            <button
+              onClick={() => setZoomLevel((z) => Math.min(130, z + 10))}
+              className="p-1 hover:text-slate-900 rounded disabled:opacity-40"
+              disabled={zoomLevel >= 130}
+              title="Zoom in"
+            >
+              <ZoomIn className="w-3.5 h-3.5" />
+            </button>
+          </div>
+
+          {/* View Mode Toggle: Document Sheet vs LaTeX Code */}
+          <div className="flex items-center bg-slate-200/70 p-0.5 rounded-lg">
+            <button
+              onClick={() => setViewMode("rendered")}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                viewMode === "rendered"
+                  ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Eye className="w-3 h-3" />
+              <span>Document</span>
+            </button>
+            <button
+              onClick={() => setViewMode("source")}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-medium transition-all ${
+                viewMode === "source"
+                  ? "bg-white text-slate-900 shadow-2xs font-semibold"
+                  : "text-slate-600 hover:text-slate-900"
+              }`}
+            >
+              <Code className="w-3 h-3" />
+              <span>LaTeX / Markdown</span>
+            </button>
+          </div>
+
+          {/* AI Polish Trigger Button if not yet polished */}
+          {onTriggerAiPolish && !isAiPolished && (
+            <button
+              onClick={onTriggerAiPolish}
+              disabled={isAiPolishing}
+              className="inline-flex items-center gap-1 text-xs font-medium text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 px-2.5 py-1 rounded-lg transition-colors shadow-2xs disabled:opacity-50"
+              title="Enhance notes & normalize equations with Gemini AI"
+            >
+              <Sparkles className={`w-3.5 h-3.5 text-blue-600 ${isAiPolishing ? "animate-spin" : ""}`} />
+              <span>{isAiPolishing ? "Polishing..." : "AI Polish"}</span>
+            </button>
+          )}
+
+          {/* Copy Button */}
+          <button
+            onClick={handleCopy}
+            className="inline-flex items-center gap-1 text-xs font-medium text-slate-700 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-lg border border-slate-200 transition-colors shadow-2xs"
+            title="Copy formatted markdown with LaTeX"
+          >
+            {copied ? (
+              <Check className="w-3.5 h-3.5 text-emerald-600" />
+            ) : (
+              <Copy className="w-3.5 h-3.5 text-slate-500" />
+            )}
+            <span>{copied ? "Copied" : "Copy"}</span>
+          </button>
+
+          {/* Download DOCX */}
+          <button
+            onClick={onDownloadDocx}
+            disabled={isDownloading}
+            className="inline-flex items-center gap-1.5 text-xs font-semibold text-white bg-blue-900 hover:bg-blue-800 disabled:opacity-50 px-3 py-1 rounded-lg shadow-xs transition-all"
+          >
+            <FileDown className="w-3.5 h-3.5" />
+            <span>{isDownloading ? "Generating..." : "Download .docx"}</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Main Preview Container */}
+      {viewMode === "rendered" ? (
+        <div className="p-4 sm:p-6 md:p-8 bg-slate-100/90 overflow-y-auto max-h-[640px] flex justify-center">
+          {/* Simulated Office Word Paper Sheet */}
+          <div
+            className="w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-300/80 p-6 sm:p-12 md:p-14 text-slate-800 relative transition-transform duration-150 origin-top"
+            style={{
+              fontFamily: getCssFontFamily(fontFamily),
+              transform: zoomLevel !== 100 ? `scale(${zoomLevel / 100})` : undefined,
+            }}
+          >
+            {/* Word Document Running Header */}
+            <div className="pb-4 mb-6 border-b border-slate-200 flex items-center justify-between text-xs text-slate-400 select-none">
+              <span className="font-serif italic text-slate-500 truncate max-w-sm">
+                {docTitle || "NotebookLM Lecture Notes"}
+              </span>
+              <span className="text-[11px] font-sans tracking-wide uppercase text-slate-400">
+                Word Document • {fontFamily}
+              </span>
+            </div>
+
+            {/* Document Content */}
+            <div className="space-y-1 select-text leading-relaxed">
+              {renderedElements.length > 0 ? (
+                renderedElements
+              ) : (
+                <div className="text-center py-12 text-slate-400 italic">
+                  No notes to display. Paste content on the left to preview instantly.
+                </div>
+              )}
+            </div>
+
+            {/* Word Document Running Footer */}
+            <div className="pt-6 mt-10 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-400 select-none">
+              <span>Standard Academic Typesetting (Times New Roman / OMML)</span>
+              <span>Page 1 of {estimatedPages}</span>
+            </div>
+          </div>
+        </div>
+      ) : (
+        /* Source LaTeX / Markdown View */
+        <div className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto max-h-[640px] leading-relaxed select-text">
+          <pre className="whitespace-pre-wrap">{markdown}</pre>
+        </div>
+      )}
+
+      {/* Footer Info Ribbon */}
+      <div className="px-4 py-2 bg-slate-50 border-t border-slate-200 text-[11px] text-slate-500 flex items-center justify-between">
+        <div className="flex items-center gap-1.5">
+          <Sparkles className="w-3 h-3 text-amber-500" />
+          <span>
+            Office Math Equations (<code className="font-mono text-slate-700">m:oMath</code>) formatted with native Word fraction bars & radical roots.
+          </span>
+        </div>
+        <div className="text-slate-400 font-medium">
+          Typography: <span className="text-slate-700 font-semibold">{fontFamily}</span>
+        </div>
+      </div>
+    </div>
+  );
+};

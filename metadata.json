@@ -1,0 +1,6 @@
+{
+  "name": "NotebookLM to DOCX Converter",
+  "description": "Clean up raw notes, math expressions, and LaTeX from Google NotebookLM and convert them into beautifully formatted Microsoft Word (.docx) documents.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
