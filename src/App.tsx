@@ -162,6 +162,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: inputText,
+          cleanedMarkdown: effectiveMarkdown,
           title: docTitle || "NotebookLM Notes",
           font: fontFamily,
           accent: accentColor,

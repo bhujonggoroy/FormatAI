@@ -375,10 +375,156 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
+    // Horizontal divider (--- or ***)
+    if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+      renderedElements.push(
+        <hr key={`hr-${i}`} className="my-5 border-t border-slate-300" />
+      );
+      i++;
+      continue;
+    }
+
+    // 4-digit Year Header (e.g. 2019, 2025)
+    if (/^\d{4}$/.test(trimmed)) {
+      renderedElements.push(
+        <h2
+          key={`year-${i}`}
+          className="text-xl font-bold tracking-tight mt-6 mb-1"
+          style={{
+            color: accentColor,
+            fontFamily: getCssFontFamily(fontFamily),
+          }}
+        >
+          {trimmed}
+        </h2>
+      );
+      i++;
+      continue;
+    }
+
+    // Exam Title (e.g. Final Examination, Midterm Examination)
+    if (/^(?:\*{0,2})(?:Final|Midterm|Mid-Semester)\s+Examination(?:\*{0,2})$/i.test(trimmed)) {
+      const cleanExam = trimmed.replace(/^\*+|\*+$/g, '').trim();
+      renderedElements.push(
+        <div
+          key={`exam-${i}`}
+          className="text-sm font-semibold italic text-slate-600 mb-3"
+          style={{ fontFamily: getCssFontFamily(fontFamily) }}
+        >
+          {cleanExam}
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Section Header (e.g. Section A: Descriptive Statistics... or **Section A:**)
+    if (/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i.test(trimmed)) {
+      const match = trimmed.match(/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i)!;
+      const sectionLetter = match[1].toUpperCase();
+      const sectionDesc = match[2].trim().replace(/^[:\s-]+/, '').replace(/^\*+|\*+$/g, '');
+      const fullSectionTitle = `Section ${sectionLetter}:${sectionDesc ? " " + sectionDesc : ""}`;
+
+      renderedElements.push(
+        <h3
+          key={`section-${i}`}
+          className="text-base font-bold text-slate-900 mt-6 mb-2 pb-1 border-b border-slate-200 flex items-center gap-2"
+          style={{
+            color: accentColor,
+            fontFamily: getCssFontFamily(fontFamily),
+          }}
+        >
+          {renderInline(fullSectionTitle)}
+        </h3>
+      );
+      i++;
+      continue;
+    }
+
+    // Topic Header (e.g. Topic 1: ... or #### Topic 1: ...)
+    if (/^(?:#{2,4}\s*)?(?:\*{0,2})(Topic\s+\d+:?\s*.*?)(?:\*{0,2})$/i.test(trimmed)) {
+      const topicText = trimmed.replace(/^#{2,4}\s*/, '').replace(/^\*+|\*+$/g, '').trim();
+      renderedElements.push(
+        <h4
+          key={`topic-${i}`}
+          className="text-sm font-bold text-slate-800 mt-4 mb-2 flex items-center gap-1.5"
+          style={{ fontFamily: getCssFontFamily(fontFamily) }}
+        >
+          <span
+            className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
+            style={{ backgroundColor: accentColor }}
+          />
+          {renderInline(topicText)}
+        </h4>
+      );
+      i++;
+      continue;
+    }
+
+    // Pure Data Array: Centered comma-separated sequence of numbers
+    if (/^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}\d+(?:\.\d+)?(?:,\s*)?$/.test(trimmed)) {
+      const tokens = trimmed.replace(/,/g, ' ').trim().split(/\s+/);
+      const formattedData = tokens.join(', ') + (i + 1 < lines.length && /^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}/.test(lines[i + 1].trim()) ? ',' : '');
+      renderedElements.push(
+        <div
+          key={`data-${i}`}
+          className="my-1.5 text-center font-mono text-xs text-slate-700 tracking-wide select-text py-0.5"
+        >
+          {formattedData}
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Sub-questions & Lettered list items: e.g. a. Arithmetic mean... or i. E(y)... or (i) Draw...
+    const subMatch = trimmed.match(/^\s*(?:[-*•o]\s+)?(?:\*{0,2})([a-z]\.|\([a-z]\)|[a-z]\)|\(i{1,3}\)|[i-v]+\.|\([0-9]+\))\s*(.*)$/i);
+    if (subMatch) {
+      const prefix = subMatch[1].replace(/^\(/, '').replace(/\)$/, '.');
+      const subContent = subMatch[2].replace(/^\*+|\*+$/g, '').trim();
+
+      renderedElements.push(
+        <div
+          key={`sub-${i}`}
+          className="flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ml-6 leading-relaxed"
+        >
+          <span className="font-bold text-slate-900 shrink-0 select-none min-w-[20px]">
+            {prefix}
+          </span>
+          <div className="flex-1">{renderInline(subContent)}</div>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
+    // Metadata and Side notes (Frequency: ..., Side note: ..., Note: ...)
+    const metaMatch = trimmed.match(/^(?:\s*[-*•o]\s+)?(?:\*{0,2})(\(?Side note:|\(?Note:|Frequency:)\s*(.*?)(?:\*{0,2})$/i);
+    if (metaMatch) {
+      const label = metaMatch[1];
+      const noteContent = metaMatch[2].replace(/^\*+|\*+$/g, '').trim();
+      const isSideNote = /side note|note/i.test(label);
+
+      renderedElements.push(
+        <div
+          key={`meta-${i}`}
+          className={`my-1 ml-6 text-xs text-slate-500 leading-normal ${
+            isSideNote ? 'italic' : ''
+          }`}
+        >
+          <span className={isSideNote ? 'italic text-slate-500' : 'font-semibold text-slate-600'}>
+            {label}{' '}
+          </span>
+          <span>{renderInline(noteContent)}</span>
+        </div>
+      );
+      i++;
+      continue;
+    }
+
     // Markdown Table detection: | col1 | col2 |
     if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
       const tableRows: string[][] = [];
-      let isHeader = true;
 
       while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
         const rowText = lines[i].trim();
@@ -397,30 +543,46 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
 
       if (tableRows.length > 0) {
         renderedElements.push(
-          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-lg border border-slate-200">
+          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-md border border-slate-300 shadow-2xs">
             <table className="w-full text-xs text-left border-collapse">
               <thead>
-                <tr className="bg-slate-100/80 border-b border-slate-200 text-slate-900 font-bold">
-                  {tableRows[0].map((h, cIdx) => (
-                    <th key={cIdx} className="px-3 py-2 border-r border-slate-200 last:border-r-0">
-                      {renderInline(h)}
-                    </th>
-                  ))}
+                <tr className="bg-slate-100 border-b border-slate-300 text-slate-900 font-bold">
+                  {tableRows[0].map((h, cIdx) => {
+                    const isNumeric = /^[\d.,\s/%+-]+$/.test(h) || /^(?:Variable|Income|Expenditure|Speed|GPA|Hour|ID|Year|x\d*|y\d*|Height|Weight|Age)$/i.test(h);
+                    return (
+                      <th
+                        key={cIdx}
+                        className={`px-3 py-2 border-r border-slate-300 last:border-r-0 ${
+                          isNumeric ? 'text-center' : 'text-left'
+                        }`}
+                      >
+                        {renderInline(h)}
+                      </th>
+                    );
+                  })}
                 </tr>
               </thead>
               <tbody>
                 {tableRows.slice(1).map((row, rIdx) => (
                   <tr
                     key={rIdx}
-                    className={`border-b border-slate-100 last:border-b-0 ${
-                      rIdx % 2 === 1 ? "bg-slate-50/50" : "bg-white"
+                    className={`border-b border-slate-200 last:border-b-0 ${
+                      rIdx % 2 === 1 ? "bg-slate-50/70" : "bg-white"
                     }`}
                   >
-                    {row.map((cell, cIdx) => (
-                      <td key={cIdx} className="px-3 py-2 border-r border-slate-100 last:border-r-0 text-slate-700">
-                        {renderInline(cell)}
-                      </td>
-                    ))}
+                    {row.map((cell, cIdx) => {
+                      const isNumeric = /^[\d.,\s/%+-]+$/.test(cell) || /^(?:Variable|Income|Expenditure|Speed|GPA|Hour|ID|Year|x\d*|y\d*|Height|Weight|Age)$/i.test(cell);
+                      return (
+                        <td
+                          key={cIdx}
+                          className={`px-3 py-2 border-r border-slate-200 last:border-r-0 text-slate-700 ${
+                            isNumeric ? 'text-center font-mono text-[11px]' : 'text-left'
+                          }`}
+                        >
+                          {renderInline(cell)}
+                        </td>
+                      );
+                    })}
                   </tr>
                 ))}
               </tbody>
@@ -446,18 +608,19 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Bullet list item
-    if (/^\s*[-*•⁃◦▪▫–—]\s+/.test(rawLine)) {
+    // Bullet list item (supports -, *, •, and open circle o)
+    if (/^\s*(?:[-*•⁃◦▪▫–—]|\bo\b)\s+/.test(rawLine) || /^\s*o\s{1,}/.test(rawLine)) {
       const indent = rawLine.match(/^(\s*)/)![0].length;
-      const marginClass = indent >= 4 ? "ml-8" : indent >= 2 ? "ml-5" : "ml-2";
-      const strippedBullet = trimmed.replace(/^[-*•⁃◦▪▫–—]\s+/, "");
+      const isNested = indent >= 2 || /^\s{2,}/.test(rawLine);
+      const marginClass = indent >= 6 ? "ml-12" : indent >= 4 ? "ml-8" : isNested ? "ml-6" : "ml-3";
+      const strippedBullet = trimmed.replace(/^(?:[-*•⁃◦▪▫–—]|o)\s+/, "");
 
       renderedElements.push(
         <div
           key={`bullet-${i}`}
-          className={`flex items-start gap-2 text-sm text-slate-800 my-1.5 ${marginClass} leading-relaxed`}
+          className={`flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ${marginClass} leading-relaxed`}
         >
-          <span className="text-slate-400 mt-1 select-none text-xs leading-none">•</span>
+          <span className="text-slate-400 mt-1 select-none text-xs leading-none">○</span>
           <div className="flex-1">{renderInline(strippedBullet)}</div>
         </div>
       );
@@ -465,18 +628,18 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Numbered list item
+    // Numbered list item (Main Questions: 1. , 2. , 3. )
     if (/^\s*\d+[\.\)]\s+/.test(trimmed)) {
-      const match = trimmed.match(/^(\d+[\.\)]\s+)/)!;
+      const match = trimmed.match(/^(\d+[\.\)])\s*(.*)$/)!;
       renderedElements.push(
         <div
           key={`num-${i}`}
-          className="flex items-start gap-2 text-sm text-slate-800 my-1.5 ml-1 leading-relaxed"
+          className="flex items-start gap-2.5 text-sm text-slate-900 my-2.5 ml-1 leading-relaxed"
         >
-          <span className="font-bold text-xs mt-0.5" style={{ color: accentColor }}>
+          <span className="font-bold text-sm select-none" style={{ color: accentColor }}>
             {match[1]}
           </span>
-          <div className="flex-1">{renderInline(trimmed.slice(match[0].length))}</div>
+          <div className="flex-1 font-normal">{renderInline(match[2].trim())}</div>
         </div>
       );
       i++;

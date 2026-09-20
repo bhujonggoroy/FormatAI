@@ -7,6 +7,124 @@ export interface SampleNote {
 
 export const SAMPLE_NOTES: SampleNote[] = [
   {
+    id: "stt251-sampling-distributions",
+    title: "STT251: Sampling Distributions (Raw Study Guide & Formula Sheet)",
+    category: "Statistics & Data Science",
+    text: `STT251 Sampling Distributions: A to Z Comprehensive Study Guide & Formula Sheet
+1. Introduction and Sampling Distribution Fundamentals
+1.1 Definition of Sampling Distribution
+A sampling distribution is the probability law or frequency distribution of a statistic (such as
+the mean, median, or standard deviation) obtained through repeated random samples of a
+fixed size n drawn from a specified population. It represents how outcomes spread apart for
+a specific population and is also referred to as a finite sample distribution.
+1.2 Key Components
+Population (N): The total set of units.
+Sample (n): A subset of units selected from the population.
+Statistic: A characteristic of the sample (e.g., sample mean \\bar{x}, sample proportion p).
+Parameter: A characteristic of the population (e.g., population mean \\mu, population
+proportion P or \\pi).
+Sampling Error: The difference between the population parameter and the sample statistic
+used to estimate it (\\text{Error} = \\mu - \\bar{x}). Sampling error decreases as sample size n
+increases.
+1.3 Standard Error (SE)
+The standard deviation of a sampling distribution is specifically termed the Standard Error.
+It measures the dispersion of the sample statistics around the population parameter and
+serves as a measure of sampling error.
+Statistic
+Standard Error Formula (Infinite/Large Population)
+Sample Mean (\\bar{x})
+SE(\\bar{x}) = \\frac{\\sigma}{\\sqrt{n}}
+Sample Proportion (p)
+SE(p) = \\sqrt{\\frac{P(1-P)}{n}}
+1.4 Finite Population Correction (FPC) Factor
+When the population size N is finite and the sample size n is a significant portion of the
+population (specifically when the sampling fraction n/N > 0.1), the standard error formula
+must be adjusted using the FPC factor.
+Standard Error for Finite Population: SE(\\bar{x}) = \\sqrt{\\frac{N-n}{N-1}} \\cdot
+\\frac{\\sigma}{\\sqrt{n}}
+Variance for Finite Population: \\sigma_{\\bar{x}}^2 = \\left( \\frac{N-n}{N-1} \\right)
+\\frac{\\sigma^2}{n}
+2. Central Limit Theorem (CLT)
+2.1 Historical Context and Theorem
+First introduced by De Moivre in the early 18th century, the Central Limit Theorem is the
+most fundamental theorem in statistics. It states that regardless of the population
+distribution, the sampling distribution of the sample mean will approach a normal
+distribution as the sample size n increases.
+2.2 Formal Definition
+If X is a random variable from any distribution with mean \\mu and variance \\sigma^2:
+\\text{As } n \\to \\infty, \\bar{x} \\sim N\\left(\\mu, \\frac{\\sigma^2}{n}\\right)
+2.3 Significance
+Allows researchers to make estimates of the population mean even if the underlying
+population distribution is unknown.
+Sample means cluster together as n increases, improving the precision of the estimate.
+3. Distributions of the Mean and Proportion
+3.1 Sampling Distribution of the Mean
+For a random sample of size n from a population with mean \\mu and standard deviation
+\\sigma:
+Mean of \\bar{x}: \\mu_{\\bar{x}} = \\mu (The sample mean is an unbiased estimator).
+Variance of \\bar{x}: \\sigma_{\\bar{x}}^2 = \\frac{\\sigma^2}{n}.
+3.2 Sampling Distribution of the Proportion
+When data is classified into two categories (success/failure), we utilize the sample
+proportion p = \\frac{X}{n}, where X is the number of successes.
+Population Proportion: P = \\frac{k}{N} (where k is population successes).
+Mean of p: \\mu_p = P.
+Standard Deviation of p: \\sigma_p = \\sqrt{\\frac{P(1-P)}{n}}.
+Normality Conditions for Proportions
+The sampling distribution of the proportion is approximately normal only if the sample size
+is sufficiently large. The exact requirements are:
+nP > 15
+n(1-P) > 15
+If these conditions are not satisfied (e.g., n is small), the distribution follows a Binomial
+Distribution instead of a Normal Distribution.
+3.3 Difference of Two Sample Proportions
+To compare two populations with proportions P_1 and P_2, independent samples of size n_1
+and n_2 are drawn.
+Mean of the Difference: E[p_1 - p_2] = P_1 - P_2
+Standard Error of the Difference: SE(p_1 - p_2) = \\sqrt{\\frac{P_1(1-P_1)}{n_1} + \\frac{P_2(1-
+P_2)}{n_2}}
+Normality Conditions for Difference of Proportions: The distribution is approximately
+normal if n_1P_1 > 15, n_1(1-P_1) > 15, n_2P_2 > 15, and n_2(1-P_2) > 15.
+4. Specific Sampling Distributions
+The following distributions are essential for inferential statistics and are categorized as
+sampling distributions:
+Student’s t-Distribution: Used when the population standard deviation is unknown and the
+sample size is small.
+Chi-Square (\\chi^2) Distribution: Used for inferences regarding population variance and
+goodness-of-fit tests.
+Fisher’s F-Distribution: Used for the ratio of two sample variances to compare population
+variabilities.
+5. Summary Formula Sheet
+Concept
+Formula
+Sample Mean
+\\bar{x} = \\frac{1}{n} \\sum x_i
+Sample Proportion
+p = \\frac{x}{n}
+Z-score (Mean)
+Z = \\frac{\\bar{x} - \\mu}{\\sigma / \\sqrt{n}}
+Z-score (Proportion)
+Z = \\frac{p - P}{\\sqrt{\\frac{P(1-P)}{n}}}
+Z-score (Diff. Proportions)
+Z = \\frac{(p_1 - p_2) - (P_1 - P_2)}{\\sqrt{\\frac{P_1(1-P_1)}{n_1} + \\frac{P_2(1-P_2)}{n_2}}}
+Standard Error (Finite Mean)
+SE(\\bar{x}) = \\sqrt{\\frac{N-n}{N-1}} \\cdot \\frac{\\sigma}{\\sqrt{n}}
+Expected Value (Proportion)
+E[p] = P
+Variance (Proportion)
+Var(p) = \\frac{P(1-P)}{n}
+6. Practical Applications and Inference
+Sampling distributions provide the mathematical foundation for all inferential statistics. By
+understanding the probability distribution of a statistic:
+Generalization: Rules can be laid down to generalize from a single sample to an entire
+population.
+Risk Calculation: Researchers can calculate the risk of error (chance) involved in
+generalizations.
+Interval Probability: It becomes possible to calculate the probability that a sample statistic
+falls within a specific interval (e.g., within 5 percentage points of the true population
+parameter).
+`
+  },
+  {
     id: "inferential-statistics",
     title: "Inferential Statistics & Sampling (NotebookLM Outline)",
     category: "Statistics & Data Science",
