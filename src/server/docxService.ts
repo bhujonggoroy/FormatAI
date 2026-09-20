@@ -1,4 +1,3 @@
-import { spawn } from "child_process";
 import {
   Document,
   Paragraph,
@@ -789,8 +788,6 @@ export function parseInlineRunsAndMath(
     : [new TextRun({ text, font: fontName, size: baseSizePt * 2, color: baseColor })];
 }
 
-let isPythonDocxAvailable: boolean | null = false;
-
 /**
  * Builds a professionally formatted Word (.docx) document from Markdown notes
  */
@@ -803,55 +800,6 @@ export async function buildDocxFromMarkdown(
   const secondaryAccent = "2B6CB0"; // Steel blue
   const bodyColor = "2D3748";
   const equationFormat = options.equationFormat || "native";
-
-  // If native equation format is requested and Python OMML generator is available, use it
-  if (equationFormat === "native" && isPythonDocxAvailable !== false) {
-    try {
-      const pythonDocx = await new Promise<Buffer>((resolve, reject) => {
-        const proc = spawn("python3", ["generate_docx_cli.py"], {
-          stdio: ["pipe", "pipe", "pipe"],
-        });
-        const chunks: Buffer[] = [];
-        const errChunks: Buffer[] = [];
-
-        proc.stdout.on("data", (chunk) => chunks.push(chunk));
-        proc.stderr.on("data", (chunk) => errChunks.push(chunk));
-
-        proc.on("close", (code) => {
-          if (code === 0 && chunks.length > 0) {
-            isPythonDocxAvailable = true;
-            resolve(Buffer.concat(chunks));
-          } else {
-            const errStr = Buffer.concat(errChunks).toString("utf-8");
-            isPythonDocxAvailable = false;
-            reject(new Error(errStr || `Python CLI exited with code ${code}`));
-          }
-        });
-
-        proc.on("error", (err) => {
-          isPythonDocxAvailable = false;
-          reject(err);
-        });
-
-        const payload = JSON.stringify({
-          markdown: markdownText,
-          title: options.title || "NotebookLM Notes",
-          font: font,
-          accent: `#${primaryAccent.replace("#", "")}`,
-        });
-
-        proc.stdin.write(payload);
-        proc.stdin.end();
-      });
-
-      if (pythonDocx && pythonDocx.length > 0) {
-        return pythonDocx;
-      }
-    } catch (pythonErr: any) {
-      isPythonDocxAvailable = false;
-      console.warn("Python OMML engine fallback to TS docx:", pythonErr.message);
-    }
-  }
 
   // Pre-clean NotebookLM tree artifacts & standardize pseudo-math
   const cleanedMarkdown = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(markdownText));

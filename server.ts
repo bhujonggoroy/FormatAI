@@ -513,7 +513,7 @@ ${preCleaned}`;
   app.post("/convert", handleConvert);
   app.post("/api/convert", handleConvert);
 
-  // Endpoint to fetch Python deployment bundle files for the in-app code inspector
+  // Endpoint to fetch project files for inspector
   app.get("/api/project-files", (req, res) => {
     try {
       const readSafe = (fileName: string) => {
@@ -522,11 +522,7 @@ ${preCleaned}`;
       };
 
       res.json({
-        "app.py": readSafe("app.py"),
-        "requirements.txt": readSafe("requirements.txt"),
-        "vercel.json": readSafe("vercel.json"),
-        "render.yaml": readSafe("render.yaml"),
-        "Procfile": readSafe("Procfile"),
+        "package.json": readSafe("package.json"),
         "README.md": readSafe("README.md"),
       });
     } catch (err: any) {
