@@ -1,11 +1,12 @@
 import React from "react";
-import { FileText, Sparkles, Settings2, FileDown, Loader2, Layers } from "lucide-react";
+import { FileText, Sparkles, Settings2, FileDown, Loader2, Layers, Scale } from "lucide-react";
 
 interface HeaderProps {
   docTitle: string;
   onDocTitleChange: (title: string) => void;
   onOpenAISettingsModal: () => void;
   onOpenSkillsModal?: () => void;
+  onOpenLicenseModal?: () => void;
   activeSkillsCount?: number;
   readyProvidersCount?: number;
   isConverting: boolean;
@@ -18,6 +19,7 @@ export const Header: React.FC<HeaderProps> = ({
   onDocTitleChange,
   onOpenAISettingsModal,
   onOpenSkillsModal,
+  onOpenLicenseModal,
   activeSkillsCount = 4,
   readyProvidersCount = 1,
   isConverting,
@@ -54,21 +56,20 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: Skills, AI status & Primary Actions */}
+        {/* Right: AI status & Primary Actions */}
         <div className="flex items-center gap-2 shrink-0">
-          {/* Modular Skills Manager Trigger */}
-          {onOpenSkillsModal && (
+          {/* License & 4 Repos Trigger */}
+          {onOpenLicenseModal && (
             <button
-              id="btn-skills-manager"
-              onClick={onOpenSkillsModal}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-indigo-50/80 hover:bg-indigo-100/80 px-2.5 py-1.5 rounded-lg border border-indigo-200/80 transition-colors"
-              title="Manage GitHub-based Skills (Math, Scientific, Pandoc, Academic Manuscript)"
+              id="btn-header-license"
+              type="button"
+              onClick={onOpenLicenseModal}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800 hover:text-emerald-950 bg-emerald-50/90 hover:bg-emerald-100/90 px-2.5 py-1.5 rounded-lg border border-emerald-200/90 transition-colors cursor-pointer"
+              title="View MIT License, 4 GitHub Repos & Student Mission"
             >
-              <Layers className="w-3.5 h-3.5 text-indigo-600" />
-              <span className="hidden sm:inline">Skills</span>
-              <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-200 text-indigo-900">
-                {activeSkillsCount} Active
-              </span>
+              <Scale className="w-3.5 h-3.5 text-emerald-600" />
+              <span className="hidden md:inline">License & 4 Repos</span>
+              <span className="md:hidden">MIT</span>
             </button>
           )}
 

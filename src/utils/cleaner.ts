@@ -577,6 +577,21 @@ export function cleanClientSideNotebookLM(
   return processed.join("\n");
 }
 
+function extractBalancedBraceCleaner(str: string, startIndex: number): { content: string; endIndex: number } | null {
+  if (startIndex >= str.length || str[startIndex] !== "{") return null;
+  let depth = 1;
+  let i = startIndex + 1;
+  while (i < str.length && depth > 0) {
+    if (str[i] === "{") depth++;
+    else if (str[i] === "}") depth--;
+    i++;
+  }
+  if (depth === 0) {
+    return { content: str.slice(startIndex + 1, i - 1), endIndex: i };
+  }
+  return null;
+}
+
 /**
  * Normalizes equations, Greek letters, and statistical symbols in text.
  * Strictly avoids touching already-delimited math blocks ($...$ or $$...$$).
@@ -602,38 +617,91 @@ function normalizeLineMath(line: string): string {
   s = s.replace(/√\(([^()]+)\)/g, "\\sqrt{$1}");
   s = s.replace(/√([a-zA-Z0-9]+)/g, "\\sqrt{$1}");
 
-  // Process sections strictly outside of existing $...$, $$...$$, or `...` blocks
-  const parts = s.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g);
-  s = parts
-    .map((part, idx) => {
-      if (idx % 2 === 1) return part; // Inside math/code: leave untouched
+  const mathPlaceholders: string[] = [];
+  const putPh = (mathStr: string) => {
+    mathPlaceholders.push(mathStr);
+    return `__MATH_PH_${mathPlaceholders.length - 1}__`;
+  };
 
-      let p = part;
+  // 1. Protect existing math blocks ($$...$$, $...$, `...`)
+  s = s.replace(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
 
-      // Normal distributions e.g. Z ~ N(0,1) or Z \sim N(0,1)
-      p = p.replace(/\b([A-Z])\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, "$$$1 \\sim N($2)$$");
+  // 2. Normal distributions e.g. Z ~ N(0,1) or \bar{X} \sim N(\mu, \sigma^2/n)
+  s = s.replace(/\b([A-Za-z\\]+(?:_[a-zA-Z0-9{}]+)?)\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, (_, v, p) => putPh(`$${v} \\sim N(${p})$`));
 
-      // Auto-wrap un-delimited fractions outside existing $ blocks
-      p = p.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, (m) => `$${m}$`);
+  // 3. Whole equations with functions or variables:
+  s = s.replace(/((?:\\[a-zA-Z]+|[A-Za-z]\w*)(?:\([^)\n]*\))?(?:_[0-9a-zA-Z{}]+)?(?:\^[0-9a-zA-Z{}]+)?\s*=\s*\\(?:sqrt|frac)[^\n,;]+)/g, (m) => putPh(`$${m.trim()}$`));
+  s = s.replace(/([a-zA-Z0-9_().\\-]+(?:\s*[-+*/]\s*[a-zA-Z0-9_().\\-]+)*\s*(?:\\ge|\\le|\\geq|\\leq|\\neq|\\approx|\\sim|\\propto|=)\s*\\(?:frac|sqrt)[^\n,;]+)/g, (m) => putPh(`$${m.trim()}$`));
 
-      // Auto-wrap Greek letters: \theta, \mu, \sigma, \chi^2, \pi, etc.
-      p = p.replace(
-        /\\(theta|mu|sigma|alpha|beta|gamma|delta|epsilon|zeta|eta|iota|kappa|lambda|nu|xi|pi|rho|tau|upsilon|phi|chi|psi|omega|Theta|Sigma|Delta|Lambda|Phi|Psi|Omega)(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?(?:_\{[^{}]+\}|_[0-9a-zA-Z\\]+)?(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?\b/g,
-        (m) => `$${m}$`
-      );
+  // 4. Standalone radicals with balanced braces
+  let pos = 0;
+  while (pos < s.length) {
+    const idx = s.indexOf("\\sqrt", pos);
+    if (idx === -1) break;
+    let cur = idx + 5;
+    while (cur < s.length && /\s/.test(s[cur])) cur++;
+    if (s[cur] === "[") {
+      const closeB = s.indexOf("]", cur);
+      if (closeB !== -1) cur = closeB + 1;
+    }
+    while (cur < s.length && /\s/.test(s[cur])) cur++;
+    const body = extractBalancedBraceCleaner(s, cur);
+    if (body) {
+      let extraEnd = body.endIndex;
+      const tail = s.slice(body.endIndex);
+      const matchExtra = tail.match(/^\s*(?:\\cdot|\\times|\*)\s*(?:\\frac\{[^{}]+\}\{[^{}]+\}|\\?[a-zA-Z0-9_/]+)/);
+      if (matchExtra) {
+        extraEnd = body.endIndex + matchExtra[0].length;
+      }
+      const formula = s.slice(idx, extraEnd);
+      const ph = putPh(`$${formula}$`);
+      s = s.slice(0, idx) + ph + s.slice(extraEnd);
+      pos = idx + ph.length;
+      continue;
+    }
+    pos = idx + 5;
+  }
 
-      // Auto-wrap LaTeX accents: \bar{X}, \hat{p}
-      p = p.replace(/\\(bar|hat|tilde|vec)\{([^{}]+)\}/g, (m) => `$${m}$`);
+  // 5. Standalone fractions with balanced braces
+  pos = 0;
+  while (pos < s.length) {
+    const idx = s.indexOf("\\frac", pos);
+    if (idx === -1) break;
+    let cur = idx + 5;
+    while (cur < s.length && /\s/.test(s[cur])) cur++;
+    const num = extractBalancedBraceCleaner(s, cur);
+    if (num) {
+      cur = num.endIndex;
+      while (cur < s.length && /\s/.test(s[cur])) cur++;
+      const den = extractBalancedBraceCleaner(s, cur);
+      if (den) {
+        const fullFrac = s.slice(idx, den.endIndex);
+        const ph = putPh(`$${fullFrac}$`);
+        s = s.slice(0, idx) + ph + s.slice(den.endIndex);
+        pos = idx + ph.length;
+        continue;
+      }
+    }
+    pos = idx + 5;
+  }
 
-      // Auto-wrap common statistical square variables: S^2, s^2
-      p = p.replace(/\b([Ss])\^2\b/g, (m) => `$${m}$`);
+  // 6. Greek letters with optional subscripts/superscripts
+  s = s.replace(
+    /\\(theta|mu|sigma|alpha|beta|gamma|delta|epsilon|zeta|eta|iota|kappa|lambda|nu|xi|pi|rho|tau|upsilon|phi|chi|psi|omega|Theta|Sigma|Delta|Lambda|Phi|Psi|Omega)(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?(?:_\{[^{}]+\}|_[0-9a-zA-Z\\]+)?(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?\b/g,
+    (m) => putPh(`$${m}$`)
+  );
 
-      // Clean extra whitespace before punctuation
-      p = p.replace(/\s+([,.;:?)\]])/g, "$1");
+  // 7. LaTeX accents: \bar{X}, \hat{p}
+  s = s.replace(/\\(bar|hat|tilde|vec)\{([^{}]+)\}/g, (m) => putPh(`$${m}$`));
 
-      return p;
-    })
-    .join("");
+  // 8. Common statistical square variables: S^2, s^2
+  s = s.replace(/\b([Ss])\^2\b/g, (m) => putPh(`$${m}$`));
+
+  // Restore all protected math placeholders
+  s = s.replace(/__MATH_PH_(\d+)__/g, (_, id) => mathPlaceholders[parseInt(id, 10)] || "");
+
+  // Clean extra whitespace before punctuation
+  s = s.replace(/\s+([,.;:?)\]])/g, "$1");
 
   return s;
 }

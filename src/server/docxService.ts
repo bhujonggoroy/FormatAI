@@ -150,6 +150,119 @@ export function cleanNotebookLMTreeArtifacts(text: string): string {
   return result.join('\n');
 }
 
+function extractBalancedBrace(str: string, startIndex: number): { content: string; endIndex: number } | null {
+  if (startIndex >= str.length || str[startIndex] !== "{") return null;
+  let depth = 1;
+  let i = startIndex + 1;
+  while (i < str.length && depth > 0) {
+    if (str[i] === "{") depth++;
+    else if (str[i] === "}") depth--;
+    i++;
+  }
+  if (depth === 0) {
+    return { content: str.slice(startIndex + 1, i - 1), endIndex: i };
+  }
+  return null;
+}
+
+/**
+ * Wraps un-delimited equations and LaTeX commands outside existing math blocks
+ * using balanced brace extraction to guarantee nested formulas (\sqrt{\frac{...}{...}})
+ * are NEVER split into corrupted fragments.
+ */
+function wrapAllUnwrappedMathSafely(text: string): string {
+  if (!text) return text;
+
+  const mathPlaceholders: string[] = [];
+  const putPh = (mathStr: string) => {
+    mathPlaceholders.push(mathStr);
+    return `__MATH_PH_${mathPlaceholders.length - 1}__`;
+  };
+
+  // 1. Protect existing math blocks ($$...$$, $...$, `...`)
+  let s = text.replace(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
+
+  // 2. Normal distributions e.g. Z ~ N(0,1) or \bar{X} \sim N(\mu, \sigma^2/n)
+  s = s.replace(/\b([A-Za-z\\]+(?:_[a-zA-Z0-9{}]+)?)\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, (_, v, p) => putPh(`$${v} \\sim N(${p})$`));
+
+  // 3. Whole equations with functions or variables:
+  // e.g. SE(p_1 - p_2) = \sqrt{...}, Z = \frac{...}{...}, \sigma_{\bar{X}}^2 = ...
+  s = s.replace(/((?:\\[a-zA-Z]+|[A-Za-z]\w*)(?:\([^)\n]*\))?(?:_[0-9a-zA-Z{}]+)?(?:\^[0-9a-zA-Z{}]+)?\s*=\s*\\(?:sqrt|frac)[^\n,;]+)/g, (m) => putPh(`$${m.trim()}$`));
+  s = s.replace(/([a-zA-Z0-9_().\\-]+(?:\s*[-+*/]\s*[a-zA-Z0-9_().\\-]+)*\s*(?:\\ge|\\le|\\geq|\\leq|\\neq|\\approx|\\sim|\\propto|=)\s*\\(?:frac|sqrt)[^\n,;]+)/g, (m) => putPh(`$${m.trim()}$`));
+
+  // 4. Standalone radicals: \sqrt{...} with balanced braces
+  let pos = 0;
+  while (pos < s.length) {
+    const idx = s.indexOf("\\sqrt", pos);
+    if (idx === -1) break;
+    let cur = idx + 5;
+    while (cur < s.length && /\s/.test(s[cur])) cur++;
+    if (s[cur] === "[") {
+      const closeB = s.indexOf("]", cur);
+      if (closeB !== -1) cur = closeB + 1;
+    }
+    while (cur < s.length && /\s/.test(s[cur])) cur++;
+    const body = extractBalancedBrace(s, cur);
+    if (body) {
+      let extraEnd = body.endIndex;
+      const tail = s.slice(body.endIndex);
+      const matchExtra = tail.match(/^\s*(?:\\cdot|\\times|\*)\s*(?:\\frac\{[^{}]+\}\{[^{}]+\}|\\?[a-zA-Z0-9_/]+)/);
+      if (matchExtra) {
+        extraEnd = body.endIndex + matchExtra[0].length;
+      }
+      const formula = s.slice(idx, extraEnd);
+      const ph = putPh(`$${formula}$`);
+      s = s.slice(0, idx) + ph + s.slice(extraEnd);
+      pos = idx + ph.length;
+      continue;
+    }
+    pos = idx + 5;
+  }
+
+  // 5. Standalone fractions: \frac{num}{den} with balanced braces
+  pos = 0;
+  while (pos < s.length) {
+    const idx = s.indexOf("\\frac", pos);
+    if (idx === -1) break;
+    let cur = idx + 5;
+    while (cur < s.length && /\s/.test(s[cur])) cur++;
+    const num = extractBalancedBrace(s, cur);
+    if (num) {
+      cur = num.endIndex;
+      while (cur < s.length && /\s/.test(s[cur])) cur++;
+      const den = extractBalancedBrace(s, cur);
+      if (den) {
+        const fullFrac = s.slice(idx, den.endIndex);
+        const ph = putPh(`$${fullFrac}$`);
+        s = s.slice(0, idx) + ph + s.slice(den.endIndex);
+        pos = idx + ph.length;
+        continue;
+      }
+    }
+    pos = idx + 5;
+  }
+
+  // 6. Subscripted variables like t_\nu, t_n, U_i outside $
+  s = s.replace(/\b([tTUuXxYyZz])_([0-9a-zA-Z]|\\[a-zA-Z]+)\b/g, (_, v, sub) => putPh(`$${v}_${sub}$`));
+  s = s.replace(/\b([tTUuXxYyZz])_\{([^{}]+)\}\b/g, (_, v, sub) => putPh(`$${v}_{${sub}}$`));
+
+  // 7. Greek letters with optional subscripts/superscripts
+  s = s.replace(
+    /\\(theta|mu|sigma|alpha|beta|gamma|delta|epsilon|zeta|eta|iota|kappa|lambda|nu|xi|pi|rho|tau|upsilon|phi|chi|psi|omega|Theta|Sigma|Delta|Lambda|Phi|Psi|Omega)(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?(?:_\{[^{}]+\}|_[0-9a-zA-Z\\]+)?(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?\b/g,
+    (m) => putPh(`$${m}$`)
+  );
+
+  // 8. LaTeX accents: \bar{X}, \hat{p}, \tilde{X}
+  s = s.replace(/\\(bar|hat|tilde|vec)\{([^{}]+)\}/g, (m) => putPh(`$${m}$`));
+
+  // 9. Common statistical variance variables: S^2, s^2
+  s = s.replace(/\b([Ss])\^2\b/g, (m) => putPh(`$${m}$`));
+
+  // Restore all protected math placeholders
+  s = s.replace(/__MATH_PH_(\d+)__/g, (_, id) => mathPlaceholders[parseInt(id, 10)] || "");
+  return s;
+}
+
 /**
  * Standardizes pseudo-math strings into standard LaTeX.
  * First normalizes any bracketed equations (\[ ... \] or \( ... \)) into standard $$ or $,
@@ -220,39 +333,8 @@ export function standardizeMathToLatex(text: string): string {
   s = s.replace(/\bParameter\s*\(\s*\\?theta\s*\)/g, 'Parameter ($\\theta$)');
   s = s.replace(/\bStatistic\s*\(\s*T\s*\)/g, 'Statistic ($T$)');
 
-  // Auto-wrap un-delimited fractions, Greek letters, accents ONLY outside existing $ blocks
-  const parts = s.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g);
-  s = parts.map((part, idx) => {
-    // Odd index is inside an existing math block or code block - DO NOT TOUCH
-    if (idx % 2 === 1) return part;
-    let p = part;
-
-    // Normal distributions e.g. Z ~ N(0,1) or Z \sim N(0,1)
-    p = p.replace(/\b([A-Z])\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, '$$$1 \\sim N($2)$$');
-
-    // Subscripted variables like t_\nu, t_n, U_i outside $
-    p = p.replace(/\b([tTUuXxYyZz])_([0-9a-zA-Z]|\\[a-zA-Z]+)\b/g, '$$$1_$2$$');
-    p = p.replace(/\b([tTUuXxYyZz])_\{([^{}]+)\}\b/g, '$$$1_{$2}$$');
-
-    // Auto-wrap un-delimited fractions outside of existing $...$ blocks
-    p = p.replace(/(?<!\$)\\frac\{([^{}]+)\}\{([^{}]+)\}(?!\$)/g, (m) => `$${m}$`);
-
-    // Greek letters with optional subscripts/superscripts (e.g. \chi^2_\nu, \chi^2_{n_i}, \sigma_1^2, \theta)
-    p = p.replace(
-      /\\(theta|mu|sigma|alpha|beta|gamma|delta|epsilon|zeta|eta|iota|kappa|lambda|nu|xi|pi|rho|tau|upsilon|phi|chi|psi|omega|Theta|Sigma|Delta|Lambda|Phi|Psi|Omega)(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?(?:_\{[^{}]+\}|_[0-9a-zA-Z\\]+)?(?:\^\{[^{}]+\}|\^[0-9a-zA-Z]+)?\b/g,
-      (m) => `$${m}$`
-    );
-
-    // LaTeX accents: \bar{X}, \hat{p}
-    p = p.replace(/\\(bar|hat|tilde|vec)\{([^{}]+)\}/g, (m) => `$${m}$`);
-
-    // Common statistical square variables: S^2, s^2
-    p = p.replace(/\b([Ss])\^2\b/g, (m) => `$${m}$`);
-
-    // Clean up unnecessary whitespace before punctuation
-    p = p.replace(/\s+([,.;:?)\]])/g, '$1');
-    return p;
-  }).join('');
+  // Safely wrap all un-delimited math using balanced brace parsing
+  s = wrapAllUnwrappedMathSafely(s);
 
   return s;
 }
@@ -327,6 +409,23 @@ const STRUCTURAL_COMMANDS = new Set([
 
 function cleanMathSymbols(text: string): string {
   let s = text;
+
+  // Strip math display control commands
+  s = s.replace(/\\(?:displaystyle|textstyle|scriptstyle|scriptscriptstyle)\s*/g, "");
+  s = s.replace(/\\(?:limits|nolimits)\s*/g, "");
+
+  // Statistical operators e.g. \operatorname{Var}(X) -> Var(X)
+  s = s.replace(/\\operatorname\*?\{([^}]+)\}/g, "$1");
+  s = s.replace(/\\operatorname\*?\s+([a-zA-Z]+)/g, "$1");
+
+  // Math font wrappers
+  s = s.replace(/\\(?:mathrm|mathsf|mathbf|mathit|mathcal|mathbb|boldsymbol|text)\{([^}]+)\}/g, "$1");
+
+  // Overset / Underset
+  s = s.replace(/\\overset\{d\}\{(?:\\longrightarrow|\\to|->)\}/g, "⟶ᵈ");
+  s = s.replace(/\\overset\{([^}]+)\}\{([^}]+)\}/g, "$2");
+  s = s.replace(/\\underset\{([^}]+)\}\{([^}]+)\}/g, "$2");
+
   // Accents with braces
   s = s.replace(/\\hat\{([a-zA-Z0-9])\}/g, "$1̂");
   s = s.replace(/\\bar\{([a-zA-Z0-9])\}/g, "$1̄");
@@ -337,6 +436,14 @@ function cleanMathSymbols(text: string): string {
   s = s.replace(/\\bar\s+([a-zA-Z0-9])/g, "$1̄");
   s = s.replace(/\\hat\s+([a-zA-Z0-9])/g, "$1̂");
 
+  // Left/Right delimiters
+  s = s.replace(/\\left\./g, "");
+  s = s.replace(/\\right\./g, "");
+  s = s.replace(/\\left\\([{}|])/g, "$1");
+  s = s.replace(/\\right\\([{}|])/g, "$1");
+  s = s.replace(/\\left\s*([(\[|])/g, "$1");
+  s = s.replace(/\\right\s*([)\]|])/g, "$1");
+
   // Replace Greek and math symbols excluding structural formulas
   for (const [cmd, sym] of Object.entries(UNICODE_MATH_REPLACEMENTS)) {
     if (!STRUCTURAL_COMMANDS.has(cmd)) {
@@ -344,9 +451,24 @@ function cleanMathSymbols(text: string): string {
     }
   }
 
-  s = s.replace(/\\text\{([^}]+)\}/g, "$1");
-  s = s.replace(/\\mathbf\{([^}]+)\}/g, "$1");
-  s = s.replace(/\\mathit\{([^}]+)\}/g, "$1");
+  // Common relational and arithmetic operators
+  s = s.replace(/\\le\b/g, "≤");
+  s = s.replace(/\\ge\b/g, "≥");
+  s = s.replace(/\\ne\b/g, "≠");
+  s = s.replace(/\\sim\b/g, "~");
+  s = s.replace(/\\approx\b/g, "≈");
+  s = s.replace(/\\propto\b/g, "∝");
+  s = s.replace(/\\pm\b/g, "±");
+  s = s.replace(/\\mp\b/g, "∓");
+  s = s.replace(/\\times\b/g, "×");
+  s = s.replace(/\\cdot\b/g, "·");
+  s = s.replace(/\\infty\b/g, "∞");
+  s = s.replace(/\\to\b/g, "→");
+  s = s.replace(/\\longrightarrow\b/g, "⟶");
+  s = s.replace(/\\Rightarrow\b/g, "⇒");
+  s = s.replace(/\\iff\b/g, "⇔");
+
+  // Spacing
   s = s.replace(/\\,/g, " ");
   s = s.replace(/\\;/g, " ");
   s = s.replace(/\\!/g, "");
@@ -806,9 +928,22 @@ export function parseInlineRunsAndMath(
     }
 
     // Plain text
+    let cleanToken = cleanMathSymbols(token);
+    // If an un-delimited fraction or radical remained in the text, parse as Word Math
+    if (/\\(?:frac|sqrt)\b/.test(cleanToken)) {
+      try {
+        const mathObj = parseLatexToDocxMath(cleanToken);
+        elements.push(mathObj);
+        continue;
+      } catch {
+        // Fallback: strip backslashes so it is human-readable rather than code
+        cleanToken = cleanToken.replace(/\\([a-zA-Z]+)/g, "$1");
+      }
+    }
+
     elements.push(
       new TextRun({
-        text: token,
+        text: cleanToken,
         bold: parentFormatting.bold,
         italics: parentFormatting.italics,
         font: fontName,

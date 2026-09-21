@@ -74,10 +74,16 @@ export const scientificDocxSkill: Skill = {
     s = s.replace(/(\d+(?:\.\d+)?)\s*(?:\+\/-|±)\s*(\d+(?:\.\d+)?)/g, "$1 \\pm $2");
 
     // Scientific notation: 1.5 x 10^-4 or 1.5 * 10^4 or 1.5 × 10⁻⁴
-    s = s.replace(/(\d+(?:\.\d+)?)\s*(?:[xX*×]|\btimes\b)\s*10\^?\{?([+-]?\d+)\}?/g, "$1 \\times 10^{$2}");
+    s = s.replace(/(\d+(?:\.\d+)?)\s*(?:[xX*×]|\btimes\b)\s*10\^?\{?([+-]?\d+)\}?/g, (_m, v1, v2) => `$${v1} \\times 10^{${v2}}$`);
 
     // Scientific notation e-notation: 3.5e-4 or 2.1e+6 (when preceded by space or equals, not inside word)
-    s = s.replace(/(?<=[ =(:])(\d+(?:\.\d+)?)e([+-]?\d+)\b/gi, "$1 \\times 10^{$2}");
+    s = s.replace(/(?<=[ =(:])(\d+(?:\.\d+)?)e([+-]?\d+)\b/gi, (_m, v1, v2) => `$${v1} \\times 10^{${v2}}$`);
+
+    // Merge adjacent math and units: $3.0 \times 10^{8}$ m/s^2 -> $3.0 \times 10^{8}\text{ m/s}^2$
+    s = s.replace(/\$(.*?10\^?\{?[+-]?\d+\}?)\$\s*(?:m\/s\^2|m\/s2)\b/gi, "$$$1\\text{ m/s}^2$$");
+    s = s.replace(/\$(.*?10\^?\{?[+-]?\d+\}?)\$\s*(?:mol\/L)\b/gi, "$$$1\\text{ mol/L}$$");
+    s = s.replace(/\$(.*?10\^?\{?[+-]?\d+\}?)\$\s*(?:kg\/m\^3|kg\/m3)\b/gi, "$$$1\\text{ kg/m}^3$$");
+    s = s.replace(/\$(.*?10\^?\{?[+-]?\d+\}?)\$\s*(?:kJ\/mol)\b/gi, "$$$1\\text{ kJ/mol}$$");
 
     // Common chemical formulas when appearing as standalone words
     const commonChemicals: [RegExp, string][] = [
@@ -110,10 +116,20 @@ export const scientificDocxSkill: Skill = {
     }
 
     // Common SI units with exponents: m/s^2, kg/m^3, cm^3, m^2, etc. outside math
-    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(m\/s\^2|m\/s2)\b/gi, "$$1 \\text{ m/s}^2$$");
-    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(kg\/m\^3|kg\/m3)\b/gi, "$$1 \\text{ kg/m}^3$$");
-    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(mol\/L)\b/gi, "$$1 \\text{ mol/L}$$");
-    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(kJ\/mol)\b/gi, "$$1 \\text{ kJ/mol}$$");
+    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(?:m\/s\^2|m\/s2)\b/gi, (_m, val) => `$${val}\\text{ m/s}^2$`);
+    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(?:kg\/m\^3|kg\/m3)\b/gi, (_m, val) => `$${val}\\text{ kg/m}^3$`);
+    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(?:mol\/L)\b/gi, (_m, val) => `$${val}\\text{ mol/L}$`);
+    s = s.replace(/\b(\d+(?:\.\d+)?)\s*(?:kJ\/mol)\b/gi, (_m, val) => `$${val}\\text{ kJ/mol}$`);
+
+    // Handle exponential notation followed by units: 10^{8} m/s^2 or 10^{-4} mol/L
+    s = s.replace(/(10\^?\{?[+-]?\d+\}?)\s*(?:m\/s\^2|m\/s2)\b/gi, "$1\\text{ m/s}^2");
+    s = s.replace(/(10\^?\{?[+-]?\d+\}?)\s*(?:mol\/L)\b/gi, "$1\\text{ mol/L}");
+    s = s.replace(/(10\^?\{?[+-]?\d+\}?)\s*(?:kg\/m\^3|kg\/m3)\b/gi, "$1\\text{ kg/m}^3");
+
+    // Measurement uncertainty with units or values: e.g. 25.4 +/- 0.05 g -> $25.4 \pm 0.05\text{ g}$
+    s = s.replace(/(\d+(?:\.\d+)?)\s*\\pm\s*(\d+(?:\.\d+)?)\s*([a-zA-Zμ]+)\b/g, (_m, v1, v2, unit) => {
+      return `$${v1} \\pm ${v2}\\text{ ${unit}}$`;
+    });
 
     return s;
   },

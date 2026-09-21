@@ -166,49 +166,63 @@ Text:
           </button>
         </div>
 
-        {/* Tab Navigation */}
-        <div className="bg-slate-100/90 border-b border-slate-200 px-6 pt-2 flex items-center gap-2">
-          <button
-            type="button"
-            onClick={() => setActiveTab("skills")}
-            className={`px-3 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "skills"
-                ? "bg-white text-blue-700 border-blue-600 shadow-xs"
-                : "text-slate-600 border-transparent hover:text-slate-900"
-            }`}
-          >
-            <BookOpen className="w-3.5 h-3.5" />
-            Formatting Skills & Presets
-          </button>
+        {/* Professional Segmented Tab Navigation */}
+        <div className="bg-slate-50 border-b border-slate-200/90 px-4 sm:px-6 py-2.5">
+          <div className="bg-slate-200/70 p-1 rounded-xl flex items-center gap-1 overflow-x-auto shadow-inner">
+            <button
+              type="button"
+              onClick={() => setActiveTab("skills")}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === "skills"
+                  ? "bg-white text-blue-950 shadow-xs border border-slate-200/90"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <BookOpen className={`w-3.5 h-3.5 ${activeTab === "skills" ? "text-blue-600" : "text-slate-500"}`} />
+              <span>Formatting Skills & Presets</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                activeTab === "skills" ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-600"
+              }`}>
+                Presets
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("instructions")}
-            className={`px-3 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "instructions"
-                ? "bg-white text-blue-700 border-blue-600 shadow-xs"
-                : "text-slate-600 border-transparent hover:text-slate-900"
-            }`}
-          >
-            <Sliders className="w-3.5 h-3.5" />
-            Google AI Studio System Instruction
-            <span className="text-[10px] px-1.5 py-0.2 rounded-full bg-emerald-100 text-emerald-800 font-bold">
-              15 Rules
-            </span>
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("instructions")}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === "instructions"
+                  ? "bg-white text-indigo-950 shadow-xs border border-slate-200/90"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Sliders className={`w-3.5 h-3.5 ${activeTab === "instructions" ? "text-indigo-600" : "text-slate-500"}`} />
+              <span>AI Studio System Instruction</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                activeTab === "instructions" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
+              }`}>
+                15 Rules
+              </span>
+            </button>
 
-          <button
-            type="button"
-            onClick={() => setActiveTab("api")}
-            className={`px-3 py-2 text-xs font-semibold rounded-t-lg border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer ${
-              activeTab === "api"
-                ? "bg-white text-blue-700 border-blue-600 shadow-xs"
-                : "text-slate-600 border-transparent hover:text-slate-900"
-            }`}
-          >
-            <Terminal className="w-3.5 h-3.5" />
-            API & Python Snippet
-          </button>
+            <button
+              type="button"
+              onClick={() => setActiveTab("api")}
+              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
+                activeTab === "api"
+                  ? "bg-white text-amber-950 shadow-xs border border-slate-200/90"
+                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              }`}
+            >
+              <Terminal className={`w-3.5 h-3.5 ${activeTab === "api" ? "text-amber-600" : "text-slate-500"}`} />
+              <span>API & Code Snippets</span>
+              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                activeTab === "api" ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-600"
+              }`}>
+                Python / cURL
+              </span>
+            </button>
+          </div>
         </div>
 
         {/* Content Body */}

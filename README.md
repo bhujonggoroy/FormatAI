@@ -181,5 +181,27 @@ Returns the cleaned Markdown structure and Unicode math text without generating 
 
 ---
 
+## 🎓 Project Motto & Dedication
+
+> **"ChatGPT, Gemini, Claude, NotebookLM বা যেকোনো source থেকে পাওয়া AI-generated বা copy-pasted content-কে স্বয়ংক্রিয়ভাবে mathematical, scientific, textual এবং academic formatting সহ একটি clean, professional, editable DOCX document-এ রূপান্তর করা—শিক্ষার্থীদের জন্য সম্পূর্ণ বিনামূল্যে।"**
+
+*English Translation:*  
+*"To automatically transform AI-generated or copy-pasted content from ChatGPT, Gemini, Claude, NotebookLM or any source into a clean, professional, editable DOCX document with mathematical, scientific, textual, and academic formatting—completely free of charge for students."*
+
+---
+
+## 🏛️ Open Source Heritage & GitHub Attributions
+
+This project integrates algorithms, rules, and standards adapted from 4 remarkable open-source projects:
+
+1. **[docx-math-skill](https://github.com/Future-3526038670/docx-math-skill)** (MIT License) - Translates LaTeX math expressions into native Microsoft Word OMML (`<m:oMath>`) blocks, fraction bars, and radical roots.
+2. **[scientific-agent-skills](https://github.com/K-Dense-AI/scientific-agent-skills)** (MIT / Apache-2.0) - Standardizes physical units (SI symbols), chemical formulas, IUPAC notation, and scientific notations.
+3. **[pandoc-math-docx](https://github.com/Kantyc/pandoc-math-docx)** (MIT License) - Normalizes Pandoc markdown math delimiters (`$...$`, `$$...$$`) and multi-line equations.
+4. **[academic-manuscript-skill](https://github.com/kchemorion/academic-manuscript-skill)** (MIT License) - Structures academic abstracts, keywords, Booktabs tables, and IEEE/APA citations.
+
+All upstream licenses have been reviewed and are 100% compliant under permissive open-source terms. See [THIRD_PARTY_LICENSES.md](THIRD_PARTY_LICENSES.md) for detailed legal analysis.
+
+---
+
 ## License
-MIT License. Open source and free for students, researchers, and educators.
+Released under the [MIT License](LICENSE). 100% free and open-source for students, researchers, and educators.
