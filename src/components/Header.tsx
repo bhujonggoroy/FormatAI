@@ -1,113 +1,83 @@
-import React from "react";
-import { Sparkles, Settings2, FileDown, Loader2, Layers, Scale } from "lucide-react";
+import React, { useState } from "react";
+import { Menu, Pencil } from "lucide-react";
 import { FormatAILogo } from "./FormatAILogo";
 
 interface HeaderProps {
   docTitle: string;
   onDocTitleChange: (title: string) => void;
-  onOpenAISettingsModal: () => void;
-  onOpenSkillsModal?: () => void;
-  onOpenLicenseModal?: () => void;
-  activeSkillsCount?: number;
-  readyProvidersCount?: number;
-  isConverting: boolean;
-  onDownloadDocx: () => void;
-  canDownload: boolean;
+  onToggleSidebar: () => void;
 }
 
 export const Header: React.FC<HeaderProps> = ({
   docTitle,
   onDocTitleChange,
-  onOpenAISettingsModal,
-  onOpenSkillsModal,
-  onOpenLicenseModal,
-  activeSkillsCount = 4,
-  readyProvidersCount = 1,
-  isConverting,
-  onDownloadDocx,
-  canDownload,
+  onToggleSidebar,
 }) => {
+  const [isEditingTitle, setIsEditingTitle] = useState(false);
+
   return (
-    <header className="border-b border-slate-200/90 bg-white/95 backdrop-blur-sm sticky top-0 z-30 transition-all">
-      <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2.5 flex items-center justify-between gap-3">
-        {/* Left: Brand + Document Title */}
-        <div className="flex items-center gap-3 min-w-0 flex-1">
-          <div
-            className="flex items-center gap-2 shrink-0"
-            title="FormatAI — Paste. Format. Get Documents. (Official Academic Typesetter)"
+    <header className="border-b border-slate-200/90 bg-white/95 backdrop-blur-sm sticky top-0 z-30 transition-all w-full">
+      <div className="max-w-7xl mx-auto px-3 sm:px-5 py-2.5 flex items-center justify-between gap-3 sm:gap-4">
+        {/* Left: 3-Lines Bar (Hamburger) + Brand */}
+        <div className="flex items-center gap-2 sm:gap-3 shrink-0">
+          {/* 3-lines bar (hamburger icon) */}
+          <button
+            id="btn-hamburger-menu"
+            type="button"
+            onClick={onToggleSidebar}
+            className="p-1.5 -ml-1 rounded-lg text-slate-700 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer shrink-0"
+            title="Open Settings & Configuration Menu"
+            aria-label="Open menu"
           >
-            <FormatAILogo variant="header" size="md" showTagline={true} />
+            <Menu className="w-5 h-5" />
+          </button>
+
+          {/* Brand Logo & Name */}
+          <div className="flex items-center gap-2 sm:gap-2.5 shrink-0 select-none">
+            <FormatAILogo variant="icon" size="sm" />
+            <div
+              className="flex items-baseline tracking-normal leading-none"
+              style={{ fontFamily: "'Playfair Display', Georgia, serif" }}
+            >
+              <span className="font-bold text-[#362218] text-lg sm:text-[22px] tracking-tight">
+                Format
+              </span>
+              <span className="font-bold text-[#B85028] text-lg sm:text-[22px] ml-0.5 tracking-tight">
+                AI
+              </span>
+            </div>
           </div>
 
-          <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="hidden sm:inline-block text-slate-300">/</span>
+          {/* Divider */}
+          <span className="text-slate-300 text-lg font-light select-none px-0.5 shrink-0">
+            |
+          </span>
+        </div>
+
+        {/* Center/Right: Full space for clearly visible light file name box on all devices */}
+        <div className="flex items-center gap-2 min-w-0 flex-1">
+          <div className="relative flex items-center w-full group">
             <input
               id="header-doc-title"
               type="text"
               value={docTitle}
               onChange={(e) => onDocTitleChange(e.target.value)}
-              placeholder="Untitled Document"
-              className="text-sm font-semibold text-slate-800 bg-transparent hover:bg-slate-100/70 focus:bg-white focus:ring-1 focus:ring-amber-600/30 focus:border-slate-300 border border-transparent rounded-lg px-2.5 py-1 transition-all truncate w-full max-w-xs sm:max-w-sm"
+              onFocus={() => setIsEditingTitle(true)}
+              onBlur={() => setIsEditingTitle(false)}
+              placeholder="File Name"
+              className="text-xs sm:text-sm font-semibold text-slate-800 bg-slate-100/90 hover:bg-slate-100 focus:bg-white border border-slate-300/90 hover:border-slate-400 focus:border-blue-500 focus:ring-2 focus:ring-blue-500/20 rounded-lg px-3 py-1.5 transition-all truncate w-full pr-8 shadow-2xs placeholder:text-slate-500 placeholder:font-medium"
               title="Click to rename document"
             />
+            <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-2.5 pointer-events-none group-hover:text-slate-600 transition-colors shrink-0" />
           </div>
-        </div>
 
-        {/* Right: AI status & Primary Actions */}
-        <div className="flex items-center gap-2 shrink-0">
-          {/* License & 4 Repos Trigger */}
-          {onOpenLicenseModal && (
-            <button
-              id="btn-header-license"
-              type="button"
-              onClick={onOpenLicenseModal}
-              className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800 hover:text-emerald-950 bg-emerald-50/90 hover:bg-emerald-100/90 px-2.5 py-1.5 rounded-lg border border-emerald-200/90 transition-colors cursor-pointer"
-              title="View MIT License, 4 GitHub Repos & Student Mission"
-            >
-              <Scale className="w-3.5 h-3.5 text-emerald-600" />
-              <span className="hidden md:inline">License & 4 Repos</span>
-              <span className="md:hidden">MIT</span>
-            </button>
-          )}
-
-          {/* AI Settings Trigger */}
-          <button
-            id="btn-ai-settings"
-            onClick={onOpenAISettingsModal}
-            className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-slate-100/80 hover:bg-slate-200/80 px-2.5 py-1.5 rounded-lg border border-slate-200 transition-colors"
-            title="Configure AI Models, Fallback Order & API Keys"
-          >
-            <Sparkles className="w-3.5 h-3.5 text-blue-600" />
-            <span className="hidden md:inline">AI Settings</span>
-            <span className="inline-flex items-center justify-center w-4 h-4 text-[10px] font-bold rounded-full bg-blue-100 text-blue-800">
-              {readyProvidersCount}
-            </span>
-          </button>
-
-          {/* Primary Download Word Button */}
-          <button
-            id="btn-header-download"
-            onClick={onDownloadDocx}
-            disabled={!canDownload || isConverting}
-            className="inline-flex items-center justify-center gap-1.5 text-xs sm:text-sm font-semibold text-white px-3.5 sm:px-4 py-1.5 sm:py-2 rounded-lg transition-all shadow-xs disabled:opacity-50 cursor-pointer disabled:cursor-not-allowed"
-            style={{ backgroundColor: "#1A365D" }}
-            title="Download publication-ready Microsoft Word (.docx) document"
-          >
-            {isConverting ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-blue-200" />
-                <span className="hidden sm:inline">Generating Word...</span>
-                <span className="sm:hidden">Saving...</span>
-              </>
-            ) : (
-              <>
-                <FileDown className="w-4 h-4 text-blue-200" />
-                <span>Export Word (.docx)</span>
-              </>
-            )}
-          </button>
+          {/* Pill badge: 'File name' — hidden on mobile view as requested, visible on larger screens */}
+          <span className="hidden sm:inline-flex items-center px-2.5 py-1 text-[11px] font-semibold text-slate-600 bg-slate-200/80 border border-slate-300/80 rounded-full select-none shrink-0 whitespace-nowrap">
+            File name
+          </span>
         </div>
       </div>
     </header>
   );
 };
+

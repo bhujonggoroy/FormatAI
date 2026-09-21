@@ -4,7 +4,7 @@ import { CLOUDFLARE_DEFAULT_MODELS } from "./adapters/CloudflareAdapter.ts";
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = {
   mode: "automatic",
   activeProviderId: "gemini",
-  activeModel: "gemini-3.6-flash",
+  activeModel: "gemini-3.8-flash",
   enableFallback: true,
   freeOnlyMode: true, // Safe default: Free-only mode = ON
   billingMode: "free_only",
@@ -20,27 +20,27 @@ export function getInitialProviders(): ProviderConfig[] {
       enabled: true, // Primary provider enabled by default
       priority: 1,
       apiKeys: [],
-      selectedModel: "gemini-3.6-flash",
+      selectedModel: "gemini-3.8-flash",
       availableModels: [
         {
-          id: "gemini-3.6-flash",
-          name: "Gemini 3.6 Flash (Recommended)",
-          contextWindow: 1048576,
-          isFree: true,
-          capabilities: ["text", "math", "long_context", "json", "code"],
-          description: "High speed, large context, standard for LaTeX equations.",
-        },
-        {
           id: "gemini-3.8-flash",
-          name: "Gemini 3.8 Flash",
+          name: "Gemini 3.8 Flash (Fast & Recommended)",
           contextWindow: 1048576,
           isFree: true,
           capabilities: ["text", "math", "long_context", "json", "code"],
-          description: "General academic note structuring and proofreading.",
+          description: "High speed, large context, standard for LaTeX equations & academic notes.",
         },
         {
-          id: "gemini-3.5-flash-lite",
-          name: "Gemini 3.5 Flash Lite",
+          id: "gemini-flash-latest",
+          name: "Gemini Flash (Latest)",
+          contextWindow: 1048576,
+          isFree: true,
+          capabilities: ["text", "math", "long_context", "json", "code"],
+          description: "Latest stable Gemini Flash model alias.",
+        },
+        {
+          id: "gemini-3.1-flash-lite",
+          name: "Gemini 3.1 Flash Lite",
           contextWindow: 1048576,
           isFree: true,
           capabilities: ["text", "math", "long_context", "json", "code"],

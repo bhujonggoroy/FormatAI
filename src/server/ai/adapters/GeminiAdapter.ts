@@ -17,28 +17,28 @@ export class GeminiAdapter implements AIProviderAdapter {
 
   private defaultModels: ModelInfo[] = [
     {
-      id: "gemini-3.6-flash",
-      name: "Gemini 3.6 Flash (Fast & Recommended)",
-      contextWindow: 1048576,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Next-gen multimodal workhorse model, highly optimized for math, LaTeX & reasoning.",
-    },
-    {
       id: "gemini-3.8-flash",
-      name: "Gemini 3.8 Flash (General Tasks)",
+      name: "Gemini 3.8 Flash (Fast & Recommended)",
       contextWindow: 1048576,
       isFree: true,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Balanced reasoning and high speed for academic document proofing.",
+      description: "Standard model for math, LaTeX, academic notes & reasoning.",
     },
     {
-      id: "gemini-3.5-flash-lite",
-      name: "Gemini 3.5 Flash Lite",
+      id: "gemini-flash-latest",
+      name: "Gemini Flash (Latest)",
       contextWindow: 1048576,
       isFree: true,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Ultra-fast generation with light resource footprint.",
+      description: "Latest stable Gemini Flash model alias.",
+    },
+    {
+      id: "gemini-3.1-flash-lite",
+      name: "Gemini 3.1 Flash Lite",
+      contextWindow: 1048576,
+      isFree: true,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      description: "Ultra-fast lightweight generation.",
     },
     {
       id: "gemini-3.1-pro-preview",
@@ -170,14 +170,16 @@ export class GeminiAdapter implements AIProviderAdapter {
       config.systemInstruction = request.systemPrompt;
     }
 
-    let selectedModel = model || "gemini-3.6-flash";
-    // Normalize deprecated models automatically to prevent 404s
+    let selectedModel = model || "gemini-3.8-flash";
+    // Normalize deprecated or unavailable models automatically to valid models
     if (
+      selectedModel === "gemini-3.6-flash" ||
+      selectedModel === "gemini-3.5-flash-lite" ||
       selectedModel === "gemini-2.5-flash" ||
       selectedModel === "gemini-2.0-flash" ||
       selectedModel === "gemini-1.5-flash"
     ) {
-      selectedModel = "gemini-3.6-flash";
+      selectedModel = "gemini-3.8-flash";
     }
 
     let response: any;
@@ -188,13 +190,13 @@ export class GeminiAdapter implements AIProviderAdapter {
         config,
       });
     } catch (err: any) {
-      // If the selected model returns a 404/not available error, fallback to gemini-3.6-flash or gemini-3.8-flash
+      // If the selected model returns a 404/not available error, fallback to gemini-flash-latest or gemini-3.8-flash
       if (
         (err?.status === 404 || String(err?.message || "").includes("no longer available") || String(err?.message || "").includes("NOT_FOUND")) &&
-        selectedModel !== "gemini-3.6-flash"
+        selectedModel !== "gemini-flash-latest"
       ) {
         response = await ai.models.generateContent({
-          model: "gemini-3.6-flash",
+          model: "gemini-flash-latest",
           contents: request.prompt,
           config,
         });
@@ -221,11 +223,13 @@ export class GeminiAdapter implements AIProviderAdapter {
   ): Promise<TestResult> {
     const startTime = Date.now();
     const targetModel =
+      model === "gemini-3.6-flash" ||
+      model === "gemini-3.5-flash-lite" ||
       model === "gemini-2.5-flash" ||
       model === "gemini-2.0-flash" ||
       model === "gemini-1.5-flash" ||
       !model
-        ? "gemini-3.6-flash"
+        ? "gemini-3.8-flash"
         : model;
 
     try {

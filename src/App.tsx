@@ -4,6 +4,8 @@ import { FormattedPreview } from "./components/FormattedPreview";
 import { AISettingsModal } from "./components/AISettingsModal";
 import { SystematicSkillsModal } from "./components/SystematicSkillsModal";
 import { SkillsManagerModal, SkillsModalTab } from "./components/SkillsManagerModal";
+import { SidebarSettingsDrawer } from "./components/SidebarSettingsDrawer";
+import { ToolbarGrid } from "./components/ToolbarGrid";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
@@ -18,19 +20,12 @@ import {
   Loader2,
   Eye,
   Columns,
-  Type,
-  Palette,
-  Sigma,
-  ChevronDown,
   X,
-  GraduationCap,
-  BookOpen,
-  Layers,
 } from "lucide-react";
 
 export default function App() {
   const [inputText, setInputText] = useState<string>(SAMPLE_NOTES[0].text);
-  const [docTitle, setDocTitle] = useState<string>("STT251: Sampling Distributions");
+  const [docTitle, setDocTitle] = useState<string>("STT251: Statistics");
   const [fontFamily, setFontFamily] = useState<string>("Times New Roman");
   const [accentColor, setAccentColor] = useState<string>("#1A365D");
   const [equationFormat, setEquationFormat] = useState<"native" | "latex" | "unicode">("native");
@@ -42,13 +37,13 @@ export default function App() {
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
 
   const [cleanedMarkdown, setCleanedMarkdown] = useState<string | null>(null);
-  const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">("split");
+  const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">("editor");
+  const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isAISettingsModalOpen, setIsAISettingsModalOpen] = useState<boolean>(false);
   const [isSkillModalOpen, setIsSkillModalOpen] = useState<boolean>(false);
   const [isSkillsManagerModalOpen, setIsSkillsManagerModalOpen] = useState<boolean>(false);
   const [skillsModalTab, setSkillsModalTab] = useState<SkillsModalTab>("skills");
   const [activeSkillsCount, setActiveSkillsCount] = useState<number>(() => skillRegistry.getEnabledSkillIds().length);
-  const [isSampleDropdownOpen, setIsSampleDropdownOpen] = useState<boolean>(false);
 
   // Multi-Provider AI telemetry state
   const [aiHealthInfo, setAiHealthInfo] = useState<{
@@ -80,8 +75,7 @@ export default function App() {
     fetchAIHealth();
   }, []);
 
-  // Compute live markdown instantly: if Gemini AI has polished the text, use it;
-  // otherwise, run instant client-side normalizer with modular skills pipeline for zero-latency live preview!
+  // Compute live markdown instantly
   const effectiveMarkdown = useMemo(() => {
     if (cleanedMarkdown) return cleanedMarkdown;
     return cleanClientSideNotebookLM(inputText, formatMode, skillRegistry.getEnabledSkillIds());
@@ -94,7 +88,6 @@ export default function App() {
     setCleanedMarkdown(null);
     setErrorMessage(null);
     setSuccessMessage(null);
-    setIsSampleDropdownOpen(false);
   };
 
   // Paste from clipboard
@@ -180,7 +173,7 @@ export default function App() {
         body: JSON.stringify({
           text: inputText,
           cleanedMarkdown: effectiveMarkdown,
-          title: docTitle || "NotebookLM Notes",
+          title: docTitle.trim() || "File Name",
           font: fontFamily,
           accent: accentColor,
           equationFormat,
@@ -205,7 +198,7 @@ export default function App() {
       const blob = await response.blob();
 
       const safeFilename =
-        (docTitle || "notebooklm_notes")
+        (docTitle.trim() || "file_name")
           .toLowerCase()
           .replace(/[^a-z0-9_\-]/g, "_") + ".docx";
 
@@ -247,245 +240,102 @@ export default function App() {
   const wordCount = inputText.trim() ? inputText.trim().split(/\s+/).length : 0;
   const lineCount = inputText ? inputText.split("\n").length : 0;
 
-  const accentColorOptions = [
-    { label: "Academic Navy", hex: "#1A365D" },
-    { label: "Slate Charcoal", hex: "#2D3748" },
-    { label: "Forest Emerald", hex: "#22543D" },
-    { label: "Imperial Plum", hex: "#44337A" },
-  ];
-
   return (
-    <div className="min-h-screen bg-slate-50 text-slate-800 flex flex-col antialiased">
-      {/* Seamless Standard Header */}
+    <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col antialiased w-full overflow-x-hidden">
+      {/* Precision Top Header */}
       <Header
         docTitle={docTitle}
         onDocTitleChange={setDocTitle}
-        onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
-        onOpenSkillsModal={() => {
-          setSkillsModalTab("skills");
-          setIsSkillsManagerModalOpen(true);
-        }}
-        onOpenLicenseModal={() => {
-          setSkillsModalTab("license");
-          setIsSkillsManagerModalOpen(true);
-        }}
-        activeSkillsCount={activeSkillsCount}
-        readyProvidersCount={aiHealthInfo?.readyCount || 1}
-        isConverting={isConverting}
-        onDownloadDocx={handleConvertToDocx}
-        canDownload={Boolean(inputText.trim())}
+        onToggleSidebar={() => setIsSidebarOpen(true)}
       />
 
-      {/* Modern Standard Formatting Toolbar */}
-      <div className="bg-white border-b border-slate-200 sticky top-[57px] z-20 shadow-2xs">
-        <div className="max-w-7xl mx-auto px-4 sm:px-6 py-2 flex flex-wrap items-center justify-between gap-3 text-xs">
-          {/* Left Toolbar Controls */}
-          <div className="flex items-center flex-wrap gap-2.5 sm:gap-3">
-            {/* Font Selector */}
-            <div className="flex items-center gap-1.5 bg-slate-100/80 rounded-lg px-2 py-1 border border-slate-200">
-              <Type className="w-3.5 h-3.5 text-slate-500" />
-              <select
-                id="font-selector"
-                value={fontFamily}
-                onChange={(e) => setFontFamily(e.target.value)}
-                className="bg-transparent text-xs font-semibold text-slate-800 focus:outline-none cursor-pointer"
-                title="Document Typography"
-              >
-                <option value="Times New Roman">Times New Roman (Academic)</option>
-                <option value="Georgia">Georgia (Serif)</option>
-                <option value="Calibri">Calibri (Office)</option>
-                <option value="Arial">Arial (Modern)</option>
-                <option value="Aptos">Aptos (Modern)</option>
-              </select>
-            </div>
+      {/* Main Container Area */}
+      <div className="max-w-7xl w-full mx-auto px-3 sm:px-5 pt-3 sm:pt-5 pb-2 sm:pb-3 flex flex-col gap-3 sm:gap-4">
+        {/* Interactive 7-Tile Toolbar Card matching Mockup */}
+        <ToolbarGrid
+          fontFamily={fontFamily}
+          onFontFamilyChange={setFontFamily}
+          accentColor={accentColor}
+          onAccentColorChange={setAccentColor}
+          equationFormat={equationFormat}
+          onEquationFormatChange={setEquationFormat}
+          onInsertSymbol={(sym) => {
+            setInputText((prev) => prev + sym);
+          }}
+          isAiPolishing={isConverting}
+          onTriggerAiPolish={handlePreviewClean}
+          aiProviderName={aiHealthInfo?.providersSummary?.[0]}
+          onDownloadDocx={handleConvertToDocx}
+          canDownload={Boolean(inputText.trim())}
+          formatMode={formatMode}
+          onFormatModeChange={(mode) => {
+            setFormatMode(mode);
+            setCleanedMarkdown(null);
+          }}
+          activeSkillsCount={activeSkillsCount}
+          onOpenSkillsManager={() => {
+            setSkillsModalTab("skills");
+            setIsSkillsManagerModalOpen(true);
+          }}
+          onSkillsChanged={() => {
+            setActiveSkillsCount(skillRegistry.getEnabledSkillIds().length);
+            setCleanedMarkdown(null);
+          }}
+          onSelectSample={handleLoadSample}
+        />
 
-            {/* Accent Color Swatches */}
-            <div className="flex items-center gap-1 bg-slate-100/80 rounded-lg px-2 py-1 border border-slate-200">
-              <Palette className="w-3.5 h-3.5 text-slate-500 mr-1" />
-              {accentColorOptions.map((c) => (
-                <button
-                  key={c.hex}
-                  type="button"
-                  onClick={() => setAccentColor(c.hex)}
-                  className={`w-4 h-4 rounded-full transition-transform ${
-                    accentColor === c.hex
-                      ? "ring-2 ring-blue-500 ring-offset-1 scale-110"
-                      : "opacity-70 hover:opacity-100"
-                  }`}
-                  style={{ backgroundColor: c.hex }}
-                  title={c.label}
-                />
-              ))}
-            </div>
+        {/* Segmented View Switcher Bar (Split | Editor | Preview) matching Mockup */}
+        <div className="w-full bg-white rounded-2xl border border-slate-200/90 p-1 sm:p-1.5 shadow-2xs flex items-center justify-between text-xs font-semibold text-slate-700">
+          <button
+            type="button"
+            id="view-tab-split"
+            onClick={() => setViewLayout("split")}
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+              viewLayout === "split"
+                ? "bg-[#EFF6FF] text-[#1D4ED8] shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Columns className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 shrink-0" />
+            <span className="text-xs sm:text-sm">Split</span>
+          </button>
 
-            {/* Math Notation Toggle */}
-            <div className="flex items-center bg-slate-100/80 p-0.5 rounded-lg border border-slate-200">
-              <button
-                type="button"
-                onClick={() => setEquationFormat("native")}
-                className={`px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-                  equationFormat === "native"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="True Word Office Math equations with stacked fractions and radicals"
-              >
-                Word Math (OMML)
-              </button>
-              <button
-                type="button"
-                onClick={() => setEquationFormat("latex")}
-                className={`px-2 py-1 rounded-md text-[11px] font-medium transition-all ${
-                  equationFormat === "latex"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Preserves standard academic LaTeX math notation ($...$)"
-              >
-                LaTeX ($...$)
-              </button>
-            </div>
+          <div className="w-px h-4 sm:h-5 bg-slate-200/90 shrink-0" />
 
-            {/* Systematic Skill Selector */}
-            <div className="flex items-center gap-1.5 bg-blue-50/90 rounded-lg px-2.5 py-1 border border-blue-200/90 shadow-2xs">
-              <GraduationCap className="w-3.5 h-3.5 text-blue-700" />
-              <select
-                id="format-preset-selector"
-                value={formatMode}
-                onChange={(e) => {
-                  setFormatMode(e.target.value as any);
-                  setCleanedMarkdown(null);
-                }}
-                className="bg-transparent text-xs font-semibold text-blue-950 focus:outline-none cursor-pointer"
-                title="Systematic Formatting Skill Preset"
-              >
-                <option value="study_guide">🎓 Study Guide & Formulas (Pages 5–11)</option>
-                <option value="exam_bank">📝 Exam Question Bank</option>
-                <option value="auto">⚡ Auto-Detect Structure</option>
-              </select>
-            </div>
+          <button
+            type="button"
+            id="view-tab-editor"
+            onClick={() => setViewLayout("editor")}
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+              viewLayout === "editor"
+                ? "bg-[#EFF6FF] text-[#1D4ED8] shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700 shrink-0" />
+            <span className="text-xs sm:text-sm">Editor</span>
+          </button>
 
-            {/* Unified Academic Skills & Standards Hub Button */}
-            <button
-              id="toolbar-btn-modular-skills"
-              type="button"
-              onClick={() => setIsSkillsManagerModalOpen(true)}
-              className="inline-flex items-center gap-1.5 bg-gradient-to-r from-indigo-50 to-purple-50 hover:from-indigo-100 hover:to-purple-100 text-indigo-950 px-3 py-1 rounded-lg border border-indigo-200/90 text-xs font-semibold transition-all cursor-pointer shadow-2xs"
-              title="Open Academic Skills & Formatting Center (Modular Skills, 4-Tier Pipeline, Interactive Tester, 15 Standards, AI Studio Prompt)"
-            >
-              <Layers className="w-3.5 h-3.5 text-indigo-600" />
-              <span>Academic Skills</span>
-              <span className="px-1.5 py-0.2 rounded-full bg-indigo-200/90 text-indigo-900 text-[10px] font-bold">
-                {activeSkillsCount} Active
-              </span>
-            </button>
+          <div className="w-px h-4 sm:h-5 bg-slate-200/90 shrink-0" />
 
-            <div className="hidden md:block w-px h-5 bg-slate-200" />
-
-            {/* Quick Sample Notes Dropdown */}
-            <div className="relative">
-              <button
-                type="button"
-                onClick={() => setIsSampleDropdownOpen(!isSampleDropdownOpen)}
-                className="inline-flex items-center gap-1 bg-slate-100/80 hover:bg-slate-200/80 text-slate-700 px-2.5 py-1 rounded-lg border border-slate-200 font-medium transition-colors cursor-pointer"
-                title="Try with sample NotebookLM notes"
-              >
-                <span>Samples</span>
-                <ChevronDown className="w-3 h-3 text-slate-500" />
-              </button>
-
-              {isSampleDropdownOpen && (
-                <>
-                  <div
-                    className="fixed inset-0 z-40"
-                    onClick={() => setIsSampleDropdownOpen(false)}
-                  />
-                  <div className="absolute left-0 mt-1.5 w-64 bg-white rounded-xl shadow-lg border border-slate-200 py-1.5 z-50 animate-in fade-in zoom-in-95">
-                    <div className="px-3 py-1 text-[10px] font-bold uppercase tracking-wider text-slate-400">
-                      Sample NotebookLM Notes
-                    </div>
-                    {SAMPLE_NOTES.map((sample) => (
-                      <button
-                        key={sample.id}
-                        onClick={() => handleLoadSample(sample)}
-                        className="w-full text-left px-3 py-2 text-xs hover:bg-slate-50 transition-colors flex flex-col cursor-pointer"
-                      >
-                        <span className="font-semibold text-slate-800 truncate">
-                          {sample.title}
-                        </span>
-                        <span className="text-[10px] text-slate-400">
-                          {sample.category}
-                        </span>
-                      </button>
-                    ))}
-                  </div>
-                </>
-              )}
-            </div>
-          </div>
-
-          {/* Right Toolbar Controls: Layout Switcher & AI Polish */}
-          <div className="flex items-center gap-2.5">
-            {/* View Layout Mode Tab Bar */}
-            <div className="flex items-center bg-slate-100/90 p-0.5 rounded-lg border border-slate-200 shadow-2xs">
-              <button
-                type="button"
-                onClick={() => setViewLayout("split")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
-                  viewLayout === "split"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Side-by-Side Split View (Editor + Word Preview)"
-              >
-                <Columns className="w-3 h-3 text-blue-600" />
-                <span className="hidden sm:inline">Split</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewLayout("editor")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
-                  viewLayout === "editor"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Full-Width Raw Notes Editor"
-              >
-                <FileText className="w-3 h-3 text-slate-600" />
-                <span className="hidden sm:inline">Editor</span>
-              </button>
-              <button
-                type="button"
-                onClick={() => setViewLayout("preview")}
-                className={`flex items-center gap-1 px-2.5 py-1 rounded-md text-[11px] font-medium transition-all cursor-pointer ${
-                  viewLayout === "preview"
-                    ? "bg-white text-slate-900 shadow-2xs font-semibold"
-                    : "text-slate-600 hover:text-slate-900"
-                }`}
-                title="Full-Width Word Document Sheet Preview"
-              >
-                <Eye className="w-3 h-3 text-indigo-600" />
-                <span className="hidden sm:inline">Preview</span>
-              </button>
-            </div>
-
-            {/* AI Polish Action Button */}
-            <button
-              id="btn-ai-polish"
-              onClick={handlePreviewClean}
-              disabled={isConverting || !inputText.trim()}
-              className="inline-flex items-center gap-1.5 px-3 py-1 rounded-lg bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200/80 font-semibold transition-colors disabled:opacity-50 cursor-pointer shadow-2xs"
-              title="Enhance notes and normalize equations with Multi-Provider AI"
-            >
-              <Sparkles className={`w-3.5 h-3.5 text-blue-600 ${isConverting ? "animate-spin" : ""}`} />
-              <span>AI Polish</span>
-            </button>
-          </div>
+          <button
+            type="button"
+            id="view-tab-preview"
+            onClick={() => setViewLayout("preview")}
+            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+              viewLayout === "preview"
+                ? "bg-[#EFF6FF] text-[#1D4ED8] shadow-2xs font-bold"
+                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+            }`}
+          >
+            <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700 shrink-0" />
+            <span className="text-xs sm:text-sm">Preview</span>
+          </button>
         </div>
       </div>
 
       {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto p-4 sm:p-6 flex flex-col gap-4">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 pb-6 flex flex-col gap-3 sm:gap-4">
         {/* Progress feedback bar */}
         {isConverting && (
           <div className="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn shadow-2xs">
@@ -529,11 +379,11 @@ export default function App() {
           </div>
         )}
 
-        {/* WORKSPACE VIEW: SPLIT (Standard default) */}
+        {/* WORKSPACE VIEW: SPLIT */}
         {viewLayout === "split" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-5 items-start flex-1">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start flex-1">
             {/* Left Pane: NotebookLM Editor */}
-            <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col h-[680px] overflow-hidden">
+            <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col h-[480px] sm:h-[580px] lg:h-[680px] overflow-hidden">
               {/* Editor Header Bar */}
               <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
@@ -543,7 +393,7 @@ export default function App() {
                 <div className="flex items-center gap-1">
                   <button
                     onClick={handlePasteClipboard}
-                    className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2 py-1 rounded-md border border-slate-200 transition-colors"
+                    className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
                     title="Paste from clipboard"
                   >
                     <Clipboard className="w-3 h-3 text-slate-500" />
@@ -556,7 +406,7 @@ export default function App() {
                       setErrorMessage(null);
                       setSuccessMessage(null);
                     }}
-                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 px-2 py-1 rounded-md border border-slate-200 transition-colors"
+                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 px-2 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
                     title="Clear input"
                   >
                     <Eraser className="w-3 h-3" />
@@ -589,7 +439,7 @@ export default function App() {
             </div>
 
             {/* Right Pane: Live Document Sheet */}
-            <div className="h-[680px] sticky top-[108px]">
+            <div className="h-[520px] sm:h-[620px] lg:h-[680px] lg:sticky lg:top-[108px]">
               <FormattedPreview
                 markdown={effectiveMarkdown}
                 docTitle={docTitle}
@@ -616,7 +466,7 @@ export default function App() {
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePasteClipboard}
-                  className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
                 >
                   <Clipboard className="w-3 h-3 text-slate-500" />
                   <span>Paste</span>
@@ -626,7 +476,7 @@ export default function App() {
                     setInputText("");
                     setCleanedMarkdown(null);
                   }}
-                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 px-2.5 py-1 rounded-md border border-slate-200 transition-colors"
+                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 px-2.5 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
                 >
                   <Eraser className="w-3 h-3" />
                   <span>Clear</span>
@@ -649,7 +499,7 @@ export default function App() {
               <span>{charCount.toLocaleString()} chars • {wordCount.toLocaleString()} words • {lineCount} lines</span>
               <button
                 onClick={() => setViewLayout("split")}
-                className="text-blue-700 font-semibold hover:underline"
+                className="text-blue-700 font-semibold hover:underline cursor-pointer"
               >
                 Switch to Split View →
               </button>
@@ -657,7 +507,7 @@ export default function App() {
           </div>
         )}
 
-        {/* WORKSPACE VIEW: DOCUMENT ONLY */}
+        {/* WORKSPACE VIEW: DOCUMENT PREVIEW ONLY */}
         {viewLayout === "preview" && (
           <div className="flex flex-col gap-4">
             <FormattedPreview
@@ -713,6 +563,44 @@ export default function App() {
           </div>
         </div>
       </footer>
+
+      {/* 3-Lines (Hamburger) Drawer holding all configuration settings */}
+      <SidebarSettingsDrawer
+        isOpen={isSidebarOpen}
+        onClose={() => setIsSidebarOpen(false)}
+        readyProvidersCount={aiHealthInfo?.readyCount || 1}
+        aiProvidersSummary={aiHealthInfo?.providersSummary || []}
+        aiMode={aiHealthInfo?.mode || "failover"}
+        isFreeOnly={aiHealthInfo?.freeOnly || false}
+        onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
+        activeSkillsCount={activeSkillsCount}
+        onOpenSkillsModal={() => {
+          setSkillsModalTab("skills");
+          setIsSkillsManagerModalOpen(true);
+        }}
+        onOpenLicenseModal={() => {
+          setSkillsModalTab("license");
+          setIsSkillsManagerModalOpen(true);
+        }}
+        fontFamily={fontFamily}
+        onFontFamilyChange={setFontFamily}
+        accentColor={accentColor}
+        onAccentColorChange={setAccentColor}
+        equationFormat={equationFormat}
+        onEquationFormatChange={setEquationFormat}
+        formatMode={formatMode}
+        onFormatModeChange={(mode) => {
+          setFormatMode(mode);
+          setCleanedMarkdown(null);
+        }}
+        onPasteClipboard={handlePasteClipboard}
+        onClearText={() => {
+          setInputText("");
+          setCleanedMarkdown(null);
+        }}
+        charCount={charCount}
+        wordCount={wordCount}
+      />
 
       {/* Multi-Provider AI Settings Modal */}
       <AISettingsModal

@@ -288,6 +288,15 @@ export class AIRequestManager {
 
       if (parsed.config) {
         this.config = { ...this.config, ...parsed.config };
+        if (
+          this.config.activeModel === "gemini-3.6-flash" ||
+          this.config.activeModel === "gemini-3.5-flash-lite" ||
+          this.config.activeModel === "gemini-2.5-flash" ||
+          this.config.activeModel === "gemini-2.0-flash" ||
+          this.config.activeModel === "gemini-1.5-flash"
+        ) {
+          this.config.activeModel = "gemini-3.8-flash";
+        }
       }
 
       if (parsed.providers) {
@@ -296,7 +305,19 @@ export class AIRequestManager {
           if (p) {
             if (savedP.enabled !== undefined) p.enabled = savedP.enabled;
             if (savedP.priority !== undefined) p.priority = savedP.priority;
-            if (savedP.selectedModel !== undefined) p.selectedModel = savedP.selectedModel;
+            if (savedP.selectedModel !== undefined) {
+              let sm = savedP.selectedModel;
+              if (
+                sm === "gemini-3.6-flash" ||
+                sm === "gemini-3.5-flash-lite" ||
+                sm === "gemini-2.5-flash" ||
+                sm === "gemini-2.0-flash" ||
+                sm === "gemini-1.5-flash"
+              ) {
+                sm = "gemini-3.8-flash";
+              }
+              p.selectedModel = sm;
+            }
             if (savedP.selectedKeyId !== undefined) p.selectedKeyId = savedP.selectedKeyId;
             if (savedP.customEndpoint !== undefined) p.customEndpoint = savedP.customEndpoint;
             if (savedP.accountId !== undefined) p.accountId = savedP.accountId;
