@@ -1,5 +1,6 @@
 import React from "react";
-import { FileText, Sparkles, Settings2, FileDown, Loader2, Layers, Scale } from "lucide-react";
+import { Sparkles, Settings2, FileDown, Loader2, Layers, Scale } from "lucide-react";
+import { FormatAILogo } from "./FormatAILogo";
 
 interface HeaderProps {
   docTitle: string;
@@ -32,17 +33,13 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Left: Brand + Document Title */}
         <div className="flex items-center gap-3 min-w-0 flex-1">
           <div
-            className="w-9 h-9 rounded-xl flex items-center justify-center shrink-0 shadow-xs"
-            style={{ backgroundColor: "#1A365D" }}
-            title="NotebookLM to Word (.docx) Academic Converter"
+            className="flex items-center gap-2 shrink-0"
+            title="FormatAI — Paste. Format. Get Documents. (Official Academic Typesetter)"
           >
-            <FileText className="w-5 h-5 text-blue-100" />
+            <FormatAILogo variant="header" size="md" showTagline={true} />
           </div>
 
           <div className="flex items-center gap-2 min-w-0 flex-1">
-            <span className="hidden sm:inline-block font-bold text-sm text-slate-900 shrink-0">
-              NotebookLM to Word
-            </span>
             <span className="hidden sm:inline-block text-slate-300">/</span>
             <input
               id="header-doc-title"
@@ -50,7 +47,7 @@ export const Header: React.FC<HeaderProps> = ({
               value={docTitle}
               onChange={(e) => onDocTitleChange(e.target.value)}
               placeholder="Untitled Document"
-              className="text-sm font-semibold text-slate-800 bg-transparent hover:bg-slate-100/70 focus:bg-white focus:ring-1 focus:ring-blue-500/30 focus:border-slate-300 border border-transparent rounded-lg px-2.5 py-1 transition-all truncate w-full max-w-sm sm:max-w-md"
+              className="text-sm font-semibold text-slate-800 bg-transparent hover:bg-slate-100/70 focus:bg-white focus:ring-1 focus:ring-amber-600/30 focus:border-slate-300 border border-transparent rounded-lg px-2.5 py-1 transition-all truncate w-full max-w-xs sm:max-w-sm"
               title="Click to rename document"
             />
           </div>

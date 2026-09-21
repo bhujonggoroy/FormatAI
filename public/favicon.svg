@@ -1,0 +1,52 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 100 100" fill="none">
+  <defs>
+    <filter id="doc-shadow" x="-10%" y="-10%" width="130%" height="130%" filterUnits="userSpaceOnUse">
+      <feDropShadow dx="0" dy="2" stdDeviation="2" flood-color="#000" flood-opacity="0.15" />
+    </filter>
+    <linearGradient id="terracotta-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#CF5D2A" />
+      <stop offset="100%" stop-color="#A84318" />
+    </linearGradient>
+    <linearGradient id="cream-grad" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#FAF4EE" />
+      <stop offset="100%" stop-color="#EDE2D4" />
+    </linearGradient>
+  </defs>
+
+  <!-- Back Sheet (Terracotta / Burnt Orange) -->
+  <rect x="18" y="24" width="50" height="60" rx="12" fill="url(#terracotta-grad)" />
+
+  <!-- Front Sheet (Cream Parchment) with folded corner -->
+  <g filter="url(#doc-shadow)">
+    <!-- Base body without top-right corner -->
+    <path d="M 32 16
+             L 60 16
+             L 78 34
+             L 78 72
+             A 12 12 0 0 1 66 84
+             L 44 84
+             A 12 12 0 0 1 32 72
+             Z"
+          fill="url(#cream-grad)" />
+
+    <!-- Folded Flap / Dog-ear -->
+    <path d="M 60 16
+             L 60 30
+             A 4 4 0 0 0 64 34
+             L 78 34
+             Z"
+          fill="#8F3512" opacity="0.25" />
+    <path d="M 60 16
+             C 61 24, 66 29, 78 34
+             C 68 34, 62 30, 60 16
+             Z"
+          fill="url(#terracotta-grad)" />
+    <!-- Curl flap surface -->
+    <path d="M 60 16
+             Q 61 31 78 34
+             L 64 34
+             A 4 4 0 0 1 60 30
+             Z"
+          fill="#C45525" />
+  </g>
+</svg>
