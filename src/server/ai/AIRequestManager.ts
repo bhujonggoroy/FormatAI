@@ -312,15 +312,21 @@ export class AIRequestManager {
                   existingKey.enabled = Boolean(sKey.enabled);
                   if (sKey.name) existingKey.name = sKey.name;
                   if (sKey.status) existingKey.status = sKey.status;
-                } else if (sKey.key) {
-                  p.apiKeys.push({
-                    id: sKey.id || `${id}-key-${Date.now()}`,
-                    name: sKey.name || `Key ${p.apiKeys.length + 1}`,
-                    key: sKey.key,
-                    enabled: Boolean(sKey.enabled),
-                    envVarName: sKey.envVarName,
-                    status: sKey.status || (sKey.enabled ? "active" : "disabled"),
-                  });
+                  if (!existingKey.key && sKey.envVarName) {
+                    existingKey.key = process.env[sKey.envVarName] || "";
+                  }
+                } else if (sKey.key || sKey.envVarName) {
+                  const resolvedKey = sKey.key || (sKey.envVarName ? process.env[sKey.envVarName] || "" : "");
+                  if (resolvedKey) {
+                    p.apiKeys.push({
+                      id: sKey.id || `${id}-key-${Date.now()}`,
+                      name: sKey.name || `Key ${p.apiKeys.length + 1}`,
+                      key: resolvedKey,
+                      enabled: Boolean(sKey.enabled),
+                      envVarName: sKey.envVarName,
+                      status: sKey.status || (sKey.enabled ? "active" : "disabled"),
+                    });
+                  }
                 }
               }
             }
@@ -958,7 +964,12 @@ export class AIRequestManager {
       targetKeyItem = p.apiKeys.find((k) => k.enabled) || p.apiKeys[0];
     }
 
-    if (!targetKeyItem || !targetKeyItem.key) {
+    let keyToTest = targetKeyItem?.key || "";
+    if (!keyToTest && targetKeyItem?.envVarName) {
+      keyToTest = process.env[targetKeyItem.envVarName] || "";
+    }
+
+    if (!targetKeyItem || !keyToTest) {
       return {
         success: false,
         providerId,
@@ -972,7 +983,7 @@ export class AIRequestManager {
     }
 
     const testRes = await adapter.testConnection(
-      targetKeyItem.key,
+      keyToTest,
       model || p.selectedModel,
       p.customEndpoint,
       p.timeoutMs || 15000

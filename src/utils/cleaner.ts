@@ -4,7 +4,7 @@
  * university study guides, formula sheets, and exam question banks.
  */
 
-import { executeSkillPipeline } from "../skills/pipeline";
+import { executeSkillPipeline } from "../skills/pipeline.ts";
 
 export type FormatMode = "auto" | "study_guide" | "exam_bank";
 

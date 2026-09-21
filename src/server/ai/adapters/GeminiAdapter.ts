@@ -17,32 +17,32 @@ export class GeminiAdapter implements AIProviderAdapter {
 
   private defaultModels: ModelInfo[] = [
     {
-      id: "gemini-2.5-flash",
-      name: "Gemini 2.5 Flash (Fast & Recommended)",
+      id: "gemini-3.6-flash",
+      name: "Gemini 3.6 Flash (Fast & Recommended)",
       contextWindow: 1048576,
       isFree: true,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Next-gen multimodal workhorse model, highly optimized for math & reasoning.",
+      description: "Next-gen multimodal workhorse model, highly optimized for math, LaTeX & reasoning.",
     },
     {
-      id: "gemini-2.0-flash",
-      name: "Gemini 2.0 Flash",
+      id: "gemini-3.8-flash",
+      name: "Gemini 3.8 Flash (General Tasks)",
       contextWindow: 1048576,
       isFree: true,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Ultra-fast generation with high accuracy on technical formatting.",
+      description: "Balanced reasoning and high speed for academic document proofing.",
     },
     {
-      id: "gemini-1.5-flash",
-      name: "Gemini 1.5 Flash",
+      id: "gemini-3.5-flash-lite",
+      name: "Gemini 3.5 Flash Lite",
       contextWindow: 1048576,
       isFree: true,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Production-proven model with large 1M token context window.",
+      description: "Ultra-fast generation with light resource footprint.",
     },
     {
-      id: "gemini-2.5-pro",
-      name: "Gemini 2.5 Pro (High Reasoning)",
+      id: "gemini-3.1-pro-preview",
+      name: "Gemini 3.1 Pro (Complex STEM)",
       contextWindow: 2097152,
       isFree: false,
       capabilities: ["text", "math", "long_context", "json", "code"],
@@ -161,13 +161,7 @@ export class GeminiAdapter implements AIProviderAdapter {
       throw new Error("No API key provided for Google Gemini.");
     }
 
-    const ai = new GoogleGenAI({
-      apiKey: key,
-      httpOptions: {
-        timeout: options?.timeoutMs || 45000,
-        headers: { "User-Agent": "notebooklm-docx-converter/1.0" },
-      },
-    });
+    const ai = new GoogleGenAI({ apiKey: key });
 
     const config: any = {
       temperature: options?.temperature ?? request.temperature ?? 0.2,
@@ -176,11 +170,38 @@ export class GeminiAdapter implements AIProviderAdapter {
       config.systemInstruction = request.systemPrompt;
     }
 
-    const response = await ai.models.generateContent({
-      model: model || "gemini-2.5-flash",
-      contents: request.prompt,
-      config,
-    });
+    let selectedModel = model || "gemini-3.6-flash";
+    // Normalize deprecated models automatically to prevent 404s
+    if (
+      selectedModel === "gemini-2.5-flash" ||
+      selectedModel === "gemini-2.0-flash" ||
+      selectedModel === "gemini-1.5-flash"
+    ) {
+      selectedModel = "gemini-3.6-flash";
+    }
+
+    let response: any;
+    try {
+      response = await ai.models.generateContent({
+        model: selectedModel,
+        contents: request.prompt,
+        config,
+      });
+    } catch (err: any) {
+      // If the selected model returns a 404/not available error, fallback to gemini-3.6-flash or gemini-3.8-flash
+      if (
+        (err?.status === 404 || String(err?.message || "").includes("no longer available") || String(err?.message || "").includes("NOT_FOUND")) &&
+        selectedModel !== "gemini-3.6-flash"
+      ) {
+        response = await ai.models.generateContent({
+          model: "gemini-3.6-flash",
+          contents: request.prompt,
+          config,
+        });
+      } else {
+        throw err;
+      }
+    }
 
     const inPrompt = request.systemPrompt
       ? `${request.systemPrompt}\n\n${request.prompt}`
@@ -199,11 +220,19 @@ export class GeminiAdapter implements AIProviderAdapter {
     timeoutMs: number = 15000
   ): Promise<TestResult> {
     const startTime = Date.now();
+    const targetModel =
+      model === "gemini-2.5-flash" ||
+      model === "gemini-2.0-flash" ||
+      model === "gemini-1.5-flash" ||
+      !model
+        ? "gemini-3.6-flash"
+        : model;
+
     try {
       const res = await this.generate(
         { prompt: "Respond with the word 'OK' if you can read this." },
         key,
-        model || "gemini-2.5-flash",
+        targetModel,
         { timeoutMs }
       );
 
@@ -213,7 +242,7 @@ export class GeminiAdapter implements AIProviderAdapter {
           success: true,
           providerId: this.id,
           providerName: this.name,
-          model: model || "gemini-2.5-flash",
+          model: targetModel,
           latencyMs: latency,
         };
       }
@@ -226,7 +255,7 @@ export class GeminiAdapter implements AIProviderAdapter {
         success: false,
         providerId: this.id,
         providerName: this.name,
-        model: model || "gemini-2.5-flash",
+        model: targetModel,
         latencyMs: latency,
         errorMessage: normalized.message,
         statusCode: normalized.statusCode,

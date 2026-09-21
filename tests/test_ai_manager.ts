@@ -83,7 +83,7 @@ async function runTests() {
     }
   }
 
-  const manager = new AIRequestManager();
+  const manager = new AIRequestManager("/tmp/test-ai-settings.json");
 
   // Register mock providers for precise simulation
   const mockP1 = new MockTestAdapter("gemini", "Google Gemini");

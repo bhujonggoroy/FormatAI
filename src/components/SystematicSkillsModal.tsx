@@ -481,7 +481,7 @@ do not change the content.
 """
 
 response = client.models.generateContent(
-    model="gemini-2.5-flash",
+    model="gemini-3.6-flash",
     contents="""
 Task: Format only.
 
