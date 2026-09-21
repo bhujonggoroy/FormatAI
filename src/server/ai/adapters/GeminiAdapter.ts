@@ -169,20 +169,24 @@ export class GeminiAdapter implements AIProviderAdapter {
       },
     });
 
-    const fullPrompt = request.systemPrompt
-      ? `${request.systemPrompt}\n\n${request.prompt}`
-      : request.prompt;
+    const config: any = {
+      temperature: options?.temperature ?? request.temperature ?? 0.2,
+    };
+    if (request.systemPrompt) {
+      config.systemInstruction = request.systemPrompt;
+    }
 
     const response = await ai.models.generateContent({
       model: model || "gemini-2.5-flash",
-      contents: fullPrompt,
-      config: {
-        temperature: options?.temperature ?? request.temperature ?? 0.2,
-      },
+      contents: request.prompt,
+      config,
     });
 
+    const inPrompt = request.systemPrompt
+      ? `${request.systemPrompt}\n\n${request.prompt}`
+      : request.prompt;
     const text = response.text || "";
-    const inTokens = estimateTokenCount(fullPrompt);
+    const inTokens = estimateTokenCount(inPrompt);
     const outTokens = estimateTokenCount(text);
 
     return { text, inputTokens: inTokens, outputTokens: outTokens };

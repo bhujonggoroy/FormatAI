@@ -4,6 +4,22 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>NotebookLM to DOCX Converter</title>
+    <script>
+      // Suppress benign sandbox WebSocket / HMR disconnect errors in iframe preview
+      window.addEventListener('unhandledrejection', function (event) {
+        var reason = event.reason;
+        var msg = (reason && (reason.message || (typeof reason === 'string' ? reason : ''))) || '';
+        if (msg.includes('WebSocket') || msg.includes('websocket')) {
+          event.preventDefault();
+        }
+      });
+      window.addEventListener('error', function (event) {
+        var msg = (event && event.message) || '';
+        if (msg.includes('WebSocket') || msg.includes('websocket') || msg.includes('[vite] failed to connect')) {
+          event.preventDefault();
+        }
+      });
+    </script>
     <meta name="description" content="Clean up raw notes, math expressions, and LaTeX from Google NotebookLM and convert them into beautifully formatted Microsoft Word (.docx) documents." />
     <meta property="og:title" content="NotebookLM to DOCX Converter" />
     <meta property="og:description" content="Clean up raw notes, math expressions, and LaTeX from Google NotebookLM and convert them into beautifully formatted Microsoft Word (.docx) documents." />

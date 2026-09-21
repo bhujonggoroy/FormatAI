@@ -125,6 +125,248 @@ parameter).
 `
   },
   {
+    id: "stt251-target-formatted",
+    title: "STT251: Formatted Target (Academic Study Guide Standard)",
+    category: "Statistics & Data Science",
+    text: `# STT251: Sampling Distributions
+## A–Z Comprehensive Study Guide & Formula Sheet
+
+## 1. Introduction and Sampling Distribution Fundamentals
+
+### 1.1 Definition of Sampling Distribution
+A sampling distribution is the probability distribution or frequency distribution of a statistic (such as the mean, median, or standard deviation) obtained from repeated random samples of a fixed size $n$ drawn from a specified population. It represents how outcomes spread apart for a specific population and is also referred to as a finite sample distribution.
+
+### 1.2 Key Components
+
+| Term | Definition |
+| :--- | :--- |
+| Population ($N$) | The complete set of all units, individuals, or observations of interest |
+| Sample ($n$) | A subset of units selected from the population |
+| Statistic | A numerical characteristic calculated from a sample, e.g., $\\bar{x}$ or $\\hat{p}$ |
+| Parameter | A numerical characteristic of a population, e.g., $\\mu$, $\\sigma$, or $P$ |
+| Sampling Error | The difference between a sample statistic and the corresponding population parameter |
+
+For example, for the sample mean,
+
+$$
+\\text{Sampling Error} = \\bar{x} - \\mu
+$$
+
+The magnitude of sampling error generally decreases as the sample size $n$ increases.
+
+### 1.3 Standard Error (SE)
+The standard deviation of a sampling distribution is specifically termed the **Standard Error**. It measures the dispersion of sample statistics around the population parameter and serves as a measure of sampling error.
+
+| Statistic | Standard Error Formula for a Large or Infinite Population |
+| :--- | :--- |
+| Sample mean, $\\bar{x}$ | $SE(\\bar{x}) = \\frac{\\sigma}{\\sqrt{n}}$ |
+| Sample proportion, $\\hat{p}$ | $SE(\\hat{p}) = \\sqrt{\\frac{P(1-P)}{n}}$ |
+
+### 1.4 Finite Population Correction (FPC) Factor
+When the population size $N$ is finite and the sampling fraction is large, the standard error should be adjusted using the **finite population correction (FPC)** factor.
+
+The correction is generally applied when
+
+$$
+\\frac{n}{N} > 0.10
+$$
+
+The finite population correction factor is
+
+$$
+\\sqrt{\\frac{N - n}{N - 1}}
+$$
+
+Therefore, the standard error of the sample mean is
+
+$$
+SE(\\bar{X}) = \\sqrt{\\frac{N - n}{N - 1}} \\cdot \\frac{\\sigma}{\\sqrt{n}}
+$$
+
+and the finite population variance is
+
+$$
+\\sigma_{\\bar{X}}^2 = \\left( \\frac{N - n}{N - 1} \\right) \\frac{\\sigma^2}{n}
+$$
+
+## 2. Central Limit Theorem (CLT)
+
+### 2.1 Historical Context and Theorem
+First introduced by De Moivre in the early 18th century, the Central Limit Theorem is the most fundamental theorem in statistics. It states that regardless of the population distribution, the sampling distribution of the sample mean will approach a normal distribution as the sample size $n$ increases.
+
+### 2.2 Formal Definition
+Let $X$ be a random variable from a population with mean $\\mu$ and variance $\\sigma^2$. Then, as $n \\to \\infty$,
+
+$$
+\\bar{X} \\sim N\\left(\\mu, \\frac{\\sigma^2}{n}\\right)
+$$
+
+Equivalently,
+
+$$
+\\bar{X} \\approx N\\left(\\mu, \\frac{\\sigma^2}{n}\\right)
+$$
+
+for a sufficiently large sample size $n$.
+
+### 2.3 Significance of the CLT
+• It enables researchers to make inferences about a population mean even when the population distribution is unknown.
+• As $n$ increases, sample means tend to cluster more closely around the population mean $\\mu$.
+• It improves the precision of estimates because the standard error decreases as $n$ increases.
+
+## 3. Distributions of the Mean and Proportion
+
+### 3.1 Sampling Distribution of the Mean
+For a random sample of size $n$ from a population with mean $\\mu$ and standard deviation $\\sigma$:
+
+$$
+\\mu_{\\bar{X}} = E(\\bar{X}) = \\mu
+$$
+
+Thus, the sample mean is an **unbiased estimator** of the population mean.
+
+$$
+\\text{Var}(\\bar{X}) = \\sigma_{\\bar{X}}^2 = \\frac{\\sigma^2}{n}
+$$
+
+$$
+\\sigma_{\\bar{X}} = \\frac{\\sigma}{\\sqrt{n}}
+$$
+
+### 3.2 Sampling Distribution of the Proportion
+For data classified into two categories, such as success and failure, the sample proportion is
+
+$$
+\\hat{p} = \\frac{X}{n}
+$$
+
+where $X$ is the number of successes in the sample.
+
+The population proportion is
+
+$$
+P = \\frac{k}{N}
+$$
+
+where $k$ is the number of successes in the population.
+
+The mean of the sampling distribution of $\\hat{p}$ is
+
+$$
+\\mu_{\\hat{p}} = E(\\hat{p}) = P
+$$
+
+The variance is
+
+$$
+\\sigma_{\\hat{p}}^2 = \\text{Var}(\\hat{p}) = \\frac{P(1 - P)}{n}
+$$
+
+The standard deviation or standard error is
+
+$$
+SE(\\hat{p}) = \\sqrt{\\frac{P(1 - P)}{n}}
+$$
+
+#### Normality Conditions for Proportions
+The sampling distribution of $\\hat{p}$ is approximately normal when:
+
+$$
+nP > 15
+$$
+
+and
+
+$$
+n(1 - P) > 15
+$$
+
+If these conditions are not satisfied, the number of successes $X$ follows a binomial distribution:
+
+$$
+X \\sim \\text{Binomial}(n, P)
+$$
+
+### 3.3 Difference Between Two Sample Proportions
+Suppose independent samples of sizes $n_1$ and $n_2$ are taken from two populations with population proportions $P_1$ and $P_2$, respectively.
+
+The expected value of the difference is
+
+$$
+E(\\hat{p}_1 - \\hat{p}_2) = P_1 - P_2
+$$
+
+The standard error of the difference is
+
+$$
+SE(\\hat{p}_1 - \\hat{p}_2) = \\sqrt{\\frac{P_1(1-P_1)}{n_1} + \\frac{P_2(1-P_2)}{n_2}}
+$$
+
+#### Normality Conditions for the Difference of Proportions
+The sampling distribution of $\\hat{p}_1 - \\hat{p}_2$ is approximately normal when all of the following conditions hold:
+
+$$
+n_1 P_1 > 15
+$$
+
+$$
+n_1 (1 - P_1) > 15
+$$
+
+$$
+n_2 P_2 > 15
+$$
+
+$$
+n_2 (1 - P_2) > 15
+$$
+
+## 4. Specific Sampling Distributions
+The following distributions are essential in inferential statistics:
+
+| Distribution | Symbol | Main Use |
+| :--- | :---: | :--- |
+| Student’s $t$-distribution | $t$ | Used for inference about a population mean when $\\sigma$ is unknown, especially for small samples |
+| Chi-square distribution | $\\chi^2$ | Used for inference about population variance and goodness-of-fit tests |
+| Fisher’s $F$-distribution | $F$ | Used to compare two population variances and in analysis of variance |
+
+## 5. Summary Formula Sheet
+
+| Concept | Formula |
+| :--- | :--- |
+| Sample mean | $\\bar{x} = \\frac{1}{n} \\sum_{i=1}^n x_i$ |
+| Sample proportion | $\\hat{p} = \\frac{x}{n}$ |
+| Mean of sample mean | $E(\\bar{X}) = \\mu$ |
+| Variance of sample mean | $\\text{Var}(\\bar{X}) = \\frac{\\sigma^2}{n}$ |
+| Standard error of sample mean | $SE(\\bar{X}) = \\frac{\\sigma}{\\sqrt{n}}$ |
+| Finite-population SE of mean | $SE(\\bar{X}) = \\sqrt{\\frac{N-n}{N-1}} \\cdot \\frac{\\sigma}{\\sqrt{n}}$ |
+| Mean of sample proportion | $E(\\hat{p}) = P$ |
+| Variance of sample proportion | $\\text{Var}(\\hat{p}) = \\frac{P(1-P)}{n}$ |
+| Standard error of sample proportion | $SE(\\hat{p}) = \\sqrt{\\frac{P(1-P)}{n}}$ |
+| $Z$-score for a mean | $Z = \\frac{\\bar{X} - \\mu}{\\frac{\\sigma}{\\sqrt{n}}}$ |
+| $Z$-score for a proportion | $Z = \\frac{\\hat{p} - P}{\\sqrt{\\frac{P(1-P)}{n}}}$ |
+| Difference of two proportions | $E(\\hat{p}_1 - \\hat{p}_2) = P_1 - P_2$ |
+| SE of difference of proportions | $SE(\\hat{p}_1 - \\hat{p}_2) = \\sqrt{\\frac{P_1(1-P_1)}{n_1} + \\frac{P_2(1-P_2)}{n_2}}$ |
+| $Z$-score for difference of proportions | $Z = \\frac{(\\hat{p}_1 - \\hat{p}_2) - (P_1 - P_2)}{\\sqrt{\\frac{P_1(1-P_1)}{n_1} + \\frac{P_2(1-P_2)}{n_2}}}$ |
+
+## 6. Practical Applications and Inference
+Sampling distributions provide the mathematical foundation for inferential statistics. They allow researchers to use information from a sample to make conclusions about an entire population.
+
+### Main Applications
+• **Generalization:** Drawing conclusions about a population based on sample information.
+• **Risk calculation:** Estimating the probability of sampling error in a conclusion.
+• **Confidence intervals:** Determining a likely range for an unknown population parameter.
+• **Hypothesis testing:** Assessing whether sample evidence supports or contradicts a population claim.
+• **Interval probability:** Calculating the probability that a sample statistic lies within a specified interval around the true population parameter.
+
+For example, a researcher may calculate the probability that a sample proportion $\\hat{p}$ lies within 0.05 of the true population proportion $P$:
+
+$$
+P(|\\hat{p} - P| < 0.05)
+$$
+`
+  },
+  {
     id: "inferential-statistics",
     title: "Inferential Statistics & Sampling (NotebookLM Outline)",
     category: "Statistics & Data Science",

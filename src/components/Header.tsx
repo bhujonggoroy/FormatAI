@@ -1,10 +1,12 @@
 import React from "react";
-import { FileText, Sparkles, Settings2, FileDown, Loader2 } from "lucide-react";
+import { FileText, Sparkles, Settings2, FileDown, Loader2, Layers } from "lucide-react";
 
 interface HeaderProps {
   docTitle: string;
   onDocTitleChange: (title: string) => void;
   onOpenAISettingsModal: () => void;
+  onOpenSkillsModal?: () => void;
+  activeSkillsCount?: number;
   readyProvidersCount?: number;
   isConverting: boolean;
   onDownloadDocx: () => void;
@@ -15,6 +17,8 @@ export const Header: React.FC<HeaderProps> = ({
   docTitle,
   onDocTitleChange,
   onOpenAISettingsModal,
+  onOpenSkillsModal,
+  activeSkillsCount = 4,
   readyProvidersCount = 1,
   isConverting,
   onDownloadDocx,
@@ -50,8 +54,24 @@ export const Header: React.FC<HeaderProps> = ({
           </div>
         </div>
 
-        {/* Right: AI status & Primary Actions */}
+        {/* Right: Skills, AI status & Primary Actions */}
         <div className="flex items-center gap-2 shrink-0">
+          {/* Modular Skills Manager Trigger */}
+          {onOpenSkillsModal && (
+            <button
+              id="btn-skills-manager"
+              onClick={onOpenSkillsModal}
+              className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 bg-indigo-50/80 hover:bg-indigo-100/80 px-2.5 py-1.5 rounded-lg border border-indigo-200/80 transition-colors"
+              title="Manage GitHub-based Skills (Math, Scientific, Pandoc, Academic Manuscript)"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden sm:inline">Skills</span>
+              <span className="inline-flex items-center justify-center px-1.5 py-0.5 text-[10px] font-bold rounded-full bg-indigo-200 text-indigo-900">
+                {activeSkillsCount} Active
+              </span>
+            </button>
+          )}
+
           {/* AI Settings Trigger */}
           <button
             id="btn-ai-settings"

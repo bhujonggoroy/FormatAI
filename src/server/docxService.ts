@@ -23,6 +23,7 @@ import {
   MathRoundBrackets,
   MathSquareBrackets,
 } from "docx";
+import { executeSkillPipeline, getActiveDocxOptions } from "../skills/pipeline";
 
 export const UNICODE_MATH_REPLACEMENTS: Record<string, string> = {
   '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\Gamma': 'Γ',
@@ -309,6 +310,9 @@ export interface DocxOptions {
   fontFamily?: string;
   accentColor?: string; // hex without #
   equationFormat?: 'native' | 'latex' | 'unicode';
+  tableStyle?: 'booktabs' | 'standard';
+  lineSpacing?: number;
+  enabledSkillIds?: string[];
 }
 
 const STRUCTURAL_COMMANDS = new Set([
@@ -560,6 +564,37 @@ function parseLatexComponents(latex: string): any[] {
       continue;
     }
 
+    // Matrix environments: \begin{pmatrix} ... \end{pmatrix} or \begin{bmatrix} ... \end{bmatrix} or \begin{matrix} ... \end{matrix}
+    const matrixMatch = cleaned.slice(i).match(/^\\begin\{(pmatrix|bmatrix|matrix|vmatrix)\}([\s\S]*?)\\end\{\1\}/);
+    if (matrixMatch) {
+      const type = matrixMatch[1];
+      const body = matrixMatch[2];
+      const rows = body.split(/\\\\/).map((r) => r.trim()).filter(Boolean);
+      const matrixComponents: any[] = [];
+
+      for (let rIdx = 0; rIdx < rows.length; rIdx++) {
+        const cols = rows[rIdx].split('&').map((c) => c.trim());
+        for (let cIdx = 0; cIdx < cols.length; cIdx++) {
+          const colComp = parseLatexComponents(cols[cIdx]);
+          matrixComponents.push(...colComp);
+          if (cIdx < cols.length - 1) {
+            matrixComponents.push(new MathRun("    "));
+          }
+        }
+        if (rIdx < rows.length - 1) {
+          matrixComponents.push(new MathRun("\n"));
+        }
+      }
+
+      const bracketed = type === "bmatrix"
+        ? new MathSquareBrackets({ children: matrixComponents.length > 0 ? matrixComponents : [new MathRun(body)] })
+        : new MathRoundBrackets({ children: matrixComponents.length > 0 ? matrixComponents : [new MathRun(body)] });
+
+      components.push(bracketed);
+      i += matrixMatch[0].length;
+      continue;
+    }
+
     // Subscript / Superscript on single base identifier (e.g. S^2, X_i, \chi^2_\nu, \sigma_1^2, p̂, X̄)
     const baseMatch = cleaned.slice(i).match(/^([a-zA-Z0-9α-ωΑ-Ω][\u0300-\u036f]?)/);
     if (baseMatch) {
@@ -795,14 +830,21 @@ export async function buildDocxFromMarkdown(
   markdownText: string,
   options: DocxOptions = {}
 ): Promise<Buffer> {
-  const font = options.fontFamily || "Times New Roman";
-  const primaryAccent = options.accentColor || "1A365D"; // Navy default
+  const mergedOptions = getActiveDocxOptions(options, options.enabledSkillIds);
+  const font = mergedOptions.fontFamily || "Times New Roman";
+  const primaryAccent = mergedOptions.accentColor || "1A365D"; // Navy default
   const secondaryAccent = "2B6CB0"; // Steel blue
   const bodyColor = "2D3748";
-  const equationFormat = options.equationFormat || "native";
+  const equationFormat = mergedOptions.equationFormat || "native";
+  const isBooktabs = mergedOptions.tableStyle === "booktabs";
 
-  // Pre-clean NotebookLM tree artifacts & standardize pseudo-math
-  const cleanedMarkdown = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(markdownText));
+  // 1. Execute Modular Skills Pipeline in strict priority order:
+  // 1. Mathematical/Equation processing -> 2. Scientific formatting -> 3. Academic manuscript formatting -> 4. General text formatting
+  const skillResult = executeSkillPipeline(markdownText, options.enabledSkillIds);
+  const textAfterSkills = skillResult.text;
+
+  // 2. Pre-clean NotebookLM tree artifacts & standardize pseudo-math
+  const cleanedMarkdown = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(textAfterSkills));
 
   const lines = cleanedMarkdown.split('\n');
   const children: (Paragraph | Table)[] = [];
@@ -986,15 +1028,24 @@ export async function buildDocxFromMarkdown(
                 shading: isHeader
                   ? {
                       type: ShadingType.CLEAR,
-                      fill: "F1F5F9",
+                      fill: isBooktabs ? "F8FAFC" : "F1F5F9",
                     }
                   : undefined,
-                borders: {
-                  top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-                  bottom: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-                  left: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-                  right: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-                },
+                borders: isBooktabs
+                  ? {
+                      top: { style: BorderStyle.NONE },
+                      bottom: isHeader
+                        ? { style: BorderStyle.SINGLE, size: 6, color: "000000" }
+                        : { style: BorderStyle.NONE },
+                      left: { style: BorderStyle.NONE },
+                      right: { style: BorderStyle.NONE },
+                    }
+                  : {
+                      top: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+                      bottom: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+                      left: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+                      right: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+                    },
                 margins: {
                   top: convertInchesToTwip(0.06),
                   bottom: convertInchesToTwip(0.06),
@@ -1023,14 +1074,23 @@ export async function buildDocxFromMarkdown(
         const docxTable = new Table({
           width: { size: 100, type: WidthType.PERCENTAGE },
           alignment: AlignmentType.CENTER,
-          borders: {
-            top: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-            bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-            left: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-            right: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
-            insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-            insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
-          },
+          borders: isBooktabs
+            ? {
+                top: { style: BorderStyle.SINGLE, size: 12, color: "000000" },
+                bottom: { style: BorderStyle.SINGLE, size: 12, color: "000000" },
+                left: { style: BorderStyle.NONE },
+                right: { style: BorderStyle.NONE },
+                insideHorizontal: { style: BorderStyle.NONE },
+                insideVertical: { style: BorderStyle.NONE },
+              }
+            : {
+                top: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+                bottom: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+                left: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+                right: { style: BorderStyle.SINGLE, size: 6, color: "000000" },
+                insideHorizontal: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+                insideVertical: { style: BorderStyle.SINGLE, size: 4, color: "000000" },
+              },
           rows: docxRows,
         });
 

@@ -2,8 +2,11 @@ import React, { useState, useMemo, useEffect } from "react";
 import { Header } from "./components/Header";
 import { FormattedPreview } from "./components/FormattedPreview";
 import { AISettingsModal } from "./components/AISettingsModal";
+import { SystematicSkillsModal } from "./components/SystematicSkillsModal";
+import { SkillsManagerModal } from "./components/SkillsManagerModal";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
+import { skillRegistry } from "./skills";
 import {
   Sparkles,
   Eraser,
@@ -19,14 +22,18 @@ import {
   Sigma,
   ChevronDown,
   X,
+  GraduationCap,
+  BookOpen,
+  Layers,
 } from "lucide-react";
 
 export default function App() {
   const [inputText, setInputText] = useState<string>(SAMPLE_NOTES[0].text);
-  const [docTitle, setDocTitle] = useState<string>("Thermodynamics Lecture Notes");
+  const [docTitle, setDocTitle] = useState<string>("STT251: Sampling Distributions");
   const [fontFamily, setFontFamily] = useState<string>("Times New Roman");
   const [accentColor, setAccentColor] = useState<string>("#1A365D");
   const [equationFormat, setEquationFormat] = useState<"native" | "latex" | "unicode">("native");
+  const [formatMode, setFormatMode] = useState<"auto" | "study_guide" | "exam_bank">("study_guide");
 
   const [isConverting, setIsConverting] = useState<boolean>(false);
   const [conversionStage, setConversionStage] = useState<string>("");
@@ -36,6 +43,9 @@ export default function App() {
   const [cleanedMarkdown, setCleanedMarkdown] = useState<string | null>(null);
   const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">("split");
   const [isAISettingsModalOpen, setIsAISettingsModalOpen] = useState<boolean>(false);
+  const [isSkillModalOpen, setIsSkillModalOpen] = useState<boolean>(false);
+  const [isSkillsManagerModalOpen, setIsSkillsManagerModalOpen] = useState<boolean>(false);
+  const [activeSkillsCount, setActiveSkillsCount] = useState<number>(() => skillRegistry.getEnabledSkillIds().length);
   const [isSampleDropdownOpen, setIsSampleDropdownOpen] = useState<boolean>(false);
 
   // Multi-Provider AI telemetry state
@@ -69,11 +79,11 @@ export default function App() {
   }, []);
 
   // Compute live markdown instantly: if Gemini AI has polished the text, use it;
-  // otherwise, run instant client-side normalizer for zero-latency live preview!
+  // otherwise, run instant client-side normalizer with modular skills pipeline for zero-latency live preview!
   const effectiveMarkdown = useMemo(() => {
     if (cleanedMarkdown) return cleanedMarkdown;
-    return cleanClientSideNotebookLM(inputText);
-  }, [cleanedMarkdown, inputText]);
+    return cleanClientSideNotebookLM(inputText, formatMode, skillRegistry.getEnabledSkillIds());
+  }, [cleanedMarkdown, inputText, formatMode, activeSkillsCount]);
 
   // Load a sample note
   const handleLoadSample = (sample: SampleNote) => {
@@ -115,7 +125,12 @@ export default function App() {
       const res = await fetch("/api/preview-clean", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ text: inputText, equationFormat }),
+        body: JSON.stringify({
+          text: inputText,
+          equationFormat,
+          formatMode,
+          enabledSkillIds: skillRegistry.getEnabledSkillIds(),
+        }),
       });
 
       const data = await res.json();
@@ -167,6 +182,8 @@ export default function App() {
           font: fontFamily,
           accent: accentColor,
           equationFormat,
+          formatMode,
+          enabledSkillIds: skillRegistry.getEnabledSkillIds(),
         }),
       });
 
@@ -242,6 +259,8 @@ export default function App() {
         docTitle={docTitle}
         onDocTitleChange={setDocTitle}
         onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
+        onOpenSkillsModal={() => setIsSkillsManagerModalOpen(true)}
+        activeSkillsCount={activeSkillsCount}
         readyProvidersCount={aiHealthInfo?.readyCount || 1}
         isConverting={isConverting}
         onDownloadDocx={handleConvertToDocx}
@@ -317,6 +336,51 @@ export default function App() {
                 LaTeX ($...$)
               </button>
             </div>
+
+            {/* Systematic Skill Selector */}
+            <div className="flex items-center gap-1.5 bg-blue-50/90 rounded-lg px-2 py-1 border border-blue-200/90">
+              <GraduationCap className="w-3.5 h-3.5 text-blue-700" />
+              <select
+                id="format-preset-selector"
+                value={formatMode}
+                onChange={(e) => {
+                  setFormatMode(e.target.value as any);
+                  setCleanedMarkdown(null);
+                }}
+                className="bg-transparent text-xs font-semibold text-blue-950 focus:outline-none cursor-pointer"
+                title="Systematic Formatting Skill Preset"
+              >
+                <option value="study_guide">🎓 Study Guide & Formulas (Pages 5–11)</option>
+                <option value="exam_bank">📝 Exam Question Bank</option>
+                <option value="auto">⚡ Auto-Detect Structure</option>
+              </select>
+            </div>
+
+            {/* Systematic Skill Rules Button */}
+            <button
+              type="button"
+              onClick={() => setIsSkillModalOpen(true)}
+              className="inline-flex items-center gap-1 bg-amber-50 hover:bg-amber-100 text-amber-900 px-2 py-1 rounded-lg border border-amber-200 text-xs font-medium transition-colors"
+              title="Inspect systematic academic formatting skills and rules"
+            >
+              <BookOpen className="w-3.5 h-3.5 text-amber-700" />
+              <span className="hidden xl:inline">Formatting Skills</span>
+            </button>
+
+            {/* Modular Skills Manager Button */}
+            <button
+              id="toolbar-btn-modular-skills"
+              type="button"
+              onClick={() => setIsSkillsManagerModalOpen(true)}
+              className="inline-flex items-center gap-1.5 bg-indigo-50 hover:bg-indigo-100 text-indigo-900 px-2.5 py-1 rounded-lg border border-indigo-200 text-xs font-medium transition-colors cursor-pointer"
+              title="Configure Modular GitHub-integrated Skills (Math, Scientific, Pandoc, Academic Manuscript)"
+            >
+              <Layers className="w-3.5 h-3.5 text-indigo-600" />
+              <span className="hidden md:inline">Modular Skills</span>
+              <span className="w-4 h-4 rounded-full bg-indigo-200 text-indigo-900 text-[10px] font-bold flex items-center justify-center">
+                {activeSkillsCount}
+              </span>
+            </button>
 
             <div className="hidden md:block w-px h-5 bg-slate-200" />
 
@@ -619,6 +683,31 @@ export default function App() {
           fetchAIHealth();
         }}
         onConfigChanged={fetchAIHealth}
+      />
+
+      {/* Systematic Formatting Skills Modal */}
+      <SystematicSkillsModal
+        isOpen={isSkillModalOpen}
+        onClose={() => setIsSkillModalOpen(false)}
+        activeMode={formatMode}
+        onSelectMode={(mode) => {
+          setFormatMode(mode);
+          setCleanedMarkdown(null);
+        }}
+        onLoadSample={() => {
+          handleLoadSample(SAMPLE_NOTES[0]);
+          setFormatMode("study_guide");
+        }}
+      />
+
+      {/* Modular GitHub Skills Manager Modal */}
+      <SkillsManagerModal
+        isOpen={isSkillsManagerModalOpen}
+        onClose={() => setIsSkillsManagerModalOpen(false)}
+        onSkillsChanged={() => {
+          setActiveSkillsCount(skillRegistry.getEnabledSkillIds().length);
+          setCleanedMarkdown(null);
+        }}
       />
     </div>
   );

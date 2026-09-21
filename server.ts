@@ -9,7 +9,13 @@ import {
   sanitizeMathToUnicode,
   buildDocxFromMarkdown
 } from "./src/server/docxService.ts";
+import { cleanClientSideNotebookLM } from "./src/utils/cleaner.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";
+import {
+  skillRegistry,
+  getCombinedSkillPromptInstructions,
+  executeSkillPipeline,
+} from "./src/skills/index.ts";
 
 const currentFile = typeof __filename !== "undefined" ? __filename : (import.meta.url ? fileURLToPath(import.meta.url) : path.join(process.cwd(), "server.ts"));
 const currentDir = typeof __dirname !== "undefined" ? __dirname : path.dirname(currentFile);
@@ -239,6 +245,42 @@ async function startServer() {
     }
   });
 
+  // --- Modular Skills Management Endpoints ---
+  app.get("/api/skills", (req, res) => {
+    try {
+      res.json({ skills: skillRegistry.getAllSkills() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to list skills." });
+    }
+  });
+
+  app.post("/api/skills/toggle", (req, res) => {
+    try {
+      const { id, enabled } = req.body;
+      if (!id) {
+        return res.status(400).json({ error: "Missing skill id" });
+      }
+      skillRegistry.toggleSkill(id, enabled);
+      res.json({ success: true, skills: skillRegistry.getAllSkills() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to toggle skill." });
+    }
+  });
+
+  app.post("/api/skills/reset", (req, res) => {
+    try {
+      const { id } = req.body;
+      if (id) {
+        skillRegistry.resetSkill(id);
+      } else {
+        skillRegistry.resetAllSkills();
+      }
+      res.json({ success: true, skills: skillRegistry.getAllSkills() });
+    } catch (err: any) {
+      res.status(500).json({ error: err.message || "Failed to reset skills." });
+    }
+  });
+
   // --- Notes Cleaning using Multi-Provider AIRequestManager with Automatic Fallback ---
   interface CleanNotesResult {
     cleanedMarkdown: string;
@@ -249,12 +291,95 @@ async function startServer() {
     fallbackChain: any[];
   }
 
+  const ACADEMIC_MATH_SYSTEM_INSTRUCTION = `You are an expert academic mathematical editor, LaTeX typesetter, and technical document formatter.
+
+Your task is to transform the user's raw academic notes, mathematical text, or broken equations into a clean, standard, publication-ready format.
+
+Follow these rules strictly:
+
+1. Preserve the original mathematical meaning, facts, formulas, examples, and section order unless the user explicitly asks for correction of content.
+
+2. Correct broken, incomplete, or invalid LaTeX code.
+
+3. Use standard LaTeX notation:
+   - Use \\(...\\) for inline mathematics.
+   - Use \\[...\\] for displayed equations.
+   - Use \\frac{}{} for fractions.
+   - Use \\sqrt{} for square roots.
+   - Use \\sum, \\prod, \\int, \\lim, \\infty, \\leq, \\geq, \\neq, \\approx, and \\sim correctly.
+   - Use \\operatorname{} for operators such as Var, Cov, rank, mode, and M.D.
+   - Use \\mathbb{} for standard number sets when necessary.
+   - Use \\mathsf{} or \\mathrm{} only when mathematically appropriate.
+   - Use \\text{} only for explanatory words inside equations.
+
+4. Standardize mathematical notation:
+   - Use \\(\\hat{p}\\) for the sample proportion.
+   - Use \\(\\bar{X}\\) for the sample mean.
+   - Use \\(S^2\\) for the sample variance.
+   - Use \\(\\sigma^2\\) for population variance.
+   - Use \\(\\mu\\) for population mean.
+   - Use \\(\\pi\\) for the population proportion.
+   - Use \\(\\operatorname{Var}\\), \\(\\operatorname{Cov}\\), and \\(\\operatorname{rank}\\).
+   - Use \\(A^{\\mathsf T}\\) for the transpose of a matrix.
+   - Use \\(\\overset{d}{\\longrightarrow}\\) for convergence in distribution.
+   - Use \\(\\sim\\) for “is distributed as” and \\(\\approx\\) for approximation.
+
+5. Repair incorrect or inconsistent notation without changing the intended result. For example:
+   - Replace a sample proportion written as p with \\(\\hat{p}\\) when the context clearly refers to a sample proportion.
+   - Replace informal expressions such as Var(X) with \\(\\operatorname{Var}(X)\\).
+   - Replace unclear summation notation with \\(\\sum_{i=1}^{n}\\).
+   - Add missing braces in LaTeX commands such as \\frac, \\sqrt, \\Gamma, and \\chi^2.
+
+6. Organize the output using:
+   - Numbered main sections.
+   - Numbered or titled subsections.
+   - Clear definitions and Markdown tables where appropriate.
+   - Displayed equations for important formulas.
+   - Bullet points for properties.
+   - Short explanatory paragraphs.
+
+7. Use Markdown headings:
+   - Main sections: # or ##.
+   - Subsections: ###.
+   - Do not use excessive heading levels.
+
+8. Make every important equation readable and properly spaced. Do not place long mathematical derivations in a single paragraph.
+
+9. Keep all equations mathematically aligned and visually consistent.
+
+10. If an equation is ambiguous, make the smallest reasonable correction and preserve the original intention. Do not invent new assumptions. If the ambiguity affects the result, mention it briefly after the corrected material.
+
+11. Do not provide unnecessary commentary about the editing process. Return the corrected and formatted academic content directly.
+
+12. When the user asks for “format only” or “correct the formats only”:
+   - Do not change the conceptual content.
+   - Do not add new theories or examples.
+   - Correct only grammar, formatting, notation, section structure, punctuation, and LaTeX.
+   - Preserve the original facts and formulas as much as possible.
+
+13. When the user asks for an explanation, provide a clear explanation after the formatted result.
+
+14. Match the user's language. If the source is English, keep the academic content in English. If the user asks in Bengali, explain the instructions or process in Bengali.
+
+15. Output only the final polished result unless the user asks for a comparison, explanation, or list of corrections.`;
+
   async function cleanNotesWithMultiProviderAI(
     rawText: string,
     equationFormat = "native",
-    formatMode: "auto" | "study_guide" | "exam_bank" = "auto"
+    formatMode: "auto" | "study_guide" | "exam_bank" = "auto",
+    enabledSkillIds?: string[]
   ): Promise<CleanNotesResult> {
-    const preCleaned = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(rawText));
+    // 1. Execute Modular Skills Pipeline in priority order:
+    // (1. Math -> 2. Scientific -> 3. Academic Manuscript -> 4. General Text)
+    const skillResult = executeSkillPipeline(rawText, enabledSkillIds);
+    const textAfterSkills = skillResult.text;
+    const preCleaned = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(textAfterSkills));
+
+    // Combine Academic Math Instructions with specific Skill prompt instructions
+    const skillInstructions = getCombinedSkillPromptInstructions(enabledSkillIds);
+    const combinedSystemPrompt = skillInstructions
+      ? `${ACADEMIC_MATH_SYSTEM_INSTRUCTION}\n\n## MODULAR SKILLS INSTRUCTIONS (Strict Priority Order):\n${skillInstructions}`
+      : ACADEMIC_MATH_SYSTEM_INSTRUCTION;
 
     const prompt = `You are an expert technical editor, academic formatter, and mathematical typesetter.
 Your task is to take raw study notes, comprehensive formula sheets, exam question banks, lab manuals, and statistical problem sets copied from Google NotebookLM (which often contain messy tree-drawing pipes, broken LaTeX, unformatted math symbols, truncated equations, Bengali citations, and raw unformatted data blocks) and transform them into publication-ready, beautifully structured academic documents.
@@ -389,6 +514,8 @@ ${preCleaned}`;
     try {
       const aiResponse = await aiRequestManager.execute({
         prompt,
+        systemPrompt: combinedSystemPrompt,
+        temperature: 0.2,
         capabilities: ["text", "math", "long_context"],
       });
 
@@ -415,8 +542,8 @@ ${preCleaned}`;
       };
     } catch (err: any) {
       console.warn("AIRequestManager fallback to local normalizer:", err.message);
-      // Fallback gracefully to algorithmic cleaner if all providers fail
-      const fallbackCleaned = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(rawText));
+      // Fallback gracefully to systematic algorithmic cleaner if all providers fail
+      const fallbackCleaned = cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
       return {
         cleanedMarkdown: fallbackCleaned,
         providerId: "local",
@@ -431,12 +558,12 @@ ${preCleaned}`;
   // Preview clean Markdown text without DOCX generation
   app.post("/api/preview-clean", async (req, res) => {
     try {
-      const { text, equationFormat = "native", formatMode = "auto" } = req.body;
+      const { text, equationFormat = "native", formatMode = "auto", enabledSkillIds } = req.body;
       if (!text || typeof text !== "string" || !text.trim()) {
         return res.status(400).json({ error: "Missing or empty 'text' field in request body." });
       }
 
-      const result = await cleanNotesWithMultiProviderAI(text, equationFormat, formatMode);
+      const result = await cleanNotesWithMultiProviderAI(text, equationFormat, formatMode, enabledSkillIds);
       res.json({
         cleaned_markdown: result.cleanedMarkdown,
         provider_id: result.providerId,
@@ -461,7 +588,8 @@ ${preCleaned}`;
         font = "Times New Roman",
         accent = "1A365D",
         equationFormat = "native",
-        formatMode = "auto"
+        formatMode = "auto",
+        enabledSkillIds
       } = req.body;
 
       if (!text || typeof text !== "string" || !text.trim()) {
@@ -477,7 +605,7 @@ ${preCleaned}`;
       let fallbackCount = 0;
 
       if (!markdownToBuild || typeof markdownToBuild !== "string" || !markdownToBuild.trim()) {
-        const aiResult = await cleanNotesWithMultiProviderAI(text, equationFormat, formatMode);
+        const aiResult = await cleanNotesWithMultiProviderAI(text, equationFormat, formatMode, enabledSkillIds);
         markdownToBuild = aiResult.cleanedMarkdown;
         providerName = aiResult.providerName;
         modelName = aiResult.model;
@@ -490,6 +618,7 @@ ${preCleaned}`;
         fontFamily: font,
         accentColor: accent.replace('#', ''),
         equationFormat: equationFormat as any,
+        enabledSkillIds,
       });
 
       // Step 3: Stream download
@@ -533,7 +662,10 @@ ${preCleaned}`;
   // Vite middleware for development vs static build for production
   if (process.env.NODE_ENV !== "production") {
     const vite = await createViteServer({
-      server: { middlewareMode: true },
+      server: {
+        middlewareMode: true,
+        hmr: false, // HMR is disabled in container/iframe sandbox environment
+      },
       appType: "spa",
     });
     app.use(vite.middlewares);
