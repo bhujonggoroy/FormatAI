@@ -13,6 +13,11 @@ import { cleanClientSideNotebookLM } from "./utils/cleaner";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import {
+  getUserSettings,
+  getUserProviders,
+  getUserPreferences,
+} from "./utils/userLocalStorage";
+import {
   Sparkles,
   Eraser,
   Clipboard,
@@ -65,17 +70,24 @@ export default function App() {
 
   const fetchAIHealth = async () => {
     try {
-      const res = await fetch("/api/ai/config");
-      if (res.ok) {
-        const data = await res.json();
-        const ready = data.providers.filter((p: any) => p.enabled && p.keyCount > 0);
-        setAiHealthInfo({
-          readyCount: ready.length,
-          providersSummary: ready.map((p: any) => p.name),
-          mode: data.config.mode,
-          freeOnly: data.config.freeOnlyMode,
-        });
-      }
+      let templates: any[] = [];
+      try {
+        const res = await fetch("/api/ai/config");
+        if (res.ok) {
+          const data = await res.json();
+          templates = data.providers || [];
+        }
+      } catch {}
+
+      const userConfig = getUserSettings();
+      const userProvs = getUserProviders(templates);
+      const ready = userProvs.filter((p) => p.enabled && (p.apiKeys || []).some((k) => k.enabled));
+      setAiHealthInfo({
+        readyCount: ready.length,
+        providersSummary: ready.map((p) => p.name),
+        mode: userConfig.mode,
+        freeOnly: userConfig.freeOnlyMode,
+      });
     } catch {
       // Non-blocking
     }
@@ -131,6 +143,10 @@ export default function App() {
     setConversionStage("AI Engine is polishing notes & equations...");
 
     try {
+      const userConfig = getUserSettings();
+      const userProvs = getUserProviders();
+      const userPrefs = getUserPreferences();
+
       const res = await fetch("/api/preview-clean", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -139,6 +155,9 @@ export default function App() {
           equationFormat,
           formatMode,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
+          customPrompt: userPrefs.customPrompt,
+          aiConfig: userConfig,
+          userProviders: userProvs,
         }),
       });
 
@@ -189,6 +208,10 @@ export default function App() {
     try {
       setConversionStage(`1/2: Preparing ${formatLabels[format] || format}...`);
 
+      const userConfig = getUserSettings();
+      const userProvs = getUserProviders();
+      const userPrefs = getUserPreferences();
+
       const response = await fetch(`/export?format=${format}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -202,6 +225,9 @@ export default function App() {
           formatMode,
           format,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
+          customPrompt: userPrefs.customPrompt,
+          aiConfig: userConfig,
+          userProviders: userProvs,
         }),
       });
 
@@ -254,7 +280,15 @@ export default function App() {
         fetch("/api/preview-clean", {
           method: "POST",
           headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({ text: inputText, equationFormat }),
+          body: JSON.stringify({
+            text: inputText,
+            equationFormat,
+            formatMode,
+            enabledSkillIds: skillRegistry.getEnabledSkillIds(),
+            customPrompt: userPrefs.customPrompt,
+            aiConfig: userConfig,
+            userProviders: userProvs,
+          }),
         })
           .then((r) => r.json())
           .then((d) => {

@@ -21,6 +21,7 @@ export const mathDocxSkill: Skill = {
   category: "mathematics",
   enabled: true,
   isBuiltIn: true,
+  conflictsWith: ["pandoc-math-docx"],
   features: [
     "Native OMML Word equation generation (never images)",
     "Stacked vertical fractions (MathFraction) and nth radicals (MathRadical)",

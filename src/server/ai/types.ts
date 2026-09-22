@@ -144,6 +144,7 @@ export interface FallbackStep {
   status:
     | "success"
     | "rate_limited"
+    | "rate_limit"
     | "invalid_key"
     | "permission_denied"
     | "timeout"
@@ -151,7 +152,10 @@ export interface FallbackStep {
     | "token_limit"
     | "skipped_paid"
     | "network_error"
-    | "capability_mismatch";
+    | "capability_mismatch"
+    | "unsupported_capability"
+    | "model_unavailable"
+    | "unknown";
   errorMessage?: string;
   latencyMs: number;
   timestamp: number;

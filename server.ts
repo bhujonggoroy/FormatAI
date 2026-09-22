@@ -59,145 +59,80 @@ async function startServer() {
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {
-    const providers = aiRequestManager.getClientProviders();
-    const readyProviders = providers.filter((p) => p.enabled && p.activeKeyCount > 0);
     res.json({
       status: "ok",
       has_gemini_key: Boolean(process.env.GEMINI_API_KEY),
-      ready_providers_count: readyProviders.length,
-      ready_providers: readyProviders.map((p) => p.name),
       service: "FormatAI",
     });
   });
 
-  // --- Multi-Provider AI API Manager Endpoints ---
+  // --- Multi-Provider AI API Manager Endpoints (Stateless & Isolated) ---
 
-  // Get sanitized config and provider statuses (keys are masked for security)
+  // Get static provider metadata templates and public configuration (no user keys, no shared state)
   app.get("/api/ai/config", (req, res) => {
     try {
       res.json({
         config: aiRequestManager.getManagerConfig(),
-        providers: aiRequestManager.getClientProviders(),
+        providers: aiRequestManager.getStaticProviderTemplates(),
+        hasServerGeminiKey: Boolean(process.env.GEMINI_API_KEY),
       });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Failed to fetch AI configuration." });
     }
   });
 
-  // Update manager global settings (mode, active config, free-only, fallback switches)
+  // Client-isolated acknowledgement for config updates (state lives in client localStorage)
   app.post("/api/ai/config", (req, res) => {
-    try {
-      const {
-        mode,
-        activeProviderId,
-        activeModel,
-        activeKeyId,
-        enableFallback,
-        freeOnlyMode,
-        billingMode,
-        enableModelFallback,
-        defaultTimeoutMs,
-      } = req.body;
-
-      aiRequestManager.updateManagerConfig({
-        ...(mode && { mode }),
-        ...(activeProviderId !== undefined && { activeProviderId }),
-        ...(activeModel !== undefined && { activeModel }),
-        ...(activeKeyId !== undefined && { activeKeyId }),
-        ...(enableFallback !== undefined && { enableFallback: Boolean(enableFallback) }),
-        ...(freeOnlyMode !== undefined && { freeOnlyMode: Boolean(freeOnlyMode) }),
-        ...(billingMode !== undefined && { billingMode }),
-        ...(enableModelFallback !== undefined && { enableModelFallback: Boolean(enableModelFallback) }),
-        ...(defaultTimeoutMs && { defaultTimeoutMs: Number(defaultTimeoutMs) }),
-      });
-
-      res.json({
-        success: true,
-        config: aiRequestManager.getManagerConfig(),
-        providers: aiRequestManager.getClientProviders(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to update AI settings." });
-    }
+    res.json({
+      success: true,
+      message: "AI settings are strictly managed in local browser storage.",
+    });
   });
 
-  // Update specific provider properties (enabled, selectedModel, priority, etc.)
+  // Client-isolated acknowledgement for provider updates
   app.post("/api/ai/providers/:id", (req, res) => {
-    try {
-      const { id } = req.params;
-      aiRequestManager.updateProvider(id, req.body);
-      res.json({
-        success: true,
-        providers: aiRequestManager.getClientProviders(),
-        config: aiRequestManager.getManagerConfig(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to update provider." });
-    }
+    res.json({
+      success: true,
+      message: "Provider settings are strictly managed in local browser storage.",
+    });
   });
 
-  // Securely add a new API key to a provider (defaults to enabled: false)
+  // Client-isolated acknowledgement for adding keys
   app.post("/api/ai/providers/:id/keys", (req, res) => {
-    try {
-      const { id } = req.params;
-      const { apiKey, name } = req.body;
-      if (!apiKey || typeof apiKey !== "string" || !apiKey.trim()) {
-        return res.status(400).json({ error: "API key cannot be empty." });
-      }
-
-      const result = aiRequestManager.addApiKey(id, apiKey, name);
-      res.json({
-        success: true,
-        providerId: id,
-        keyId: result.keyId,
-        maskedKey: result.masked,
-        enabled: result.enabled,
-        providers: aiRequestManager.getClientProviders(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to add API key." });
-    }
+    res.json({
+      success: true,
+      message: "API keys are stored strictly in local browser storage.",
+    });
   });
 
-  // Toggle individual key ON / OFF
+  // Client-isolated acknowledgement for toggling keys
   app.patch("/api/ai/providers/:id/keys/:keyId", (req, res) => {
-    try {
-      const { id, keyId } = req.params;
-      const { enabled } = req.body;
-      if (typeof enabled !== "boolean") {
-        return res.status(400).json({ error: "enabled field must be a boolean." });
-      }
-      aiRequestManager.toggleApiKey(id, keyId, enabled);
-      res.json({
-        success: true,
-        providers: aiRequestManager.getClientProviders(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to toggle key." });
-    }
+    res.json({
+      success: true,
+      message: "Keys are stored strictly in local browser storage.",
+    });
   });
 
-  // Remove an API key by keyId or numeric index
+  // Client-isolated acknowledgement for removing keys
   app.delete("/api/ai/providers/:id/keys/:keyId", (req, res) => {
-    try {
-      const { id, keyId } = req.params;
-      aiRequestManager.removeApiKey(id, keyId);
-      res.json({
-        success: true,
-        providerId: id,
-        providers: aiRequestManager.getClientProviders(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to remove API key." });
-    }
+    res.json({
+      success: true,
+      message: "Keys are stored strictly in local browser storage.",
+    });
   });
 
-  // Test provider connection and measure latency
+  // Test provider connection with a request-scoped key (stateless; does NOT save key)
   app.post("/api/ai/providers/:id/test", async (req, res) => {
     try {
       const { id } = req.params;
-      const { keyId, model } = req.body || {};
-      const result = await aiRequestManager.testProvider(id, keyId, model);
+      const { apiKey, model, customEndpoint, accountId } = req.body || {};
+      const result = await aiRequestManager.testProviderScoped(
+        id,
+        apiKey,
+        model,
+        customEndpoint,
+        accountId
+      );
       res.json(result);
     } catch (err: any) {
       res.status(500).json({
@@ -207,73 +142,50 @@ async function startServer() {
     }
   });
 
-  // Test all configured active providers
+  // Test active providers in request-scoped batch (stateless)
   app.post("/api/ai/test-all", async (req, res) => {
     try {
-      const results = await aiRequestManager.testAllProviders();
+      const { providers } = req.body || {};
+      const results = await aiRequestManager.testAllScoped(providers || []);
       res.json({ success: true, results });
     } catch (err: any) {
       res.status(500).json({ error: err.message || "Test all failed." });
     }
   });
 
-  // Explicitly persist settings to disk
+  // Explicitly acknowledge saving (client persists to local storage)
   app.post("/api/ai/save", (req, res) => {
-    try {
-      const saved = aiRequestManager.saveSettings();
-      res.json({ success: saved, message: saved ? "Settings saved successfully." : "Settings saved in memory." });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to save settings." });
-    }
+    res.json({
+      success: true,
+      message: "Settings are stored locally in the current browser/profile environment.",
+    });
   });
 
-  // Fetch usage stats
+  // Client-managed stats endpoint
   app.get("/api/ai/stats", (req, res) => {
-    try {
-      res.json({ stats: aiRequestManager.getStats() });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to fetch stats." });
-    }
+    res.json({ stats: [] });
   });
 
-  // Fetch fallback audit logs
+  // Client-managed fallback audit logs endpoint
   app.get("/api/ai/logs", (req, res) => {
-    try {
-      res.json({ logs: aiRequestManager.getRecentLogs() });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to fetch logs." });
-    }
+    res.json({ logs: [] });
   });
 
-  // Reorder provider priorities
+  // Client-isolated acknowledgement for provider reordering
   app.post("/api/ai/reorder", (req, res) => {
-    try {
-      const { order } = req.body;
-      if (!Array.isArray(order)) {
-        return res.status(400).json({ error: "Order must be an array of provider IDs." });
-      }
-      aiRequestManager.reorderProviders(order);
-      res.json({
-        success: true,
-        providers: aiRequestManager.getClientProviders(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to reorder providers." });
-    }
+    res.json({
+      success: true,
+      message: "Provider priorities are stored locally in the current browser/profile environment.",
+    });
   });
 
-  // Reset to initial configuration
+  // Reset to initial configuration templates
   app.post("/api/ai/reset", (req, res) => {
-    try {
-      aiRequestManager.resetToDefaults();
-      res.json({
-        success: true,
-        config: aiRequestManager.getManagerConfig(),
-        providers: aiRequestManager.getClientProviders(),
-      });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to reset AI settings." });
-    }
+    res.json({
+      success: true,
+      config: aiRequestManager.getManagerConfig(),
+      providers: aiRequestManager.getStaticProviderTemplates(),
+    });
   });
 
   // --- Modular Skills Management Endpoints ---
@@ -398,7 +310,10 @@ Follow these rules strictly:
     rawText: string,
     equationFormat = "native",
     formatMode: "auto" | "study_guide" | "exam_bank" = "auto",
-    enabledSkillIds?: string[]
+    enabledSkillIds?: string[],
+    customPrompt?: string,
+    aiConfig?: any,
+    userProviders?: any[]
   ): Promise<CleanNotesResult> {
     // 1. Execute Modular Skills Pipeline in priority order:
     // (1. Math -> 2. Scientific -> 3. Academic Manuscript -> 4. General Text)
@@ -406,11 +321,15 @@ Follow these rules strictly:
     const textAfterSkills = skillResult.text;
     const preCleaned = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(textAfterSkills));
 
-    // Combine Academic Math Instructions with specific Skill prompt instructions
+    // Combine Academic Math Instructions with specific Skill prompt instructions and user custom prompt
     const skillInstructions = getCombinedSkillPromptInstructions(enabledSkillIds);
-    const combinedSystemPrompt = skillInstructions
+    let combinedSystemPrompt = skillInstructions
       ? `${ACADEMIC_MATH_SYSTEM_INSTRUCTION}\n\n## MODULAR SKILLS INSTRUCTIONS (Strict Priority Order):\n${skillInstructions}`
       : ACADEMIC_MATH_SYSTEM_INSTRUCTION;
+
+    if (customPrompt && typeof customPrompt === "string" && customPrompt.trim()) {
+      combinedSystemPrompt += `\n\n## USER CUSTOM INSTRUCTIONS:\n${customPrompt.trim()}`;
+    }
 
     const prompt = `You are an expert technical editor, academic formatter, and mathematical typesetter.
 Your task is to take raw AI-generated or copy-pasted content (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes, formula sheets, lab manuals, and exam problem sets) and transform them into publication-ready, beautifully structured academic documents.
@@ -543,12 +462,16 @@ RAW NOTES:
 ${preCleaned}`;
 
     try {
-      const aiResponse = await aiRequestManager.execute({
-        prompt,
-        systemPrompt: combinedSystemPrompt,
-        temperature: 0.2,
-        capabilities: ["text", "math", "long_context"],
-      });
+      const aiResponse = await aiRequestManager.executeRequestScoped(
+        {
+          prompt,
+          systemPrompt: combinedSystemPrompt,
+          temperature: 0.2,
+          capabilities: ["text", "math", "long_context"],
+        },
+        aiConfig,
+        userProviders
+      );
 
       let cleaned = (aiResponse.text || "").trim();
       if (cleaned.startsWith("```markdown")) {
@@ -589,12 +512,28 @@ ${preCleaned}`;
   // Preview clean Markdown text without DOCX generation
   app.post("/api/preview-clean", async (req, res) => {
     try {
-      const { text, equationFormat = "native", formatMode = "auto", enabledSkillIds } = req.body;
+      const {
+        text,
+        equationFormat = "native",
+        formatMode = "auto",
+        enabledSkillIds,
+        customPrompt,
+        aiConfig,
+        userProviders,
+      } = req.body;
       if (!text || typeof text !== "string" || !text.trim()) {
         return res.status(400).json({ error: "Missing or empty 'text' field in request body." });
       }
 
-      const result = await cleanNotesWithMultiProviderAI(text, equationFormat, formatMode, enabledSkillIds);
+      const result = await cleanNotesWithMultiProviderAI(
+        text,
+        equationFormat,
+        formatMode,
+        enabledSkillIds,
+        customPrompt,
+        aiConfig,
+        userProviders
+      );
       res.json({
         cleaned_markdown: result.cleanedMarkdown,
         provider_id: result.providerId,
@@ -620,7 +559,10 @@ ${preCleaned}`;
         accent = "1A365D",
         equationFormat = "native",
         formatMode = "auto",
-        enabledSkillIds
+        enabledSkillIds,
+        customPrompt,
+        aiConfig,
+        userProviders,
       } = req.body || {};
 
       // Validate requested format (query param or body param, defaulting to 'docx')
@@ -645,7 +587,15 @@ ${preCleaned}`;
       let fallbackCount = 0;
 
       if (!markdownToBuild || typeof markdownToBuild !== "string" || !markdownToBuild.trim()) {
-        const aiResult = await cleanNotesWithMultiProviderAI(text, equationFormat, formatMode, enabledSkillIds);
+        const aiResult = await cleanNotesWithMultiProviderAI(
+          text,
+          equationFormat,
+          formatMode,
+          enabledSkillIds,
+          customPrompt,
+          aiConfig,
+          userProviders
+        );
         markdownToBuild = aiResult.cleanedMarkdown;
         providerName = aiResult.providerName;
         modelName = aiResult.model;

@@ -21,6 +21,7 @@ export const pandocMathDocxSkill: Skill = {
   category: "pandoc",
   enabled: true,
   isBuiltIn: true,
+  conflictsWith: ["math-docx"],
   features: [
     "Full Pandoc-compliant math delimiter parsing ($, $$, \\(...\\), \\[...\\])",
     "Equation environment normalization (equation, align*, gather, cases)",

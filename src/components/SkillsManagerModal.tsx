@@ -42,6 +42,7 @@ import {
   Key,
   Eye,
   EyeOff,
+  Clock,
 } from "lucide-react";
 
 export type SkillsModalTab = "skills" | "pipeline" | "tester" | "rules" | "instructions" | "license";
@@ -432,6 +433,39 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   const [skillMode, setSkillMode] = useState<SkillMode>(() => skillOrchestrator.getMode());
   const [mathValidationReport, setMathValidationReport] = useState<MathValidationResult | null>(null);
 
+  // Hard conflict detection hook between active skills
+  const activeSkillIds = useMemo(() => skills.filter((s) => s.enabled).map((s) => s.id), [skills]);
+  const activeConflictReport = useMemo(() => {
+    return skillRegistry.checkSkillConflicts(activeSkillIds);
+  }, [activeSkillIds]);
+
+  const autoResolveAllConflicts = () => {
+    const activeSkills = skills.filter((s) => s.enabled);
+    const disabledNames: string[] = [];
+    activeSkills.forEach((skill) => {
+      if (skill.conflictsWith) {
+        skill.conflictsWith.forEach((conflictingId) => {
+          const conflicting = skillRegistry.getSkill(conflictingId);
+          if (conflicting && conflicting.enabled) {
+            // Disable the one with lower priority (higher priority number)
+            if (conflicting.priority > skill.priority) {
+              skillRegistry.toggleSkill(conflictingId, false);
+              disabledNames.push(conflicting.name);
+            } else if (skill.priority > conflicting.priority) {
+              skillRegistry.toggleSkill(skill.id, false);
+              disabledNames.push(skill.name);
+            }
+          }
+        });
+      }
+    });
+    refreshState(
+      disabledNames.length > 0
+        ? `Auto-resolved conflicts by disabling lower-priority: ${Array.from(new Set(disabledNames)).join(", ")}`
+        : "No active conflicts to resolve."
+    );
+  };
+
   // Security password state for AI Studio Prompt tab
   const [isPromptUnlocked, setIsPromptUnlocked] = useState<boolean>(() => {
     try {
@@ -523,9 +557,34 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
 
   const handleToggle = (id: string) => {
     try {
+      const targetSkill = skillRegistry.getSkill(id);
+      if (!targetSkill) return;
+
+      const willBeEnabled = !targetSkill.enabled;
+
+      // When enabling a skill, detect hard conflicts with already active skills.
+      // Automatically disable the conflicting skill performing the competing write operation.
+      if (willBeEnabled && targetSkill.conflictsWith && targetSkill.conflictsWith.length > 0) {
+        const disabledConflictNames: string[] = [];
+        targetSkill.conflictsWith.forEach((conflictingId) => {
+          const conflicting = skillRegistry.getSkill(conflictingId);
+          if (conflicting && conflicting.enabled) {
+            skillRegistry.toggleSkill(conflictingId, false);
+            disabledConflictNames.push(conflicting.name);
+          }
+        });
+
+        skillRegistry.toggleSkill(id, true);
+        const notice =
+          disabledConflictNames.length > 0
+            ? `Enabled ${targetSkill.name} (Auto-disabled conflicting: ${disabledConflictNames.join(", ")})`
+            : `${targetSkill.name} enabled`;
+        refreshState(notice);
+        return;
+      }
+
       const newState = skillRegistry.toggleSkill(id);
-      const skill = skillRegistry.getSkill(id);
-      refreshState(`${skill?.name || id} ${newState ? "enabled" : "disabled"}`);
+      refreshState(`${targetSkill.name} ${newState ? "enabled" : "disabled"}`);
     } catch (err) {
       console.error("Failed to toggle skill:", err);
     }
@@ -1000,11 +1059,75 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                 )}
 
                 {skillMode === "all_on" && (
-                  <div className="p-2.5 bg-purple-950/40 border border-purple-500/30 rounded-xl text-xs text-purple-200 flex items-start gap-2">
-                    <Lock className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
-                    <span>
-                      <strong>All On Master Mode Active:</strong> All 12 skill modules are engaged. Mathematical expressions are guarded by Sentinel Math Lock tokens to guarantee zero syntax degradation.
-                    </span>
+                  <div className="p-3 bg-purple-950/60 border border-purple-500/40 rounded-xl text-xs text-purple-200 flex flex-col gap-2">
+                    <div className="flex items-start gap-2">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-purple-100 font-semibold">
+                          ALL ON Mode Engaged — Multi-Engine Execution Advisory:
+                        </strong>
+                        <p className="mt-0.5 text-purple-300 text-[11px] leading-relaxed">
+                          All 12 skills are concurrently active. While Sentinel Math Lock isolates LaTeX math syntax against degradation, dual-write engines (e.g., Native OMML math and Pandoc AST math) may perform overlapping transformations and increase formatting passes.
+                        </p>
+                      </div>
+                    </div>
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-2 mt-1 text-[11px] text-purple-300 bg-purple-900/40 p-2 rounded-lg border border-purple-500/20">
+                      <div className="flex items-center gap-1.5">
+                        <Lock className="w-3.5 h-3.5 text-emerald-400 shrink-0" />
+                        <span>Sentinel Math Lock: <strong>ACTIVE</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <AlertCircle className="w-3.5 h-3.5 text-amber-400 shrink-0" />
+                        <span>Dual-Write Redundancy: <strong>POSSIBLE</strong></span>
+                      </div>
+                      <div className="flex items-center gap-1.5">
+                        <Clock className="w-3.5 h-3.5 text-indigo-400 shrink-0" />
+                        <span>Pipeline Latency: <strong>HIGHER</strong></span>
+                      </div>
+                    </div>
+                    <div className="flex items-center justify-between pt-1">
+                      <span className="text-[11px] text-purple-400 italic">
+                        Tip: For regular documents, 'AUTO DETECT' or 'SMART MANUAL' is recommended.
+                      </span>
+                      <button
+                        type="button"
+                        onClick={() => handleModeChange("auto")}
+                        className="text-[11px] font-bold text-emerald-400 hover:text-emerald-300 underline cursor-pointer"
+                      >
+                        Switch to Auto Detect
+                      </button>
+                    </div>
+                  </div>
+                )}
+
+                {/* Hard Conflict Detection Warning Banner */}
+                {activeConflictReport.hasConflicts && skillMode !== "all_on" && (
+                  <div className="p-3 bg-amber-950/40 border border-amber-500/40 rounded-xl text-xs text-amber-200 flex flex-col sm:flex-row items-start sm:items-center justify-between gap-3 shadow-xs">
+                    <div className="flex items-start gap-2.5">
+                      <AlertTriangle className="w-4 h-4 text-amber-400 shrink-0 mt-0.5" />
+                      <div>
+                        <strong className="text-amber-100 font-semibold">
+                          Skill Conflict Detected:
+                        </strong>
+                        <p className="text-amber-300 text-[11px] mt-0.5">
+                          Multiple active skills target the same transformation surface:
+                        </p>
+                        <div className="mt-1 flex flex-wrap gap-1.5">
+                          {activeConflictReport.conflicts.map((c, i) => (
+                            <span key={i} className="px-2 py-0.5 bg-amber-900/60 border border-amber-600/40 rounded text-[11px] text-amber-200">
+                              {c.skillA} ⚡ {c.skillB}
+                            </span>
+                          ))}
+                        </div>
+                      </div>
+                    </div>
+                    <button
+                      type="button"
+                      onClick={autoResolveAllConflicts}
+                      className="px-3 py-1.5 bg-amber-500 hover:bg-amber-600 text-slate-950 font-bold rounded-lg transition-colors shrink-0 text-xs shadow-xs cursor-pointer"
+                    >
+                      Auto-Resolve Conflicts
+                    </button>
                   </div>
                 )}
               </div>

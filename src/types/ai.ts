@@ -7,6 +7,56 @@ export interface ModelInfo {
   description?: string;
 }
 
+export interface UserApiKeyItem {
+  id: string;
+  name: string;
+  key: string; // Raw API key stored strictly in local browser storage
+  maskedKey: string; // Masked key for UI display e.g. "AIza************cOA8"
+  enabled: boolean; // ON / OFF toggle
+  status?: "active" | "rate_limited" | "invalid" | "disabled";
+  lastTestedAt?: number;
+  lastTestLatencyMs?: number;
+  lastError?: string;
+}
+
+export interface UserProviderConfig {
+  id: string;
+  name: string;
+  enabled: boolean;
+  priority: number;
+  apiKeys: UserApiKeyItem[];
+  selectedModel: string;
+  selectedKeyId?: string;
+  availableModels: ModelInfo[];
+  maxRetries?: number;
+  timeoutMs?: number;
+  customEndpoint?: string;
+  accountId?: string;
+  billingMode?: "free_only" | "free_and_paid" | "disabled";
+  freeTier?: {
+    enabled: boolean;
+    limits?: {
+      requestsPerMinute?: number;
+      requestsPerDay?: number;
+      tokensPerMinute?: number;
+    };
+    notes?: string;
+  };
+  notes?: string;
+  status: "active" | "degraded" | "rate_limited" | "invalid_key" | "offline";
+  lastError?: string;
+}
+
+export interface UserPreferences {
+  docTitle: string;
+  fontFamily: string;
+  accentColor: string;
+  equationFormat: "native" | "latex" | "unicode";
+  formatMode: "auto" | "study_guide" | "exam_bank";
+  viewLayout: "split" | "editor" | "preview";
+  customPrompt?: string;
+}
+
 export interface ClientApiKeyItem {
   id: string;
   name: string;

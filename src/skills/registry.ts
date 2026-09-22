@@ -124,17 +124,25 @@ export class SkillRegistry {
   }
 
   /**
+   * Resolves skill ID aliases (e.g. docx-math-skill or md2docx-math -> math-docx)
+   */
+  public resolveSkillId(id: string): string {
+    if (id === "docx-math-skill" || id === "md2docx-math") return "math-docx";
+    return id;
+  }
+
+  /**
    * Retrieves a specific skill by unique ID.
    */
   public getSkill(id: string): Skill | undefined {
-    return this.skills.get(id);
+    return this.skills.get(this.resolveSkillId(id));
   }
 
   /**
    * Toggles or explicitly sets enabled status of a skill.
    */
   public toggleSkill(id: string, enabled?: boolean): boolean {
-    const skill = this.skills.get(id);
+    const skill = this.skills.get(this.resolveSkillId(id));
     if (!skill) return false;
     skill.enabled = enabled !== undefined ? enabled : !skill.enabled;
     this.persist();
@@ -204,18 +212,26 @@ export class SkillRegistry {
     conflicts: { skillA: string; skillB: string; reason: string }[];
   } {
     const conflicts: { skillA: string; skillB: string; reason: string }[] = [];
-    const activeSet = new Set(activeSkillIds);
+    const normalizedIds = activeSkillIds.map((id) => this.resolveSkillId(id));
+    const activeSet = new Set(normalizedIds);
+    const seenPairs = new Set<string>();
 
-    for (const id of activeSkillIds) {
+    for (const id of normalizedIds) {
       const skill = this.skills.get(id);
       if (skill && skill.conflictsWith) {
         for (const conflictingId of skill.conflictsWith) {
-          if (activeSet.has(conflictingId)) {
-            conflicts.push({
-              skillA: skill.name,
-              skillB: this.skills.get(conflictingId)?.name || conflictingId,
-              reason: `Skills share transformation surfaces; orchestrator will sequence priority ${skill.priority} before priority ${this.skills.get(conflictingId)?.priority || "?"}.`,
-            });
+          const normConflicting = this.resolveSkillId(conflictingId);
+          if (activeSet.has(normConflicting)) {
+            const pairKey = [id, normConflicting].sort().join("::");
+            if (!seenPairs.has(pairKey)) {
+              seenPairs.add(pairKey);
+              const conflictingSkill = this.skills.get(normConflicting);
+              conflicts.push({
+                skillA: skill.name,
+                skillB: conflictingSkill?.name || normConflicting,
+                reason: `Both skills perform competing write operations on mathematical notation (Word OMML vs Pandoc AST).`,
+              });
+            }
           }
         }
       }

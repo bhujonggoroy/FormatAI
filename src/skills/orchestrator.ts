@@ -22,11 +22,33 @@ import {
  * Enforces the 6-stage Math Pipeline (Detector -> Normalizer -> Classifier -> Engine -> Validator -> Lock)
  * to guarantee that mathematical formulas are never silently degraded or corrupted.
  */
+const SKILL_MODE_STORAGE_KEY = "format_ai_skill_orchestrator_mode_v2";
+
 export class SkillOrchestrator {
   private currentMode: SkillMode = "auto";
 
+  constructor() {
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        const saved = window.localStorage.getItem(SKILL_MODE_STORAGE_KEY);
+        if (saved === "auto" || saved === "manual" || saved === "all_on") {
+          this.currentMode = saved;
+        }
+      } catch (err) {
+        console.warn("FormatAI: Failed to load skill orchestrator mode from localStorage:", err);
+      }
+    }
+  }
+
   public setMode(mode: SkillMode): void {
     this.currentMode = mode;
+    if (typeof window !== "undefined" && window.localStorage) {
+      try {
+        window.localStorage.setItem(SKILL_MODE_STORAGE_KEY, mode);
+      } catch (err) {
+        console.warn("FormatAI: Failed to save skill orchestrator mode to localStorage:", err);
+      }
+    }
   }
 
   public getMode(): SkillMode {

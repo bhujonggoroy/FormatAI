@@ -7,7 +7,20 @@ import {
   FallbackLogEntry,
   TestResult,
   ModelInfo,
+  UserApiKeyItem,
+  UserProviderConfig,
 } from "../types/ai";
+import {
+  getUserSettings,
+  saveUserSettings,
+  getUserProviders,
+  saveUserProviders,
+  toClientProviders,
+  getUserStats,
+  getUserLogs,
+  resetAllUserData,
+  maskApiKey,
+} from "../utils/userLocalStorage";
 import {
   X,
   Sparkles,
@@ -89,25 +102,28 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const fetchAIConfig = async () => {
     setIsLoading(true);
     try {
-      const [cfgRes, statsRes, logsRes] = await Promise.all([
-        fetch("/api/ai/config"),
-        fetch("/api/ai/stats"),
-        fetch("/api/ai/logs"),
-      ]);
+      // 1. Fetch static templates from server
+      let templates: ClientProviderConfig[] = [];
+      try {
+        const cfgRes = await fetch("/api/ai/config");
+        if (cfgRes.ok) {
+          const data = await cfgRes.json();
+          templates = data.providers || [];
+        }
+      } catch (err) {
+        console.warn("Could not fetch server AI templates:", err);
+      }
 
-      if (cfgRes.ok) {
-        const data = await cfgRes.json();
-        setConfig(data.config);
-        setProviders(data.providers);
-      }
-      if (statsRes.ok) {
-        const data = await statsRes.json();
-        setStats(data.stats || []);
-      }
-      if (logsRes.ok) {
-        const data = await logsRes.json();
-        setLogs(data.logs || []);
-      }
+      // 2. Reconcile with current browser's isolated local storage
+      const userSettings = getUserSettings();
+      const userProvs = getUserProviders(templates);
+      const userStats = getUserStats();
+      const userLogs = getUserLogs();
+
+      setConfig(userSettings);
+      setProviders(toClientProviders(userProvs));
+      setStats(userStats);
+      setLogs(userLogs);
     } catch (err: any) {
       showStatus("Failed to load AI configuration: " + err.message, "error");
     } finally {
@@ -115,18 +131,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     }
   };
 
-  // Update Global Strategy or Active Configuration
+  // Update Global Strategy or Active Configuration (strictly local to current browser)
   const handleUpdateConfig = async (updates: Partial<ManagerConfig>) => {
     try {
-      const res = await fetch("/api/ai/config", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (!res.ok) throw new Error("Failed to update AI settings");
-      const data = await res.json();
-      setConfig(data.config);
-      if (data.providers) setProviders(data.providers);
+      const current = getUserSettings();
+      const updated = { ...current, ...updates };
+      saveUserSettings(updated);
+      setConfig(updated);
       onConfigChanged?.();
     } catch (err: any) {
       showStatus(err.message, "error");
@@ -136,16 +147,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   // Update a Provider (toggle provider ON/OFF, change selected model, priority, custom endpoint, accountId)
   const handleUpdateProvider = async (providerId: string, updates: Partial<ClientProviderConfig>) => {
     try {
-      const res = await fetch(`/api/ai/providers/${providerId}`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(updates),
-      });
-      if (!res.ok) throw new Error("Failed to update provider");
-      const data = await res.json();
-      setProviders(data.providers);
-      if (data.config) setConfig(data.config);
-      onConfigChanged?.();
+      const userProvs = getUserProviders();
+      const prov = userProvs.find((p) => p.id === providerId);
+      if (prov) {
+        Object.assign(prov, updates);
+        saveUserProviders(userProvs);
+        setProviders(toClientProviders(userProvs));
+        onConfigChanged?.();
+      }
     } catch (err: any) {
       showStatus(err.message, "error");
     }
@@ -154,16 +163,16 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   // Toggle individual API key ON / OFF
   const handleToggleKey = async (providerId: string, keyId: string, currentEnabled: boolean) => {
     try {
-      const res = await fetch(`/api/ai/providers/${providerId}/keys/${keyId}`, {
-        method: "PATCH",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ enabled: !currentEnabled }),
-      });
-      if (!res.ok) throw new Error("Failed to toggle API key");
-      const data = await res.json();
-      setProviders(data.providers);
-      showStatus(`Key ${!currentEnabled ? "Enabled (ON)" : "Disabled (OFF)"}`);
-      onConfigChanged?.();
+      const userProvs = getUserProviders();
+      const prov = userProvs.find((p) => p.id === providerId);
+      const keyObj = prov?.apiKeys?.find((k) => k.id === keyId);
+      if (keyObj) {
+        keyObj.enabled = !currentEnabled;
+        saveUserProviders(userProvs);
+        setProviders(toClientProviders(userProvs));
+        showStatus(`Key ${!currentEnabled ? "Enabled (ON)" : "Disabled (OFF)"}`);
+        onConfigChanged?.();
+      }
     } catch (err: any) {
       showStatus(err.message, "error");
     }
@@ -175,20 +184,30 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     if (!input || !input.key.trim()) return;
 
     try {
-      const res = await fetch(`/api/ai/providers/${providerId}/keys`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ apiKey: input.key.trim(), name: input.name?.trim() }),
-      });
-      if (!res.ok) {
-        const errJson = await res.json();
-        throw new Error(errJson.error || "Failed to add API key");
+      const userProvs = getUserProviders();
+      const prov = userProvs.find((p) => p.id === providerId);
+      if (!prov) throw new Error("Provider not found");
+
+      const newKeyItem: UserApiKeyItem = {
+        id: `key-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+        name: input.name?.trim() || `API Key ${(prov.apiKeys || []).length + 1}`,
+        key: input.key.trim(),
+        maskedKey: maskApiKey(input.key.trim()),
+        enabled: false,
+        status: "active",
+      };
+
+      if (!prov.apiKeys) prov.apiKeys = [];
+      prov.apiKeys.push(newKeyItem);
+      if (!prov.selectedKeyId) {
+        prov.selectedKeyId = newKeyItem.id;
       }
-      const data = await res.json();
-      setProviders(data.providers);
+
+      saveUserProviders(userProvs);
+      setProviders(toClientProviders(userProvs));
       setNewKeyInputs((prev) => ({ ...prev, [providerId]: { key: "", name: "" } }));
       setShowAddKeyFor(null);
-      showStatus(`API key added for ${providerId} (Status: OFF). Turn it ON when ready to use.`);
+      showStatus(`API key added for ${prov.name} (Status: OFF). Turn it ON when ready to use.`);
       onConfigChanged?.();
     } catch (err: any) {
       showStatus(err.message, "error");
@@ -199,14 +218,18 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const handleRemoveKey = async (providerId: string, keyId: string) => {
     if (!confirm("Are you sure you want to remove this API key?")) return;
     try {
-      const res = await fetch(`/api/ai/providers/${providerId}/keys/${keyId}`, {
-        method: "DELETE",
-      });
-      if (!res.ok) throw new Error("Failed to remove key");
-      const data = await res.json();
-      setProviders(data.providers);
-      showStatus("API key deleted.");
-      onConfigChanged?.();
+      const userProvs = getUserProviders();
+      const prov = userProvs.find((p) => p.id === providerId);
+      if (prov && prov.apiKeys) {
+        prov.apiKeys = prov.apiKeys.filter((k) => k.id !== keyId);
+        if (prov.selectedKeyId === keyId) {
+          prov.selectedKeyId = prov.apiKeys[0]?.id;
+        }
+        saveUserProviders(userProvs);
+        setProviders(toClientProviders(userProvs));
+        showStatus("API key deleted.");
+        onConfigChanged?.();
+      }
     } catch (err: any) {
       showStatus(err.message, "error");
     }
@@ -217,13 +240,37 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     const testId = `${providerId}-${keyId}`;
     setTestingKeyId(testId);
     try {
+      const userProvs = getUserProviders();
+      const prov = userProvs.find((p) => p.id === providerId);
+      const keyObj = prov?.apiKeys?.find((k) => k.id === keyId);
+      const rawKey = keyObj?.key;
+
       const res = await fetch(`/api/ai/providers/${providerId}/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ keyId, model }),
+        body: JSON.stringify({
+          apiKey: rawKey,
+          model: model || prov?.selectedModel,
+          customEndpoint: prov?.customEndpoint,
+          accountId: prov?.accountId,
+        }),
       });
       const result: TestResult = await res.json();
       setTestResults((prev) => ({ ...prev, [testId]: result }));
+
+      if (keyObj) {
+        keyObj.lastTestedAt = Date.now();
+        keyObj.lastTestLatencyMs = result.latencyMs;
+        if (result.success) {
+          keyObj.status = "active";
+          keyObj.lastError = undefined;
+        } else {
+          keyObj.status = result.errorKind === "rate_limit" ? "rate_limited" : "invalid";
+          keyObj.lastError = result.errorMessage;
+        }
+        saveUserProviders(userProvs);
+        setProviders(toClientProviders(userProvs));
+      }
 
       if (result.success) {
         showStatus(
@@ -234,13 +281,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           `✕ Connection failed for ${result.providerName}: ${result.errorMessage || "Unknown error"}`,
           "error"
         );
-      }
-
-      // Refresh to update key status
-      const cfgRes = await fetch("/api/ai/config");
-      if (cfgRes.ok) {
-        const data = await cfgRes.json();
-        setProviders(data.providers);
       }
     } catch (err: any) {
       showStatus(err.message, "error");
@@ -253,10 +293,33 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const handleTestAll = async () => {
     setTestingKeyId("all");
     try {
-      const res = await fetch("/api/ai/test-all", { method: "POST" });
+      const userProvs = getUserProviders();
+      const res = await fetch("/api/ai/test-all", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ providers: userProvs }),
+      });
       const data = await res.json();
+      if (data.results && Array.isArray(data.results)) {
+        for (const r of data.results) {
+          const prov = userProvs.find((p) => p.id === r.providerId);
+          const activeKey = prov?.apiKeys?.find((k) => k.enabled);
+          if (activeKey) {
+            activeKey.lastTestedAt = Date.now();
+            activeKey.lastTestLatencyMs = r.latencyMs;
+            if (r.success) {
+              activeKey.status = "active";
+              activeKey.lastError = undefined;
+            } else {
+              activeKey.status = r.errorKind === "rate_limit" ? "rate_limited" : "invalid";
+              activeKey.lastError = r.errorMessage;
+            }
+          }
+        }
+        saveUserProviders(userProvs);
+        setProviders(toClientProviders(userProvs));
+      }
       showStatus("Tested all active enabled providers. View details below.");
-      fetchAIConfig();
     } catch (err: any) {
       showStatus(err.message, "error");
     } finally {
@@ -266,41 +329,32 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
   // Move priority up or down
   const handleMovePriority = async (providerId: string, direction: "up" | "down") => {
-    const sorted = [...providers].sort((a, b) => a.priority - b.priority);
+    const userProvs = getUserProviders();
+    const sorted = [...userProvs].sort((a, b) => a.priority - b.priority);
     const index = sorted.findIndex((p) => p.id === providerId);
     if (index === -1) return;
 
     const targetIndex = direction === "up" ? index - 1 : index + 1;
     if (targetIndex < 0 || targetIndex >= sorted.length) return;
 
-    // Swap
     const temp = sorted[index];
     sorted[index] = sorted[targetIndex];
     sorted[targetIndex] = temp;
 
-    const newOrder = sorted.map((p) => p.id);
-    try {
-      const res = await fetch("/api/ai/reorder", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ order: newOrder }),
-      });
-      if (!res.ok) throw new Error("Failed to reorder");
-      const data = await res.json();
-      setProviders(data.providers);
-      onConfigChanged?.();
-    } catch (err: any) {
-      showStatus(err.message, "error");
-    }
+    sorted.forEach((p, idx) => {
+      p.priority = idx + 1;
+    });
+
+    saveUserProviders(sorted);
+    setProviders(toClientProviders(sorted));
+    onConfigChanged?.();
   };
 
   // Save Settings explicitly
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
-      const res = await fetch("/api/ai/save", { method: "POST" });
-      const data = await res.json();
-      showStatus("AI Settings saved successfully! Preferences will persist across sessions.");
+      showStatus("AI Settings saved successfully! Stored locally in your browser.");
       onConfigChanged?.();
     } catch (err: any) {
       showStatus(err.message, "error");
@@ -319,14 +373,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       return;
     }
     try {
-      const res = await fetch("/api/ai/reset", { method: "POST" });
-      if (res.ok) {
-        const data = await res.json();
-        setConfig(data.config);
-        setProviders(data.providers);
-        showStatus("AI Settings reset to safe defaults.");
-        onConfigChanged?.();
-      }
+      resetAllUserData();
+      await fetchAIConfig();
+      showStatus("AI Settings reset to safe defaults.");
+      onConfigChanged?.();
     } catch (err: any) {
       showStatus(err.message, "error");
     }
