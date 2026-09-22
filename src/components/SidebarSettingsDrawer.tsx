@@ -17,6 +17,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Zap,
+  Download,
 } from "lucide-react";
 import { FormatAILogo } from "./FormatAILogo";
 
@@ -47,6 +48,10 @@ interface SidebarSettingsDrawerProps {
   onClearText: () => void;
   charCount: number;
   wordCount: number;
+  // PWA Installation
+  isInstalled?: boolean;
+  hasNativePrompt?: boolean;
+  onInstallApp?: () => void;
 }
 
 export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
@@ -72,6 +77,9 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
   onClearText,
   charCount,
   wordCount,
+  isInstalled = false,
+  hasNativePrompt = false,
+  onInstallApp,
 }) => {
   if (!isOpen) return null;
 
@@ -107,6 +115,47 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
 
         {/* Drawer Scrollable Content */}
         <div className="flex-1 overflow-y-auto p-5 space-y-6 text-slate-700 text-xs">
+          {/* INSTALL APP - Prominently placed right at top of 3-lines bar drawer */}
+          {!isInstalled && onInstallApp && (
+            <div className="bg-gradient-to-r from-blue-50 to-indigo-50/80 border border-blue-200/90 rounded-xl p-3.5 space-y-2.5">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2.5">
+                  <div className="w-8 h-8 rounded-lg bg-blue-600 text-white flex items-center justify-center shadow-xs">
+                    <Download className="w-4 h-4" />
+                  </div>
+                  <div>
+                    <h3 className="font-bold text-slate-900 text-sm leading-tight">Install App</h3>
+                    <p className="text-[11px] text-slate-500">Standalone desktop & mobile app</p>
+                  </div>
+                </div>
+                {hasNativePrompt ? (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-100 text-emerald-800">
+                    Ready
+                  </span>
+                ) : (
+                  <span className="inline-flex items-center px-2 py-0.5 rounded-full text-[10px] font-semibold bg-blue-100/70 text-blue-800">
+                    PWA
+                  </span>
+                )}
+              </div>
+              <button
+                id="btn-sidebar-install-app-top"
+                type="button"
+                onClick={() => {
+                  onInstallApp?.();
+                }}
+                className="w-full flex items-center justify-between p-2.5 bg-blue-600 hover:bg-blue-700 text-white font-semibold rounded-lg text-xs transition-colors shadow-xs cursor-pointer"
+                title="Install FormatAI application"
+              >
+                <span className="flex items-center gap-2">
+                  <Download className="w-4 h-4" />
+                  <span>Install FormatAI</span>
+                </span>
+                <ChevronRight className="w-4 h-4 text-blue-200" />
+              </button>
+            </div>
+          )}
+
           {/* SECTION 1: Multi-Provider AI Settings */}
           <div className="bg-gradient-to-br from-blue-50/60 to-indigo-50/40 border border-blue-100 rounded-xl p-4 space-y-3">
             <div className="flex items-center justify-between">

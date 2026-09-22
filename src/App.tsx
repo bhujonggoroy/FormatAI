@@ -10,6 +10,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SplashScreen } from "./components/SplashScreen";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
+import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import {
   Sparkles,
@@ -45,6 +46,14 @@ export default function App() {
   const [isSkillsManagerModalOpen, setIsSkillsManagerModalOpen] = useState<boolean>(false);
   const [skillsModalTab, setSkillsModalTab] = useState<SkillsModalTab>("skills");
   const [activeSkillsCount, setActiveSkillsCount] = useState<number>(() => skillRegistry.getEnabledSkillIds().length);
+
+  // PWA In-App Installation hook (Vanilla JS direct install system)
+  const { hasNativePrompt, isInstalled, directInstall } = usePWAInstallPrompt();
+
+  const handleInstallApp = async () => {
+    setIsSidebarOpen(false);
+    await directInstall();
+  };
 
   // Multi-Provider AI telemetry state
   const [aiHealthInfo, setAiHealthInfo] = useState<{
@@ -158,8 +167,8 @@ export default function App() {
     }
   };
 
-  // Trigger main conversion and automatic DOCX file download
-  const handleConvertToDocx = async () => {
+  // Main export handler: Supports docx, pdf, tex, md, txt formats
+  const downloadFile = async (format: "docx" | "pdf" | "tex" | "md" | "txt" = "docx") => {
     if (!inputText.trim()) {
       setErrorMessage("Please paste your NotebookLM notes first.");
       return;
@@ -169,26 +178,35 @@ export default function App() {
     setErrorMessage(null);
     setSuccessMessage(null);
 
-    try {
-      setConversionStage("1/2: Normalizing notes & equations...");
+    const formatLabels: Record<string, string> = {
+      docx: "Word document (.docx)",
+      pdf: "PDF document (.pdf)",
+      tex: "LaTeX document (.tex)",
+      md: "Markdown document (.md)",
+      txt: "Plain text document (.txt)",
+    };
 
-      const response = await fetch("/convert", {
+    try {
+      setConversionStage(`1/2: Preparing ${formatLabels[format] || format}...`);
+
+      const response = await fetch(`/export?format=${format}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: inputText,
           cleanedMarkdown: effectiveMarkdown,
-          title: docTitle.trim() || "File Name",
+          title: docTitle.trim() || "Notes",
           font: fontFamily,
           accent: accentColor,
           equationFormat,
           formatMode,
+          format,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
         }),
       });
 
       if (!response.ok) {
-        let errText = "Conversion failed.";
+        let errText = "Export failed.";
         try {
           const errJson = await response.json();
           errText = errJson.error || errText;
@@ -198,14 +216,26 @@ export default function App() {
 
       const providerHeader = response.headers.get("x-ai-provider");
 
-      setConversionStage("2/2: Generating Word document (.docx)...");
+      setConversionStage(`2/2: Generating ${formatLabels[format] || format}...`);
 
       const blob = await response.blob();
 
-      const safeFilename =
-        (docTitle.trim() || "file_name")
+      // Extract filename from Content-Disposition header if available
+      let safeFilename = "";
+      const disposition = response.headers.get("Content-Disposition");
+      if (disposition && disposition.includes("filename=")) {
+        const match = disposition.match(/filename="?([^"]+)"?/);
+        if (match && match[1]) {
+          safeFilename = match[1];
+        }
+      }
+
+      if (!safeFilename) {
+        const baseName = (docTitle.trim() || "notes")
           .toLowerCase()
-          .replace(/[^a-z0-9_\-]/g, "_") + ".docx";
+          .replace(/[^a-z0-9_\-]/g, "_");
+        safeFilename = `${baseName}.${format}`;
+      }
 
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
@@ -234,12 +264,15 @@ export default function App() {
       }
       fetchAIHealth();
     } catch (err: any) {
-      setErrorMessage(err.message || "An error occurred during conversion.");
+      setErrorMessage(err.message || "An error occurred during export.");
     } finally {
       setIsConverting(false);
       setConversionStage("");
     }
   };
+
+  // Keep handleConvertToDocx for backward compatibility
+  const handleConvertToDocx = () => downloadFile("docx");
 
   const charCount = inputText.length;
   const wordCount = inputText.trim() ? inputText.trim().split(/\s+/).length : 0;
@@ -271,6 +304,7 @@ export default function App() {
           onTriggerAiPolish={handlePreviewClean}
           aiProviderName={aiHealthInfo?.providersSummary?.[0]}
           onDownloadDocx={handleConvertToDocx}
+          onExportFormat={downloadFile}
           canDownload={Boolean(inputText.trim())}
           formatMode={formatMode}
           onFormatModeChange={(mode) => {
@@ -605,6 +639,9 @@ export default function App() {
         }}
         charCount={charCount}
         wordCount={wordCount}
+        isInstalled={isInstalled}
+        hasNativePrompt={hasNativePrompt}
+        onInstallApp={handleInstallApp}
       />
 
       {/* Multi-Provider AI Settings Modal */}

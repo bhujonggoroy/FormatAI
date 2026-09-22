@@ -14,6 +14,15 @@ import {
   sanitizeMathToUnicode,
   buildDocxFromMarkdown
 } from "./src/server/docxService.ts";
+import {
+  validateExportFormat,
+  getSafeFilenameBase,
+  generateLaTeXDocument,
+  generateMarkdownDocument,
+  generatePlainTextDocument,
+  generatePdfBuffer,
+  ExportFormat
+} from "./src/server/exportService.ts";
 import { cleanClientSideNotebookLM } from "./src/utils/cleaner.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";
 import {
@@ -30,6 +39,28 @@ const PORT = 3000;
 async function startServer() {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
+
+  // PWA Manifest and Service Worker routes
+  app.get("/manifest.json", (req, res) => {
+    const manifestPath = path.join(process.cwd(), "public", "manifest.json");
+    if (fs.existsSync(manifestPath)) {
+      res.setHeader("Content-Type", "application/manifest+json; charset=utf-8");
+      res.sendFile(manifestPath);
+    } else {
+      res.status(404).send("Manifest not found");
+    }
+  });
+
+  app.get("/service-worker.js", (req, res) => {
+    const swPath = path.join(process.cwd(), "public", "service-worker.js");
+    if (fs.existsSync(swPath)) {
+      res.setHeader("Content-Type", "application/javascript; charset=utf-8");
+      res.setHeader("Service-Worker-Allowed", "/");
+      res.sendFile(swPath);
+    } else {
+      res.status(404).send("Service Worker not found");
+    }
+  });
 
   // Health check endpoint
   app.get("/api/health", (req, res) => {
@@ -583,8 +614,8 @@ ${preCleaned}`;
     }
   });
 
-  // Main conversion endpoint: Returns binary DOCX file
-  const handleConvert = async (req: express.Request, res: express.Response) => {
+  // Main export & conversion endpoint: Supports docx, pdf, tex, md, txt
+  const handleExport = async (req: express.Request, res: express.Response) => {
     try {
       const {
         text,
@@ -595,13 +626,22 @@ ${preCleaned}`;
         equationFormat = "native",
         formatMode = "auto",
         enabledSkillIds
-      } = req.body;
+      } = req.body || {};
+
+      // Validate requested format (query param or body param, defaulting to 'docx')
+      const rawFormat = req.query.format || (req.body && req.body.format) || "docx";
+      let targetFormat: ExportFormat;
+      try {
+        targetFormat = validateExportFormat(rawFormat);
+      } catch (formatErr: any) {
+        return res.status(400).json({ error: formatErr.message || "Invalid export format. Allowed formats: docx, pdf, tex, md, txt." });
+      }
 
       if (!text || typeof text !== "string" || !text.trim()) {
         return res.status(400).json({ error: "Please paste your NotebookLM notes to convert." });
       }
 
-      console.log(`Starting conversion for: "${title}" (length: ${text.length} chars, eqFormat: ${equationFormat}, formatMode: ${formatMode}, hasPreview: ${Boolean(clientCleanedMarkdown)})`);
+      console.log(`Starting export [format: ${targetFormat}] for: "${title}" (length: ${text.length} chars, eqFormat: ${equationFormat}, formatMode: ${formatMode}, hasPreview: ${Boolean(clientCleanedMarkdown)})`);
       
       // Step 1: Use the exact markdown the user previewed, or clean via Multi-Provider AIRequestManager
       let markdownToBuild = clientCleanedMarkdown;
@@ -617,35 +657,97 @@ ${preCleaned}`;
         fallbackCount = aiResult.fallbackCount;
       }
 
-      // Step 2: Build DOCX buffer with native Word Math & typography
-      const docxBuffer = await buildDocxFromMarkdown(markdownToBuild, {
-        title,
-        fontFamily: font,
-        accentColor: accent.replace('#', ''),
-        equationFormat: equationFormat as any,
-        enabledSkillIds,
-      });
+      // Safe filename sanitized against directory traversal and invalid chars
+      const safeBase = getSafeFilenameBase(title, "academic_notes");
 
-      // Step 3: Stream download
-      const safeFilename = (title || "notebooklm_notes")
-        .toLowerCase()
-        .replace(/[^a-z0-9_\-]/g, "_") + ".docx";
-
-      res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-      res.setHeader("Content-Disposition", `attachment; filename="${safeFilename}"`);
-      res.setHeader("Content-Length", docxBuffer.length);
+      // Common AI telemetry headers
       res.setHeader("x-ai-provider", providerName);
       res.setHeader("x-ai-model", modelName);
       res.setHeader("x-ai-fallback-count", String(fallbackCount));
-      res.end(docxBuffer);
+
+      // Handle each supported format
+      switch (targetFormat) {
+        case "docx": {
+          // Build DOCX buffer with native Word Math & typography (Preserved Original)
+          const docxBuffer = await buildDocxFromMarkdown(markdownToBuild, {
+            title,
+            fontFamily: font,
+            accentColor: accent.replace('#', ''),
+            equationFormat: equationFormat as any,
+            enabledSkillIds,
+          });
+
+          const filename = `${safeBase}.docx`;
+          res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Length", docxBuffer.length);
+          return res.end(docxBuffer);
+        }
+
+        case "pdf": {
+          // Generate PDF with PDFKit
+          const pdfBuffer = await generatePdfBuffer(markdownToBuild, {
+            title,
+            fontFamily: font,
+            accentColor: accent,
+          });
+
+          const filename = `${safeBase}.pdf`;
+          res.setHeader("Content-Type", "application/pdf");
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Length", pdfBuffer.length);
+          return res.end(pdfBuffer);
+        }
+
+        case "tex": {
+          // Generate LaTeX document (.tex)
+          const texContent = generateLaTeXDocument(markdownToBuild, title);
+          const texBuffer = Buffer.from(texContent, "utf-8");
+          const filename = `${safeBase}.tex`;
+
+          res.setHeader("Content-Type", "text/x-tex; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Length", texBuffer.length);
+          return res.end(texBuffer);
+        }
+
+        case "md": {
+          // Generate clean Markdown (.md)
+          const mdContent = generateMarkdownDocument(markdownToBuild, title);
+          const mdBuffer = Buffer.from(mdContent, "utf-8");
+          const filename = `${safeBase}.md`;
+
+          res.setHeader("Content-Type", "text/markdown; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Length", mdBuffer.length);
+          return res.end(mdBuffer);
+        }
+
+        case "txt": {
+          // Generate Plain Text (.txt)
+          const txtContent = generatePlainTextDocument(markdownToBuild, title);
+          const txtBuffer = Buffer.from(txtContent, "utf-8");
+          const filename = `${safeBase}.txt`;
+
+          res.setHeader("Content-Type", "text/plain; charset=utf-8");
+          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Length", txtBuffer.length);
+          return res.end(txtBuffer);
+        }
+
+        default:
+          return res.status(400).json({ error: "Unsupported export format." });
+      }
     } catch (err: any) {
-      console.error("Conversion error:", err);
-      res.status(500).json({ error: err.message || "Failed to convert document." });
+      console.error("Export error:", err);
+      res.status(500).json({ error: err.message || "Failed to export document." });
     }
   };
 
-  app.post("/convert", handleConvert);
-  app.post("/api/convert", handleConvert);
+  app.post("/convert", handleExport);
+  app.post("/api/convert", handleExport);
+  app.post("/export", handleExport);
+  app.post("/api/export", handleExport);
 
   // Endpoint to fetch project files for inspector
   app.get("/api/project-files", (req, res) => {

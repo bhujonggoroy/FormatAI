@@ -34,6 +34,7 @@ interface ToolbarGridProps {
   onTriggerAiPolish: () => void;
   aiProviderName?: string;
   onDownloadDocx: () => void;
+  onExportFormat?: (format: "docx" | "pdf" | "tex" | "md" | "txt") => void;
   canDownload: boolean;
   // Format Mode (Study Guide & Formulas)
   formatMode: "auto" | "study_guide" | "exam_bank";
@@ -58,6 +59,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   onTriggerAiPolish,
   aiProviderName,
   onDownloadDocx,
+  onExportFormat,
   canDownload,
   formatMode,
   onFormatModeChange,
@@ -607,27 +609,189 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
             )}
           </div>
 
-          {/* ===================== CARD 8: EXPORT WORD (Dedicated Tile right below Card 4 AI Polish) ===================== */}
-          <div className="relative">
-            <button
-              id="card-toolbar-export-word"
-              type="button"
-              onClick={onDownloadDocx}
-              disabled={!canDownload || isAiPolishing}
-              className="w-full h-full bg-[#0f2343] hover:bg-[#0a1a32] active:scale-[0.99] border border-[#0f2343] hover:border-slate-900 hover:shadow-md rounded-xl p-3 sm:p-3.5 transition-all text-left flex flex-col justify-between cursor-pointer group disabled:opacity-50 disabled:cursor-not-allowed shadow-xs"
-              title="Download publication-ready Microsoft Word (.docx) document"
+          {/* ===================== CARD 8: SPLIT BUTTON EXPORT DOCS ===================== */}
+          <div className="relative h-full">
+            <div
+              className={`w-full h-full bg-[#0f2343] border border-[#0f2343] hover:border-slate-900 rounded-xl shadow-xs transition-all flex items-stretch ${
+                !canDownload || isAiPolishing ? "opacity-50 cursor-not-allowed" : ""
+              }`}
             >
-              <div className="flex items-center justify-between w-full">
+              {/* Main left button: Export Docs (must continue downloading DOCX) */}
+              <button
+                id="btn-export-docs-main"
+                type="button"
+                onClick={() => {
+                  if (onExportFormat) {
+                    onExportFormat("docx");
+                  } else {
+                    onDownloadDocx();
+                  }
+                }}
+                disabled={!canDownload || isAiPolishing}
+                className="flex-1 p-3 sm:p-3.5 transition-all text-left flex flex-col justify-between cursor-pointer group hover:bg-[#0a1a32] rounded-l-xl disabled:cursor-not-allowed"
+                title="Export Docs (Download DOCX)"
+              >
                 <div className="flex items-center gap-1.5 sm:gap-2">
                   <FileDown className="w-4 h-4 sm:w-5 sm:h-5 text-blue-300 shrink-0" />
-                  <span className="font-bold text-white text-sm sm:text-[15px]">Export Word</span>
+                  <span className="font-bold text-white text-sm sm:text-[15px]">Export Docs</span>
                 </div>
-                <ChevronRight className="w-4 h-4 text-blue-200 group-hover:translate-x-0.5 transition-transform" />
+                <p className="text-[11px] sm:text-xs text-blue-200/80 mt-1 sm:mt-2 font-normal line-clamp-1">
+                  Save publication-ready .docx document
+                </p>
+              </button>
+
+              {/* Divider between left and right */}
+              <div className="w-px bg-white/20 my-2 shrink-0" />
+
+              {/* Right side: ▼ opens dropdown */}
+              <button
+                id="btn-export-dropdown-toggle"
+                type="button"
+                onClick={() => toggleCard("export")}
+                disabled={!canDownload || isAiPolishing}
+                aria-label="Open export options menu"
+                aria-expanded={openCard === "export"}
+                className={`px-3 sm:px-3.5 flex items-center justify-center hover:bg-[#0a1a32] rounded-r-xl transition-all cursor-pointer text-blue-200 group disabled:cursor-not-allowed ${
+                  openCard === "export" ? "bg-[#0a1a32] text-white" : ""
+                }`}
+                title="Select Export Format (PDF, LaTeX, Markdown, Text)"
+              >
+                <ChevronDown
+                  className={`w-4 h-4 text-blue-200 group-hover:text-white transition-transform duration-200 ${
+                    openCard === "export" ? "rotate-180 text-white" : ""
+                  }`}
+                />
+              </button>
+            </div>
+
+            {/* Dropdown Menu */}
+            {openCard === "export" && (
+              <div
+                id="menu-export-formats"
+                className="absolute right-0 sm:left-auto lg:right-0 top-full mt-2 w-72 max-w-[calc(100vw-2.5rem)] bg-white rounded-xl shadow-xl border border-slate-200 p-2 z-50 animate-in fade-in zoom-in-95 select-none"
+              >
+                <div className="px-3 py-1.5 text-[10px] font-bold uppercase tracking-wider text-slate-400 border-b border-slate-100 flex items-center justify-between">
+                  <span>Export Formats</span>
+                  <span className="text-[9px] font-normal text-slate-400">Select file type</span>
+                </div>
+
+                <div className="py-1 space-y-1">
+                  {/* PDF (.pdf) */}
+                  <button
+                    type="button"
+                    id="opt-export-pdf"
+                    onClick={() => {
+                      setOpenCard(null);
+                      if (onExportFormat) onExportFormat("pdf");
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-800 hover:bg-slate-50 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-md bg-rose-50 border border-rose-100 flex items-center justify-center text-rose-600 font-bold text-[10px] shrink-0">
+                        PDF
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800 group-hover:text-rose-700">PDF (.pdf)</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Standard Typeset Document</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* LaTeX (.tex) */}
+                  <button
+                    type="button"
+                    id="opt-export-tex"
+                    onClick={() => {
+                      setOpenCard(null);
+                      if (onExportFormat) onExportFormat("tex");
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-800 hover:bg-slate-50 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-md bg-indigo-50 border border-indigo-100 flex items-center justify-center text-indigo-600 font-bold text-[10px] shrink-0">
+                        TeX
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800 group-hover:text-indigo-700">LaTeX (.tex)</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Compilable Academic Source</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Markdown (.md) */}
+                  <button
+                    type="button"
+                    id="opt-export-md"
+                    onClick={() => {
+                      setOpenCard(null);
+                      if (onExportFormat) onExportFormat("md");
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-800 hover:bg-slate-50 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-md bg-blue-50 border border-blue-100 flex items-center justify-center text-blue-600 font-bold text-[10px] shrink-0">
+                        MD
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800 group-hover:text-blue-700">Markdown (.md)</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Clean Academic Markdown</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  {/* Plain Text (.txt) */}
+                  <button
+                    type="button"
+                    id="opt-export-txt"
+                    onClick={() => {
+                      setOpenCard(null);
+                      if (onExportFormat) onExportFormat("txt");
+                    }}
+                    className="w-full text-left px-3 py-2 rounded-lg text-xs font-semibold text-slate-800 hover:bg-slate-50 flex items-center justify-between group transition-colors cursor-pointer"
+                  >
+                    <div className="flex items-center gap-2.5">
+                      <span className="w-6 h-6 rounded-md bg-slate-100 border border-slate-200 flex items-center justify-center text-slate-600 font-bold text-[10px] shrink-0">
+                        TXT
+                      </span>
+                      <div className="flex flex-col">
+                        <span className="font-bold text-slate-800 group-hover:text-slate-900">Plain Text (.txt)</span>
+                        <span className="text-[10px] text-slate-400 font-normal">Clean Raw Notes</span>
+                      </div>
+                    </div>
+                  </button>
+
+                  <div className="pt-1 border-t border-slate-100">
+                    {/* Word (.docx) */}
+                    <button
+                      type="button"
+                      id="opt-export-docx"
+                      onClick={() => {
+                        setOpenCard(null);
+                        if (onExportFormat) {
+                          onExportFormat("docx");
+                        } else {
+                          onDownloadDocx();
+                        }
+                      }}
+                      className="w-full text-left px-3 py-1.5 rounded-lg text-xs font-semibold text-slate-600 hover:bg-slate-50 flex items-center justify-between group transition-colors cursor-pointer"
+                    >
+                      <div className="flex items-center gap-2.5">
+                        <span className="w-6 h-6 rounded-md bg-sky-50 border border-sky-100 flex items-center justify-center text-sky-700 font-bold text-[10px] shrink-0">
+                          DOCX
+                        </span>
+                        <div className="flex flex-col">
+                          <span className="font-semibold text-slate-700">Word (.docx)</span>
+                          <span className="text-[10px] text-slate-400 font-normal">Default Word Document</span>
+                        </div>
+                      </div>
+                      <span className="text-[10px] font-semibold text-sky-700 bg-sky-50 px-1.5 py-0.5 rounded border border-sky-200">
+                        Default
+                      </span>
+                    </button>
+                  </div>
+                </div>
               </div>
-              <p className="text-[11px] sm:text-xs text-blue-200/80 mt-1 sm:mt-2 font-normal line-clamp-1">
-                Save publication-ready .docx document
-              </p>
-            </button>
+            )}
           </div>
         </div>
       </div>
