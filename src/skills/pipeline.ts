@@ -1,79 +1,62 @@
-import { Skill, SkillPipelineResult } from "./types";
-import { skillRegistry } from "./skillRegistry";
+import { SkillPipelineResult, SkillMode } from "./types";
+import { skillRegistry } from "./registry";
+import { skillOrchestrator } from "./orchestrator";
 
 /**
- * Executes enabled skills sequentially in strict priority order:
- * 1. Mathematical / Equation processing
- * 2. Scientific formatting
- * 3. Academic manuscript formatting
- * 4. General text formatting
+ * Executes enabled skills sequentially with the 6-stage Math Pipeline and safe orchestration.
+ * 
+ * Supports AUTO DETECT, SMART MANUAL, and ALL ON modes.
  */
 export function executeSkillPipeline(
   text: string,
-  enabledSkillIds?: string[]
+  enabledSkillIds?: string[],
+  mode?: SkillMode
 ): SkillPipelineResult {
   if (!text) {
     return {
       text: "",
       executedSkillIds: [],
       appliedTransformations: [],
+      mode: mode || "auto",
     };
   }
 
-  // Retrieve enabled skills (filtered by enabledSkillIds if provided)
-  const allEnabled = skillRegistry.getEnabledSkills();
-  const activeSkills = enabledSkillIds
-    ? allEnabled.filter((s) => enabledSkillIds.includes(s.id))
-    : allEnabled;
-
-  // Strict sort by priority (1 -> 2 -> 3 -> 4)
-  const orderedSkills = [...activeSkills].sort((a, b) => a.priority - b.priority);
-
-  let currentText = text;
-  const executedSkillIds: string[] = [];
-  const appliedTransformations: { skillId: string; skillName: string; summary: string }[] = [];
-
-  for (const skill of orderedSkills) {
-    if (typeof skill.transformText === "function") {
-      const transformed = skill.transformText(currentText);
-      if (transformed !== currentText) {
-        appliedTransformations.push({
-          skillId: skill.id,
-          skillName: skill.name,
-          summary: `Applied priority ${skill.priority} rules (${skill.shortName})`,
-        });
-        currentText = transformed;
-      }
-      executedSkillIds.push(skill.id);
-    }
+  // If specific skill IDs are provided, run with mode = 'manual' and those skills
+  if (enabledSkillIds && enabledSkillIds.length > 0) {
+    const { result } = skillOrchestrator.orchestrate(text, {
+      mode: "manual",
+      skillIds: enabledSkillIds,
+    });
+    return result;
   }
 
-  return {
-    text: currentText,
-    executedSkillIds,
-    appliedTransformations,
-  };
+  // Otherwise delegate to skillOrchestrator with requested mode
+  const { result } = skillOrchestrator.orchestrate(text, { mode });
+  return result;
 }
 
 /**
  * Combines system prompt instructions from enabled skills into a unified prompt
  * ordered by priority for AI multi-provider requests.
  */
-export function getCombinedSkillPromptInstructions(enabledSkillIds?: string[]): string {
-  const allEnabled = skillRegistry.getEnabledSkills();
-  const activeSkills = enabledSkillIds
-    ? allEnabled.filter((s) => enabledSkillIds.includes(s.id))
-    : allEnabled;
+export function getCombinedSkillPromptInstructions(
+  enabledSkillIds?: string[],
+  mode?: SkillMode,
+  text?: string
+): string {
+  if (enabledSkillIds && enabledSkillIds.length > 0) {
+    const allEnabled = skillRegistry
+      .getAllSkills()
+      .filter((s) => enabledSkillIds.includes(s.id));
+    const orderedSkills = [...allEnabled].sort((a, b) => a.priority - b.priority);
+    const sections = orderedSkills.map(
+      (skill) =>
+        `### [Priority ${skill.priority}] ${skill.name} (${skill.shortName})\n${skill.systemPromptInstruction}`
+    );
+    return sections.join("\n\n");
+  }
 
-  // Sort by priority
-  const orderedSkills = [...activeSkills].sort((a, b) => a.priority - b.priority);
-
-  const sections = orderedSkills.map(
-    (skill) =>
-      `### [Priority ${skill.priority}] ${skill.name} (${skill.shortName})\n${skill.systemPromptInstruction}`
-  );
-
-  return sections.join("\n\n");
+  return skillOrchestrator.getCombinedSystemPrompt(mode, text);
 }
 
 /**

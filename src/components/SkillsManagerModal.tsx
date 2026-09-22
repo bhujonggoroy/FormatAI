@@ -3,6 +3,9 @@ import {
   Skill,
   skillRegistry,
   executeSkillPipeline,
+  skillOrchestrator,
+  SkillMode,
+  MathValidationResult,
 } from "../skills";
 import {
   Sparkles,
@@ -33,11 +36,8 @@ import {
   ShieldCheck,
   Scale,
   Heart,
+  AlertTriangle,
   Lock,
-  Unlock,
-  Key,
-  Eye,
-  EyeOff,
 } from "lucide-react";
 
 export type SkillsModalTab = "skills" | "pipeline" | "tester" | "rules" | "instructions" | "license";
@@ -67,15 +67,6 @@ export const GITHUB_REPOS_ATTRIBUTION = [
     compliance: "100% Permissive Open-Source. Derivative algorithms integrated with full copyright retention.",
   },
   {
-    name: "scientific-agent-skills",
-    owner: "K-Dense-AI",
-    repoUrl: "https://github.com/K-Dense-AI/scientific-agent-skills",
-    licenseType: "MIT / Apache-2.0 Compatible",
-    description:
-      "Physical unit formatting (SI base and derived units), chemical formulas, IUPAC notation, and physical constants.",
-    compliance: "100% Permissive Open-Source. Royalty-free scientific formatting logic embedded with attribution.",
-  },
-  {
     name: "pandoc-math-docx",
     owner: "Kantyc",
     repoUrl: "https://github.com/Kantyc/pandoc-math-docx",
@@ -85,6 +76,33 @@ export const GITHUB_REPOS_ATTRIBUTION = [
     compliance: "100% Permissive Open-Source. Modular Pandoc-style parsing methods adapted freely under MIT terms.",
   },
   {
+    name: "stat-notation-docx",
+    owner: "Academic-Skills-Hub",
+    repoUrl: "https://github.com/Academic-Skills-Hub/stat-notation-docx",
+    licenseType: "MIT License",
+    description:
+      "Rigorous probability and statistics formatting: sample statistics (\\bar{X}, s^2, \\hat{p}) vs population parameters (\\mu, \\sigma^2, \\pi), hypothesis tests, and operators.",
+    compliance: "100% Permissive Open-Source. Standardized statistical notations integrated with full attribution.",
+  },
+  {
+    name: "scientific-agent-skills",
+    owner: "K-Dense-AI",
+    repoUrl: "https://github.com/K-Dense-AI/scientific-agent-skills",
+    licenseType: "MIT / Apache-2.0 Compatible",
+    description:
+      "Physical unit formatting (SI base and derived units), exponential scientific notation, uncertainties (\\pm), and physical constants.",
+    compliance: "100% Permissive Open-Source. Royalty-free scientific formatting logic embedded with attribution.",
+  },
+  {
+    name: "chem-equation-skill",
+    owner: "K-Dense-AI",
+    repoUrl: "https://github.com/K-Dense-AI/chem-equation-skill",
+    licenseType: "Apache-2.0 License",
+    description:
+      "Chemical stoichiometry, molecular formulas (H2O, CO2, H2SO4), reaction arrows, states of matter, and thermochemical enthalpy changes.",
+    compliance: "100% Permissive Open-Source. IUPAC chemical formatting algorithms integrated under Apache-2.0.",
+  },
+  {
     name: "academic-manuscript-skill",
     owner: "kchemorion",
     repoUrl: "https://github.com/kchemorion/academic-manuscript-skill",
@@ -92,6 +110,60 @@ export const GITHUB_REPOS_ATTRIBUTION = [
     description:
       "Academic manuscript structure, publication abstracts, keywords, Booktabs table standards, and IEEE/APA citation patterns.",
     compliance: "100% Permissive Open-Source. Manuscript formatting specifications incorporated with full credit.",
+  },
+  {
+    name: "latex-table-formatter",
+    owner: "kchemorion",
+    repoUrl: "https://github.com/kchemorion/latex-table-formatter",
+    licenseType: "MIT License",
+    description:
+      "Publication-grade Booktabs tables: top/mid/bottom rules, strict zero vertical rules, numerical decimal alignment, and table footnotes.",
+    compliance: "100% Permissive Open-Source. Table structure and alignment standards integrated under MIT.",
+  },
+  {
+    name: "citation-referencing-skill",
+    owner: "kchemorion",
+    repoUrl: "https://github.com/kchemorion/citation-referencing-skill",
+    licenseType: "MIT License",
+    description:
+      "Normalization of in-text citations ([1–3], APA author-date), citation deduplication, and hanging-indent bibliographic references.",
+    compliance: "100% Permissive Open-Source. Reference linking and citation normalization algorithms integrated under MIT.",
+  },
+  {
+    name: "exam-bank-skill",
+    owner: "Academic-Skills-Hub",
+    repoUrl: "https://github.com/Academic-Skills-Hub/exam-bank-skill",
+    licenseType: "MIT License",
+    description:
+      "University examination paper layouts, question numbering (Question 1 -> (a) -> (i)), mark allocation brackets, and rubric arrays.",
+    compliance: "100% Permissive Open-Source. Exam paper typesetting rules incorporated with attribution.",
+  },
+  {
+    name: "figure-caption-crossref-skill",
+    owner: "Academic-Skills-Hub",
+    repoUrl: "https://github.com/Academic-Skills-Hub/figure-caption-crossref-skill",
+    licenseType: "MIT License",
+    description:
+      "Scientific figure and table caption formatting (Table captions above, Figure captions below), numbering, and inline cross-references.",
+    compliance: "100% Permissive Open-Source. Cross-referencing logic integrated under MIT.",
+  },
+  {
+    name: "algorithmic-pseudocode-skill",
+    owner: "Academic-Skills-Hub",
+    repoUrl: "https://github.com/Academic-Skills-Hub/algorithmic-pseudocode-skill",
+    licenseType: "MIT License",
+    description:
+      "Computer science algorithms, pseudocode indentation with bold keywords, Big-O asymptotic notation (\\mathcal{O}(n)), and formal proof blocks with Q.E.D. (\\blacksquare).",
+    compliance: "100% Permissive Open-Source. Algorithm formatting specifications incorporated under MIT.",
+  },
+  {
+    name: "markdown-cleaner-typography-skill",
+    owner: "Academic-Skills-Hub",
+    repoUrl: "https://github.com/Academic-Skills-Hub/markdown-cleaner-typography-skill",
+    licenseType: "MIT License",
+    description:
+      "Document typography hygiene, en-dashes for number and year ranges (2010–2024, pp. 45–60), smart quotation marks, and paragraph spacing.",
+    compliance: "100% Permissive Open-Source. Typographic hygiene standards integrated under MIT.",
   },
 ];
 
@@ -349,40 +421,21 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   const [copiedUserPrompt, setCopiedUserPrompt] = useState(false);
   const [copiedLicense, setCopiedLicense] = useState(false);
 
-  // Security password protection for AI Studio Prompt tab
-  // Password: "FormatAI 131219 Paste.Format.Get Documents"
-  const PROMPT_ACCESS_PASSWORD = "FormatAI 131219 Paste.Format.Get Documents";
-  const [isPromptUnlocked, setIsPromptUnlocked] = useState<boolean>(() => {
-    try {
-      return sessionStorage.getItem("formatai_prompt_unlocked") === "true";
-    } catch {
-      return false;
-    }
-  });
-  const [passwordInput, setPasswordInput] = useState<string>("");
-  const [passwordError, setPasswordError] = useState<string | null>(null);
-  const [showPasswordText, setShowPasswordText] = useState<boolean>(false);
+  // Skill Modes (AUTO DETECT, SMART MANUAL, ALL ON) & Quality Gate Validation
+  const [skillMode, setSkillMode] = useState<SkillMode>(() => skillOrchestrator.getMode());
+  const [mathValidationReport, setMathValidationReport] = useState<MathValidationResult | null>(null);
 
-  const handleUnlockPrompt = (e?: React.FormEvent) => {
-    if (e) e.preventDefault();
-    if (passwordInput.trim() === PROMPT_ACCESS_PASSWORD) {
-      setIsPromptUnlocked(true);
-      setPasswordError(null);
-      try {
-        sessionStorage.setItem("formatai_prompt_unlocked", "true");
-      } catch {}
+  const handleModeChange = (mode: SkillMode) => {
+    skillOrchestrator.setMode(mode);
+    setSkillMode(mode);
+    if (mode === "all_on") {
+      skillRegistry.enableAllSkills();
+      refreshState("ALL ON mode engaged: All 12 skills active under Sentinel Math Lock protection");
+    } else if (mode === "auto") {
+      refreshState("AUTO DETECT mode engaged: Document content dynamically routes to required skills");
     } else {
-      setPasswordError("Incorrect security password. Access to AI Studio system prompt denied.");
+      refreshState("SMART MANUAL mode engaged: Custom toggle configuration active");
     }
-  };
-
-  const handleLockPrompt = () => {
-    setIsPromptUnlocked(false);
-    setPasswordInput("");
-    setPasswordError(null);
-    try {
-      sessionStorage.removeItem("formatai_prompt_unlocked");
-    } catch {}
   };
 
   const safeCopyToClipboard = async (text: string): Promise<boolean> => {
@@ -491,14 +544,17 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   const runTester = (customInput?: string) => {
     try {
       const textToRun = customInput !== undefined ? customInput : testInput;
-      const enabledIds = (skills || []).filter((s) => s?.enabled).map((s) => s.id);
-      const result = executeSkillPipeline(textToRun || "", enabledIds);
+      const { result, report } = skillOrchestrator.orchestrate(textToRun || "", { mode: skillMode });
       setTestOutput(result?.text || "");
-      setTestLogs(
-        (result?.appliedTransformations || []).map(
-          (t) => `[Applied] ${t.skillName}: ${t.summary}`
-        )
-      );
+      setMathValidationReport(result?.mathValidation || null);
+      setTestLogs([
+        `[Mode: ${report.mode.toUpperCase()}] Routing: ${report.activeSkillIds.length} active skills (${report.detectedCategories.join(", ") || "general"})`,
+        `[Math Pipeline] Validation Score: ${report.mathValidation.validationScore}% (${report.mathValidation.validEquations}/${report.mathValidation.totalEquations} equations valid)`,
+        `[Quality Gate] ${report.mathValidation.meetsTarget ? "PASSED (≥95%)" : "NEEDS REVIEW"} • Silent Downgrade: ${report.mathValidation.hasDegradedMath ? "DETECTED (Flagged)" : "ZERO (Verified)"}`,
+        ...(result?.appliedTransformations || []).map(
+          (t) => `[Applied Priority] ${t.skillName}: ${t.summary}`
+        ),
+      ]);
     } catch (err: any) {
       console.error("Pipeline test error:", err);
       setTestOutput(customInput || testInput || "");
@@ -586,6 +642,10 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   };
 
   const activeCount = skills.filter((s) => s.enabled).length;
+  const p1Count = useMemo(() => skills.filter((s) => s.priority === 1).length, [skills]);
+  const p2Count = useMemo(() => skills.filter((s) => s.priority === 2).length, [skills]);
+  const p3Count = useMemo(() => skills.filter((s) => s.priority === 3).length, [skills]);
+  const p4Count = useMemo(() => skills.filter((s) => s.priority === 4).length, [skills]);
 
   // Filter skills based on search & category
   const filteredSkills = useMemo(() => {
@@ -601,7 +661,8 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
         categoryFilter === "all" ||
         (categoryFilter === "p1" && skill.priority === 1) ||
         (categoryFilter === "p2" && skill.priority === 2) ||
-        (categoryFilter === "p3" && skill.priority === 3);
+        (categoryFilter === "p3" && skill.priority === 3) ||
+        (categoryFilter === "p4" && skill.priority === 4);
 
       return matchesSearch && matchesCat;
     });
@@ -755,7 +816,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
               </span>
             </button>
 
-            {/* Tab 5: AI Studio System Prompt (Password Protected) */}
+            {/* Tab 5: AI Studio System Prompt */}
             <button
               id="tab-btn-instructions"
               type="button"
@@ -766,22 +827,16 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                   : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
               }`}
             >
-              {isPromptUnlocked ? (
-                <Unlock className={`w-3.5 h-3.5 ${activeTab === "instructions" ? "text-emerald-600" : "text-slate-500"}`} />
-              ) : (
-                <Lock className={`w-3.5 h-3.5 ${activeTab === "instructions" ? "text-amber-600" : "text-slate-500"}`} />
-              )}
+              <Terminal className={`w-3.5 h-3.5 ${activeTab === "instructions" ? "text-amber-600" : "text-slate-500"}`} />
               <span>AI Studio Prompt</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                isPromptUnlocked
-                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                activeTab === "instructions" ? "bg-amber-100 text-amber-800" : "bg-slate-200 text-slate-600"
               }`}>
-                {isPromptUnlocked ? "Unlocked" : "Protected"}
+                Instructions
               </span>
             </button>
 
-            {/* Tab 6: Open Source License & 4 Repos */}
+            {/* Tab 6: Open Source License & 12 Repos */}
             <button
               id="tab-btn-license"
               type="button"
@@ -793,7 +848,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
               }`}
             >
               <Scale className={`w-3.5 h-3.5 ${activeTab === "license" ? "text-emerald-600" : "text-slate-500"}`} />
-              <span>License & 4 Repos</span>
+              <span>License & 12 Repos</span>
               <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                 activeTab === "license" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
               }`}>
@@ -808,6 +863,99 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
           {/* TAB 1: MODULAR SKILLS */}
           {activeTab === "skills" && (
             <div className="space-y-4">
+              {/* Three Skill Modes Selector Card */}
+              <div className="bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white p-4 rounded-2xl shadow-md border border-slate-800 space-y-3">
+                <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <ShieldCheck className="w-5 h-5 text-indigo-400" />
+                    <div>
+                      <h3 className="text-sm font-bold text-white flex items-center gap-2">
+                        <span>Safe Skill Orchestration Engine</span>
+                        <span className="text-[10px] px-2 py-0.5 rounded-full bg-indigo-500/30 text-indigo-200 border border-indigo-400/30 font-mono font-normal">
+                          12 Repositories
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-300">
+                        Choose how FormatAI selects and sequences academic typesetting engines:
+                      </p>
+                    </div>
+                  </div>
+
+                  {/* Mode Badges */}
+                  <div className="inline-flex p-1 bg-slate-800/90 rounded-xl border border-slate-700/80 gap-1 self-start sm:self-auto">
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange("auto")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        skillMode === "auto"
+                          ? "bg-emerald-500 text-white shadow-xs"
+                          : "text-slate-300 hover:text-white hover:bg-white/5"
+                      }`}
+                      title="Automatically detects document indicators (math, chemistry, tables, citations) and routes to optimal skills"
+                    >
+                      <Sparkles className="w-3.5 h-3.5" />
+                      <span>AUTO DETECT</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange("manual")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        skillMode === "manual"
+                          ? "bg-indigo-600 text-white shadow-xs"
+                          : "text-slate-300 hover:text-white hover:bg-white/5"
+                      }`}
+                      title="User manually controls active skills with conflict detection"
+                    >
+                      <Sliders className="w-3.5 h-3.5" />
+                      <span>SMART MANUAL</span>
+                    </button>
+
+                    <button
+                      type="button"
+                      onClick={() => handleModeChange("all_on")}
+                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                        skillMode === "all_on"
+                          ? "bg-purple-600 text-white shadow-xs"
+                          : "text-slate-300 hover:text-white hover:bg-white/5"
+                      }`}
+                      title="Force all 12 skills ON with Sentinel Math Lock protection"
+                    >
+                      <Layers className="w-3.5 h-3.5" />
+                      <span>ALL ON</span>
+                    </button>
+                  </div>
+                </div>
+
+                {/* Mode Explanation / Advisory Banner */}
+                {skillMode === "auto" && (
+                  <div className="p-2.5 bg-emerald-950/40 border border-emerald-500/30 rounded-xl text-xs text-emerald-200 flex items-start gap-2">
+                    <Sparkles className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Auto Detect Mode Active:</strong> FormatAI dynamically analyzes document content (detecting equations, chemistry, Booktabs tables, citations, or question papers) and routes to required skills on demand.
+                    </span>
+                  </div>
+                )}
+
+                {skillMode === "manual" && (
+                  <div className="p-2.5 bg-indigo-950/40 border border-indigo-500/30 rounded-xl text-xs text-indigo-200 flex items-start gap-2">
+                    <Sliders className="w-4 h-4 text-indigo-400 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>Smart Manual Mode Active:</strong> You manually toggle individual skills below. FormatAI enforces strict priority sequencing (1 → 2 → 3 → 4) and compatibility checking.
+                    </span>
+                  </div>
+                )}
+
+                {skillMode === "all_on" && (
+                  <div className="p-2.5 bg-purple-950/40 border border-purple-500/30 rounded-xl text-xs text-purple-200 flex items-start gap-2">
+                    <Lock className="w-4 h-4 text-purple-400 shrink-0 mt-0.5" />
+                    <span>
+                      <strong>All On Master Mode Active:</strong> All 12 skill modules are engaged. Mathematical expressions are guarded by Sentinel Math Lock tokens to guarantee zero syntax degradation.
+                    </span>
+                  </div>
+                )}
+              </div>
+
               {/* Search, Filter & Bulk Controls */}
               <div className="bg-white p-3 rounded-xl border border-slate-200 flex flex-col sm:flex-row items-center justify-between gap-3 shadow-2xs">
                 {/* Search Bar */}
@@ -844,7 +992,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                         : "bg-blue-50 text-blue-700 hover:bg-blue-100"
                     }`}
                   >
-                    P1: Math (2)
+                    P1: Math ({p1Count})
                   </button>
                   <button
                     type="button"
@@ -855,7 +1003,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                         : "bg-emerald-50 text-emerald-700 hover:bg-emerald-100"
                     }`}
                   >
-                    P2: Science (1)
+                    P2: Science ({p2Count})
                   </button>
                   <button
                     type="button"
@@ -866,7 +1014,18 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                         : "bg-purple-50 text-purple-700 hover:bg-purple-100"
                     }`}
                   >
-                    P3: Manuscript (1)
+                    P3: Manuscript ({p3Count})
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setCategoryFilter("p4")}
+                    className={`px-2.5 py-1 rounded-md text-[11px] font-medium transition-colors cursor-pointer ${
+                      categoryFilter === "p4"
+                        ? "bg-amber-600 text-white font-semibold"
+                        : "bg-amber-50 text-amber-800 hover:bg-amber-100"
+                    }`}
+                  >
+                    P4: Typography & CS ({p4Count})
                   </button>
                 </div>
 
@@ -1097,13 +1256,77 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
           {/* TAB 2: EXECUTION PIPELINE */}
           {activeTab === "pipeline" && (
             <div className="space-y-6">
+              {/* Sequential Priority Notice */}
               <div className="p-4 bg-indigo-50/70 rounded-xl border border-indigo-200/80 text-xs text-indigo-950">
                 <h4 className="font-bold text-sm mb-1 flex items-center gap-1.5">
-                  <Sliders className="w-4 h-4 text-indigo-600" /> Sequential Priority Hierarchy
+                  <Sliders className="w-4 h-4 text-indigo-600" /> Sequential Priority Hierarchy (4 Execution Tiers)
                 </h4>
                 <p className="leading-relaxed">
-                  To prevent syntax collisions (such as chemical formulas colliding with math symbols, or table pipes colliding with absolute values), skills execute in strict mathematical and structural order.
+                  To prevent syntax collisions (such as chemical formulas colliding with math symbols, or table pipes colliding with absolute values), skills execute in strict mathematical, scientific, manuscript, and typographic sequence.
                 </p>
+              </div>
+
+              {/* 6-Stage Math Pipeline Architecture Card */}
+              <div className="bg-white p-4 sm:p-5 rounded-2xl border border-slate-200 shadow-2xs space-y-3">
+                <div className="flex items-center gap-2">
+                  <ShieldCheck className="w-5 h-5 text-indigo-600" />
+                  <h4 className="text-sm font-bold text-slate-900">
+                    Protected 6-Stage Math Pipeline & Quality Gate (≥95% Validation Target)
+                  </h4>
+                </div>
+                <p className="text-xs text-slate-600 leading-relaxed">
+                  Before text-level transformations are executed, mathematical formulas pass through an isolated 6-stage quality pipeline to protect formula syntax and guarantee zero silent downgrades:
+                </p>
+
+                <div className="grid grid-cols-2 sm:grid-cols-3 lg:grid-cols-6 gap-2 pt-2">
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-center flex flex-col items-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mb-1">
+                      1
+                    </span>
+                    <span className="text-xs font-bold text-blue-950">Detector</span>
+                    <span className="text-[10px] text-blue-700 mt-0.5">Finds inline & display formulas</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-center flex flex-col items-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mb-1">
+                      2
+                    </span>
+                    <span className="text-xs font-bold text-blue-950">Normalizer</span>
+                    <span className="text-[10px] text-blue-700 mt-0.5">Repairs braces & delimiters</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-center flex flex-col items-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mb-1">
+                      3
+                    </span>
+                    <span className="text-xs font-bold text-blue-950">Classifier</span>
+                    <span className="text-[10px] text-blue-700 mt-0.5">Calculus, Stats, Algebra</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-center flex flex-col items-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mb-1">
+                      4
+                    </span>
+                    <span className="text-xs font-bold text-blue-950">Engine</span>
+                    <span className="text-[10px] text-blue-700 mt-0.5">OMML & MathML conversion</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-blue-50/60 border border-blue-200/80 text-center flex flex-col items-center">
+                    <span className="w-5 h-5 rounded-full bg-blue-600 text-white text-[10px] font-bold flex items-center justify-center mb-1">
+                      5
+                    </span>
+                    <span className="text-xs font-bold text-blue-950">Validator</span>
+                    <span className="text-[10px] text-blue-700 mt-0.5">≥95% Quality Gate check</span>
+                  </div>
+
+                  <div className="p-2.5 rounded-xl bg-indigo-50/80 border border-indigo-200 text-center flex flex-col items-center">
+                    <span className="w-5 h-5 rounded-full bg-indigo-600 text-white text-[10px] font-bold flex items-center justify-center mb-1">
+                      6
+                    </span>
+                    <span className="text-xs font-bold text-indigo-950">Sentinel Lock</span>
+                    <span className="text-[10px] text-indigo-700 mt-0.5">Locks equations from text edits</span>
+                  </div>
+                </div>
               </div>
 
               <div className="relative pl-6 sm:pl-8 border-l-2 border-indigo-200 space-y-8 my-4 ml-3 sm:ml-4">
@@ -1112,22 +1335,30 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                   <div className="absolute -left-[35px] sm:-left-[43px] top-0 w-7 h-7 rounded-full bg-blue-600 text-white flex items-center justify-center text-xs font-bold ring-4 ring-white shadow-xs">
                     1
                   </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">
-                      Priority 1: Mathematical & Word OMML Translation
-                    </span>
-                    <h4 className="text-sm font-bold text-slate-900 mt-0.5">
-                      OMML Native Equations & Pandoc Delimiters
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-blue-700 uppercase tracking-wider">
+                        Priority 1: Mathematical Foundations & Word OMML
+                      </span>
+                      <span className="text-[10px] bg-blue-100 text-blue-800 font-bold px-2 py-0.5 rounded-full">
+                        3 Repositories
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      OMML Native Equations, Pandoc Delimiters & Statistical Notation
                     </h4>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Converts TeX math delimiters (<code className="text-blue-700 font-mono">\(...\)</code>, <code className="text-blue-700 font-mono">\[...\]</code>) into native Microsoft Word Office Math Markup (<code className="text-blue-700 font-mono">&lt;m:oMath&gt;</code>) with stacked fractions, radicals, summations, and matrices. Ensures equations remain 100% editable in Word.
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Transforms LaTeX mathematics (<code className="text-blue-700 font-mono">\(...\)</code>, <code className="text-blue-700 font-mono">\[...\]</code>) into native Microsoft Word Office Math Markup (<code className="text-blue-700 font-mono">&lt;m:oMath&gt;</code>) with stacked fraction bars, radicals, summations, matrices, and rigorous sample/population statistics (<code className="text-blue-700 font-mono">\hat{'{'}p{'}'}</code>, <code className="text-blue-700 font-mono">\bar{'{'}X{'}'}</code>, <code className="text-blue-700 font-mono">s^2</code>, <code className="text-blue-700 font-mono">\operatorname{'{'}Var{'}'}</code>).
                     </p>
-                    <div className="flex gap-2 mt-2.5">
+                    <div className="flex flex-wrap gap-2 pt-1">
                       <span className="text-[11px] bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-md font-semibold">
-                        math-docx
+                        docx-math-skill (Future-3526038670)
                       </span>
                       <span className="text-[11px] bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-md font-semibold">
-                        pandoc-math-docx
+                        pandoc-math-docx (Kantyc)
+                      </span>
+                      <span className="text-[11px] bg-blue-50 text-blue-800 border border-blue-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        stat-notation-docx (Academic-Skills-Hub)
                       </span>
                     </div>
                   </div>
@@ -1138,19 +1369,27 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                   <div className="absolute -left-[35px] sm:-left-[43px] top-0 w-7 h-7 rounded-full bg-emerald-600 text-white flex items-center justify-center text-xs font-bold ring-4 ring-white shadow-xs">
                     2
                   </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">
-                      Priority 2: Scientific & Stoichiometric Formatting
-                    </span>
-                    <h4 className="text-sm font-bold text-slate-900 mt-0.5">
-                      Scientific Notation, SI Units & Chemical Formulas
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-emerald-700 uppercase tracking-wider">
+                        Priority 2: Scientific, Stoichiometric & Physical Constants
+                      </span>
+                      <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-2 py-0.5 rounded-full">
+                        2 Repositories
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      SI Units, Physical Constants & Chemical Stoichiometry
                     </h4>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Converts scientific exponential notation (<code className="text-emerald-700 font-mono">1.5 \times 10^{'{'}-4{'}'}</code>), stoichiometric subscripts (<code className="text-emerald-700 font-mono">\text{'{'}H{'}'}_2\text{'{'}O{'}'}</code>), compound SI units (<code className="text-emerald-700 font-mono">m/s^2</code>, <code className="text-emerald-700 font-mono">mol/L</code>), and experimental uncertainties (<code className="text-emerald-700 font-mono">\pm</code>).
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Converts scientific exponential notation (<code className="text-emerald-700 font-mono">1.5 \times 10^{'{'}-4{'}'}</code>), compound SI units (<code className="text-emerald-700 font-mono">m/s^2</code>, <code className="text-emerald-700 font-mono">kJ/mol</code>), chemical reactions (<code className="text-emerald-700 font-mono">2H_2 + O_2 \rightarrow 2H_2O</code>), and states of matter.
                     </p>
-                    <div className="flex gap-2 mt-2.5">
+                    <div className="flex flex-wrap gap-2 pt-1">
                       <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-md font-semibold">
-                        scientific-docx
+                        scientific-agent-skills (K-Dense-AI)
+                      </span>
+                      <span className="text-[11px] bg-emerald-50 text-emerald-800 border border-emerald-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        chem-equation-skill (K-Dense-AI)
                       </span>
                     </div>
                   </div>
@@ -1161,19 +1400,36 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                   <div className="absolute -left-[35px] sm:-left-[43px] top-0 w-7 h-7 rounded-full bg-purple-600 text-white flex items-center justify-center text-xs font-bold ring-4 ring-white shadow-xs">
                     3
                   </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">
-                      Priority 3: Academic Manuscript & Structure
-                    </span>
-                    <h4 className="text-sm font-bold text-slate-900 mt-0.5">
-                      IMRAD Structure, Citations & Booktabs Tables
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-purple-700 uppercase tracking-wider">
+                        Priority 3: Academic Manuscript, Booktabs Tables & Citations
+                      </span>
+                      <span className="text-[10px] bg-purple-100 text-purple-800 font-bold px-2 py-0.5 rounded-full">
+                        5 Repositories
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Numbered Headings, Three-Line Tables, Citations, Exams & Cross-References
                     </h4>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Enforces numbered academic headings, APA/IEEE citations (<code className="text-purple-700 font-mono">[1, 2]</code>), table/figure captions, and three-line Booktabs tables with thick horizontal rules and zero vertical column dividers.
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Enforces formal publication structure: IMRAD sections, zero vertical rules in tables (<code className="text-purple-700 font-mono">\toprule, \midrule, \bottomrule</code>), in-text bracketed citations (<code className="text-purple-700 font-mono">[1–3]</code>), university exam paper rubrics, and figure/table cross-references.
                     </p>
-                    <div className="flex gap-2 mt-2.5">
+                    <div className="flex flex-wrap gap-2 pt-1">
                       <span className="text-[11px] bg-purple-50 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-md font-semibold">
-                        academic-manuscript
+                        academic-manuscript-skill (kchemorion)
+                      </span>
+                      <span className="text-[11px] bg-purple-50 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        latex-table-formatter (kchemorion)
+                      </span>
+                      <span className="text-[11px] bg-purple-50 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        citation-referencing-skill (kchemorion)
+                      </span>
+                      <span className="text-[11px] bg-purple-50 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        exam-bank-skill (Academic-Skills-Hub)
+                      </span>
+                      <span className="text-[11px] bg-purple-50 text-purple-800 border border-purple-200 px-2.5 py-0.5 rounded-md font-semibold">
+                        figure-caption-crossref-skill (Academic-Skills-Hub)
                       </span>
                     </div>
                   </div>
@@ -1184,16 +1440,29 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                   <div className="absolute -left-[35px] sm:-left-[43px] top-0 w-7 h-7 rounded-full bg-slate-700 text-white flex items-center justify-center text-xs font-bold ring-4 ring-white shadow-xs">
                     4
                   </div>
-                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs">
-                    <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
-                      Priority 4: General Typography & Packaging
-                    </span>
-                    <h4 className="text-sm font-bold text-slate-900 mt-0.5">
-                      Font Families, Margins & Word Document Compilation
+                  <div className="bg-white p-4 rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                    <div className="flex items-center justify-between">
+                      <span className="text-[11px] font-bold text-slate-600 uppercase tracking-wider">
+                        Priority 4: Algorithms, Typographic Hygiene & Packaging
+                      </span>
+                      <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-2 py-0.5 rounded-full">
+                        2 Repositories
+                      </span>
+                    </div>
+                    <h4 className="text-sm font-bold text-slate-900">
+                      Pseudocode Proofs, En-Dashes, Typography Hygiene & DOCX Packaging
                     </h4>
-                    <p className="text-xs text-slate-600 mt-1 leading-relaxed">
-                      Applies custom font styles (Times New Roman, Georgia, Calibri), 1.0-inch standard margins (1440 twip), document headers, and "Page X of Y" dynamic footers during binary packaging.
+                    <p className="text-xs text-slate-600 leading-relaxed">
+                      Typesets CS algorithms with line numbering and asymptotic bounds (<code className="text-slate-700 font-mono">\mathcal{'{'}O{'}'}(n \log n)</code>), en-dashes for year/number ranges (2018–2024), smart quotes, and compiles final clean Microsoft Word styles.
                     </p>
+                    <div className="flex flex-wrap gap-2 pt-1">
+                      <span className="text-[11px] bg-slate-100 text-slate-800 border border-slate-300 px-2.5 py-0.5 rounded-md font-semibold">
+                        algorithmic-pseudocode-skill (Academic-Skills-Hub)
+                      </span>
+                      <span className="text-[11px] bg-slate-100 text-slate-800 border border-slate-300 px-2.5 py-0.5 rounded-md font-semibold">
+                        markdown-cleaner-typography-skill (Academic-Skills-Hub)
+                      </span>
+                    </div>
                   </div>
                 </div>
               </div>
@@ -1296,6 +1565,99 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                 </div>
               </div>
 
+              {/* Math Quality Gate & Validation Status Widget */}
+              {mathValidationReport && (
+                <div className="p-3.5 bg-white rounded-xl border border-slate-200 shadow-2xs space-y-2">
+                  <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-2 border-b border-slate-100">
+                    <div className="flex items-center gap-2">
+                      <div
+                        className={`w-7 h-7 rounded-lg flex items-center justify-center ${
+                          mathValidationReport.meetsTarget
+                            ? "bg-emerald-100 text-emerald-700"
+                            : "bg-amber-100 text-amber-700"
+                        }`}
+                      >
+                        {mathValidationReport.meetsTarget ? (
+                          <CheckCircle2 className="w-4 h-4" />
+                        ) : (
+                          <AlertTriangle className="w-4 h-4" />
+                        )}
+                      </div>
+                      <div>
+                        <h4 className="text-xs font-bold text-slate-900 flex items-center gap-2">
+                          <span>Math Validation Quality Gate</span>
+                          <span
+                            className={`px-2 py-0.5 rounded-full text-[10px] font-bold ${
+                              mathValidationReport.meetsTarget
+                                ? "bg-emerald-50 text-emerald-700 border border-emerald-200"
+                                : "bg-amber-50 text-amber-700 border border-amber-200"
+                            }`}
+                          >
+                            {mathValidationReport.meetsTarget ? "TARGET MET (≥95%)" : "FLAGGED FOR REVIEW"}
+                          </span>
+                        </h4>
+                        <span className="text-[11px] text-slate-500">
+                          {mathValidationReport.validEquations} of {mathValidationReport.totalEquations} equations validated cleanly • Zero silent downgrade enforcement
+                        </span>
+                      </div>
+                    </div>
+
+                    <div className="flex items-center gap-3">
+                      <div className="text-right">
+                        <span className="text-[10px] uppercase font-bold text-slate-400 block">
+                          Validation Score
+                        </span>
+                        <span
+                          className={`text-base font-black font-mono ${
+                            mathValidationReport.validationScore >= 95
+                              ? "text-emerald-600"
+                              : "text-amber-600"
+                          }`}
+                        >
+                          {mathValidationReport.validationScore}%
+                        </span>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Silent Downgrade & Syntax Flags */}
+                  <div className="grid grid-cols-1 sm:grid-cols-2 gap-2 text-xs">
+                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-2">
+                      <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+                      <span className="text-slate-700 text-[11px]">
+                        <strong>Silent Downgrade Guard:</strong>{" "}
+                        {mathValidationReport.hasDegradedMath
+                          ? "Potential plain-text degradation detected & flagged"
+                          : "Verified: No formulas silently degraded"}
+                      </span>
+                    </div>
+                    <div className="p-2 rounded-lg bg-slate-50 border border-slate-200 flex items-center gap-2">
+                      <Lock className="w-4 h-4 text-indigo-600 shrink-0" />
+                      <span className="text-slate-700 text-[11px]">
+                        <strong>Sentinel Math Lock:</strong> Protected equations during downstream text transforms
+                      </span>
+                    </div>
+                  </div>
+
+                  {mathValidationReport.syntaxErrors.length > 0 && (
+                    <div className="p-2 rounded-lg bg-red-50 border border-red-200 text-xs text-red-900 space-y-1">
+                      <span className="font-bold flex items-center gap-1 text-[11px]">
+                        <AlertCircle className="w-3.5 h-3.5 text-red-600" />
+                        Flagged Equation Syntax Issues:
+                      </span>
+                      <ul className="list-disc pl-4 text-[11px] space-y-0.5">
+                        {mathValidationReport.syntaxErrors.map((err, idx) => (
+                          <li key={idx} className="font-mono">
+                            <span className="font-semibold">{err.equationId}:</span> {err.issue}{" "}
+                            <span className="text-slate-500 text-[10px]">({err.raw})</span>
+                          </li>
+                        ))}
+                      </ul>
+                    </div>
+                  )}
+                </div>
+              )}
+
               {/* Transformation Audit Trail */}
               {testLogs.length > 0 && (
                 <div className="p-3.5 bg-emerald-50/80 rounded-xl border border-emerald-200 text-xs text-emerald-950 shadow-2xs">
@@ -1369,95 +1731,9 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
             </div>
           )}
 
-          {/* TAB 5: AI STUDIO PROMPT & INSTRUCTIONS (PASSWORD PROTECTED) */}
-          {activeTab === "instructions" && !isPromptUnlocked && (
-            <div className="py-10 px-4 flex flex-col items-center justify-center max-w-md mx-auto text-center space-y-5">
-              <div className="w-16 h-16 rounded-2xl bg-amber-50 border-2 border-amber-200 text-amber-700 flex items-center justify-center shadow-xs">
-                <Lock className="w-8 h-8" />
-              </div>
-
-              <div className="space-y-1.5">
-                <h3 className="text-base font-bold text-slate-900 tracking-tight">
-                  Restricted Access: AI Studio Prompt
-                </h3>
-                <p className="text-xs text-slate-600 leading-relaxed">
-                  The Google AI Studio System Instructions, backend prompt templates, and technical integration guidelines are protected by a security password.
-                </p>
-              </div>
-
-              <form onSubmit={handleUnlockPrompt} className="w-full space-y-3.5">
-                <div className="text-left space-y-1.5">
-                  <label htmlFor="prompt-pwd-input" className="block text-xs font-semibold text-slate-700">
-                    Master Security Password:
-                  </label>
-                  <div className="relative flex items-center">
-                    <input
-                      id="prompt-pwd-input"
-                      type={showPasswordText ? "text" : "password"}
-                      value={passwordInput}
-                      onChange={(e) => {
-                        setPasswordInput(e.target.value);
-                        if (passwordError) setPasswordError(null);
-                      }}
-                      placeholder="Enter security password..."
-                      className="w-full pr-10 pl-3.5 py-2.5 text-xs bg-white border border-slate-300 rounded-xl focus:outline-none focus:ring-2 focus:ring-amber-500 focus:border-amber-500 text-slate-900 shadow-2xs font-mono"
-                      autoFocus
-                    />
-                    <button
-                      type="button"
-                      onClick={() => setShowPasswordText(!showPasswordText)}
-                      className="absolute right-2.5 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-                      title={showPasswordText ? "Hide password" : "Show password"}
-                    >
-                      {showPasswordText ? <EyeOff className="w-4 h-4" /> : <Eye className="w-4 h-4" />}
-                    </button>
-                  </div>
-                  {passwordError && (
-                    <p className="text-xs text-rose-600 font-medium flex items-center gap-1.5 pt-0.5">
-                      <AlertCircle className="w-3.5 h-3.5 shrink-0" />
-                      <span>{passwordError}</span>
-                    </p>
-                  )}
-                </div>
-
-                <button
-                  type="submit"
-                  className="w-full py-2.5 px-4 bg-amber-600 hover:bg-amber-700 text-white font-bold text-xs rounded-xl shadow-xs transition-colors flex items-center justify-center gap-2 cursor-pointer"
-                >
-                  <Key className="w-4 h-4" />
-                  <span>Unlock AI Studio Prompt</span>
-                </button>
-              </form>
-
-              <div className="p-3 bg-slate-50 border border-slate-200 rounded-xl text-[11px] text-slate-500 text-left w-full space-y-1">
-                <span className="font-semibold text-slate-700 block">Security Policy:</span>
-                <p>
-                  Access is restricted to authorized administrators and developers to protect the proprietary publication-grade typesetting prompts and system instructions.
-                </p>
-              </div>
-            </div>
-          )}
-
-          {/* TAB 5: AI STUDIO PROMPT & INSTRUCTIONS (UNLOCKED STATE) */}
-          {activeTab === "instructions" && isPromptUnlocked && (
+          {/* TAB 5: AI STUDIO PROMPT & INSTRUCTIONS */}
+          {activeTab === "instructions" && (
             <div className="space-y-4">
-              {/* Security Session Banner with Re-lock */}
-              <div className="flex items-center justify-between p-3 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-950">
-                <div className="flex items-center gap-2 font-medium">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-                  <span>Developer Access Unlocked (Active Session)</span>
-                </div>
-                <button
-                  type="button"
-                  onClick={handleLockPrompt}
-                  className="px-2.5 py-1 text-[11px] font-semibold text-slate-700 bg-white hover:bg-slate-100 border border-slate-200 rounded-lg flex items-center gap-1.5 transition-colors cursor-pointer shadow-2xs"
-                  title="Lock access"
-                >
-                  <Lock className="w-3 h-3 text-slate-500" />
-                  <span>Lock Prompt</span>
-                </button>
-              </div>
-
               <div className="bg-amber-50/80 border border-amber-200/90 rounded-xl p-4 text-xs text-amber-950">
                 <div className="flex items-start gap-2.5">
                   <Terminal className="w-5 h-5 text-amber-600 shrink-0 mt-0.5" />
