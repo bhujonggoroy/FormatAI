@@ -53,7 +53,45 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="/logo.png" />
   </head>
-  <body>
+  <body style="margin: 0; background-color: #FAF7F2;">
+    <!-- First-Frame Session-Aware FormatAI Splash Screen (Only on first entry in session, never on refresh) -->
+    <div id="first-paint-splash" style="display: none; position: fixed; inset: 0; z-index: 99999; background-color: #FAF7F2; flex-direction: column; align-items: center; justify-content: center; font-family: 'Playfair Display', Georgia, serif; user-select: none;">
+      <div style="display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 420px; padding: 16px;">
+        <img src="/format-ai-icon-transparent.png" alt="FormatAI Logo" width="84" height="84" style="width: 84px; height: 84px; object-fit: contain; margin-bottom: 14px;" />
+        <div style="display: flex; align-items: baseline; font-size: 36px; font-weight: 900; line-height: 1; letter-spacing: -0.02em; margin-bottom: 24px;">
+          <span style="color: #23150D;">Format</span>
+          <span style="color: #C45525; margin-left: 2px;">AI</span>
+        </div>
+        <p style="margin: 0; font-size: 18px; font-weight: 600; color: #8C3D18; letter-spacing: -0.01em;">
+          Paste. Format. Get Documents.
+        </p>
+      </div>
+    </div>
+    <script>
+      (function() {
+        try {
+          var isReload = false;
+          var navEntries = (window.performance && performance.getEntriesByType) ? performance.getEntriesByType('navigation') : null;
+          if (navEntries && navEntries.length > 0) {
+            isReload = navEntries[0].type === 'reload';
+          } else if (window.performance && window.performance.navigation) {
+            isReload = window.performance.navigation.type === 1;
+          }
+
+          var isInitialized = sessionStorage.getItem('formatai_session_initialized') === 'true';
+
+          // Show splash ONLY on first entry in session, NEVER on reload/refresh
+          if (!isReload && !isInitialized) {
+            var splashEl = document.getElementById('first-paint-splash');
+            if (splashEl) {
+              splashEl.style.display = 'flex';
+            }
+          }
+        } catch (e) {
+          // Fallback safe
+        }
+      })();
+    </script>
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>
