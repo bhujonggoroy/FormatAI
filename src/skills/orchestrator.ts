@@ -171,11 +171,12 @@ export class SkillOrchestrator {
   }
 
   /**
-   * Resolves the active skills list based on mode.
+   * Resolves the active skills list based on mode and optional explicit skillIds.
    */
   public resolveActiveSkills(
     text: string,
-    modeOverride?: SkillMode
+    modeOverride?: SkillMode,
+    skillIdsOverride?: string[]
   ): {
     skills: Skill[];
     mode: SkillMode;
@@ -183,6 +184,19 @@ export class SkillOrchestrator {
     signals: string[];
   } {
     const effectiveMode = modeOverride || this.currentMode;
+
+    if (skillIdsOverride && skillIdsOverride.length > 0) {
+      const explicitSkills = skillRegistry
+        .getAllSkills()
+        .filter((s) => skillIdsOverride.includes(s.id));
+      const categories = Array.from(new Set(explicitSkills.map((s) => s.category)));
+      return {
+        skills: explicitSkills,
+        mode: effectiveMode === "auto" ? "manual" : effectiveMode,
+        detectedCategories: categories,
+        signals: [`Explicit skills selection: ${explicitSkills.length} skills active.`],
+      };
+    }
 
     if (effectiveMode === "all_on") {
       const allSkills = skillRegistry.getAllSkills();
@@ -275,7 +289,8 @@ export class SkillOrchestrator {
     // Step 1: Resolve Active Skills based on Mode
     const { skills: activeSkills, mode, detectedCategories, signals } = this.resolveActiveSkills(
       text,
-      options.mode
+      options.mode,
+      options.skillIds
     );
 
     appliedSteps.push({
@@ -385,8 +400,12 @@ export class SkillOrchestrator {
   /**
    * Combines system prompt instructions from enabled skills in priority order.
    */
-  public getCombinedSystemPrompt(mode?: SkillMode, customText?: string): string {
-    const { skills } = this.resolveActiveSkills(customText || "", mode);
+  public getCombinedSystemPrompt(
+    mode?: SkillMode,
+    customText?: string,
+    enabledSkillIds?: string[]
+  ): string {
+    const { skills } = this.resolveActiveSkills(customText || "", mode, enabledSkillIds);
     const ordered = [...skills].sort((a, b) => a.priority - b.priority);
 
     const sections = ordered.map(

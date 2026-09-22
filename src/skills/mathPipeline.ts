@@ -69,9 +69,11 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
   while ((match = texDisplayRegex.exec(text)) !== null) {
     const rawContent = match[1];
     const fullMatch = match[0];
+    const matchStart = match.index;
+    const matchEnd = match.index + fullMatch.length;
     // Check if not already matched
     const isOverlapping = entities.some(
-      (e) => match!.index >= e.startPos && match!.index < e.endPos
+      (e) => matchStart < e.endPos && matchEnd > e.startPos
     );
     if (!isOverlapping) {
       const id = `eq_display_${++entityCounter}`;
@@ -81,8 +83,8 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
         normalizedText: `$$\n${rawContent.trim()}\n$$`,
         classification: "DISPLAY_MATH",
         isDisplay: true,
-        startPos: match.index,
-        endPos: match.index + fullMatch.length,
+        startPos: matchStart,
+        endPos: matchEnd,
         isValid: true,
         lockToken: `%%MATH_LOCK_DISPLAY_${id}%%`,
       });
@@ -93,8 +95,10 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
   const envRegex = /\\begin\{(equation\*?|align\*?|aligned|gather\*?|pmatrix|bmatrix|vmatrix|matrix|cases)\}([\s\S]*?)\\end\{\1\}/g;
   while ((match = envRegex.exec(text)) !== null) {
     const fullMatch = match[0];
+    const matchStart = match.index;
+    const matchEnd = match.index + fullMatch.length;
     const isOverlapping = entities.some(
-      (e) => match!.index >= e.startPos && match!.index < e.endPos
+      (e) => matchStart < e.endPos && matchEnd > e.startPos
     );
     if (!isOverlapping) {
       const id = `eq_env_${++entityCounter}`;
@@ -104,8 +108,8 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
         normalizedText: `$$\n${fullMatch.trim()}\n$$`,
         classification: "ALIGNED_EQUATION",
         isDisplay: true,
-        startPos: match.index,
-        endPos: match.index + fullMatch.length,
+        startPos: matchStart,
+        endPos: matchEnd,
         isValid: true,
         lockToken: `%%MATH_LOCK_DISPLAY_${id}%%`,
       });
@@ -117,8 +121,10 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
   while ((match = inlineRegex.exec(text)) !== null) {
     const fullMatch = match[0];
     const rawInner = match[1];
+    const matchStart = match.index;
+    const matchEnd = match.index + fullMatch.length;
     const isOverlapping = entities.some(
-      (e) => match!.index >= e.startPos && match!.index < e.endPos
+      (e) => matchStart < e.endPos && matchEnd > e.startPos
     );
     // Discard pure numeric values like $100 or $5.99 which are currencies
     const isCurrency = /^\s*\d+(\.\d{1,2})?\s*$/.test(rawInner);
@@ -131,8 +137,8 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
         normalizedText: fullMatch,
         classification: "INLINE_MATH",
         isDisplay: false,
-        startPos: match.index,
-        endPos: match.index + fullMatch.length,
+        startPos: matchStart,
+        endPos: matchEnd,
         isValid: true,
         lockToken: `%%MATH_LOCK_INLINE_${id}%%`,
       });
@@ -144,8 +150,10 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
   while ((match = texInlineRegex.exec(text)) !== null) {
     const fullMatch = match[0];
     const rawInner = match[1];
+    const matchStart = match.index;
+    const matchEnd = match.index + fullMatch.length;
     const isOverlapping = entities.some(
-      (e) => match!.index >= e.startPos && match!.index < e.endPos
+      (e) => matchStart < e.endPos && matchEnd > e.startPos
     );
     if (!isOverlapping && rawInner.trim().length > 0) {
       const id = `eq_inline_${++entityCounter}`;
@@ -155,8 +163,8 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
         normalizedText: `$${rawInner.trim()}$`,
         classification: "INLINE_MATH",
         isDisplay: false,
-        startPos: match.index,
-        endPos: match.index + fullMatch.length,
+        startPos: matchStart,
+        endPos: matchEnd,
         isValid: true,
         lockToken: `%%MATH_LOCK_INLINE_${id}%%`,
       });

@@ -2,11 +2,9 @@ import dns from "node:dns";
 dns.setDefaultResultOrder("ipv4first");
 
 import http from "node:http";
-import crypto from "node:crypto";
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { fileURLToPath } from "url";
 import { createServer as createViteServer } from "vite";
 import {
   cleanNotebookLMTreeArtifacts,
@@ -30,9 +28,6 @@ import {
   getCombinedSkillPromptInstructions,
   executeSkillPipeline,
 } from "./src/skills/index.ts";
-
-const currentFile = typeof __filename !== "undefined" ? __filename : (import.meta.url ? fileURLToPath(import.meta.url) : path.join(process.cwd(), "server.ts"));
-const currentDir = typeof __dirname !== "undefined" ? __dirname : path.dirname(currentFile);
 
 const PORT = 3000;
 
@@ -773,54 +768,11 @@ ${preCleaned}`;
     const vite = await createViteServer({
       server: {
         middlewareMode: true,
-        hmr: false, // HMR is disabled in container/iframe sandbox environment
+        ws: { server: httpServer },
       },
       appType: "spa",
     });
     app.use(vite.middlewares);
-
-    // Provide a clean WebSocket handler so Vite's client handshake connects cleanly
-    // without logging "[vite] failed to connect to websocket" or throwing unhandled rejections
-    httpServer.on("upgrade", (req, socket) => {
-      const key = req.headers["sec-websocket-key"];
-      const protocol = req.headers["sec-websocket-protocol"];
-      if (!key) {
-        socket.destroy();
-        return;
-      }
-
-      const digest = crypto
-        .createHash("sha1")
-        .update(key + "258EAFA5-E914-47DA-95CA-C5AB0DC85B11")
-        .digest("base64");
-
-      const protocolHeader =
-        protocol && protocol.includes("vite-hmr")
-          ? "Sec-WebSocket-Protocol: vite-hmr\r\n"
-          : "";
-
-      const responseHeaders =
-        "HTTP/1.1 101 Switching Protocols\r\n" +
-        "Upgrade: websocket\r\n" +
-        "Connection: Upgrade\r\n" +
-        `Sec-WebSocket-Accept: ${digest}\r\n` +
-        protocolHeader +
-        "\r\n";
-
-      socket.write(responseHeaders);
-
-      // Send Vite connected payload to satisfy Vite's client listener
-      const msg = Buffer.from(JSON.stringify({ type: "connected" }));
-      const frame = Buffer.concat([Buffer.from([0x81, msg.length]), msg]);
-      socket.write(frame);
-
-      socket.on("error", () => socket.destroy());
-      socket.on("data", (chunk) => {
-        if (chunk.length > 0 && (chunk[0] & 0x0f) === 0x08) {
-          socket.end();
-        }
-      });
-    });
   } else {
     const distPath = path.join(process.cwd(), "dist");
     app.use(express.static(distPath));
