@@ -7,6 +7,7 @@ import { SkillsManagerModal, SkillsModalTab } from "./components/SkillsManagerMo
 import { SidebarSettingsDrawer } from "./components/SidebarSettingsDrawer";
 import { ToolbarGrid } from "./components/ToolbarGrid";
 import { ErrorBoundary } from "./components/ErrorBoundary";
+import { SplashScreen } from "./components/SplashScreen";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
 import { skillRegistry } from "./skills";
@@ -71,8 +72,12 @@ export default function App() {
     }
   };
 
+  const [isAppReady, setIsAppReady] = useState<boolean>(false);
+
   useEffect(() => {
-    fetchAIHealth();
+    fetchAIHealth().finally(() => {
+      setIsAppReady(true);
+    });
   }, []);
 
   // Compute live markdown instantly
@@ -645,6 +650,9 @@ export default function App() {
           />
         )}
       </ErrorBoundary>
+
+      {/* Initial FormatAI Splash / Loading Screen */}
+      <SplashScreen isAppReady={isAppReady} />
     </div>
   );
 }
