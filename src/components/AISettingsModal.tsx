@@ -37,6 +37,8 @@ import {
   ChevronDown,
   ChevronUp,
 } from "lucide-react";
+import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
+import { GetFreeApiKeyModal } from "./GetFreeApiKeyModal";
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -56,6 +58,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const [logs, setLogs] = useState<FallbackLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Free API Key modal state
+  const [freeKeyModalProvider, setFreeKeyModalProvider] = useState<ProviderHelpConfig | null>(null);
 
   // Key testing state
   const [testingKeyId, setTestingKeyId] = useState<string | null>(null);
@@ -339,7 +344,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs antialiased">
-      <div className="bg-white w-full max-w-5xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+      <div className="bg-white w-full max-w-7xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         {/* Modal Header */}
         <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-3">
@@ -585,33 +590,55 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* SECTION 2: ACTIVE AI CONFIGURATION */}
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-                <div className="border-b border-slate-100 pb-3 flex items-center justify-between">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <SlidersHorizontal className="w-4 h-4 text-blue-600" />
-                      ACTIVE AI CONFIGURATION
+              {/* SECTION 2: COMPACT ACTIVE AI CONFIGURATION */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+                <div className="border-b border-slate-100 pb-2.5 flex flex-wrap items-center justify-between gap-2">
+                  <div className="flex items-center gap-2">
+                    <SlidersHorizontal className="w-4 h-4 text-blue-600 shrink-0" />
+                    <h3 className="text-xs font-bold tracking-wider text-slate-900 uppercase">
+                      Active AI Configuration
                     </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      The primary configuration used for standard requests. In Manual mode, only this configuration is used.
-                    </p>
+                    <span
+                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
+                        currentActiveProvider?.enabled
+                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                          : "bg-rose-50 text-rose-800 border-rose-200"
+                      }`}
+                    >
+                      {currentActiveProvider?.enabled ? "✓ Active (ON)" : "○ Disabled (OFF)"}
+                    </span>
                   </div>
-                  <span
-                    className={`text-xs px-2.5 py-1 rounded-full font-semibold border ${
-                      currentActiveProvider?.enabled
-                        ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                        : "bg-rose-50 text-rose-800 border-rose-200"
-                    }`}
-                  >
-                    Provider Status: {currentActiveProvider?.enabled ? "✓ Active (ON)" : "○ Disabled (OFF)"}
-                  </span>
+
+                  {/* Active Provider Chips (wraps on small screens) */}
+                  <div className="flex flex-wrap items-center gap-1.5">
+                    <span className="text-[11px] font-medium text-slate-500 mr-0.5">Active Providers:</span>
+                    {providers.filter((p) => p.enabled).length === 0 ? (
+                      <span className="text-[11px] text-amber-700 italic">None active</span>
+                    ) : (
+                      providers
+                        .filter((p) => p.enabled)
+                        .map((p) => (
+                          <span
+                            key={p.id}
+                            className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-colors ${
+                              p.id === (config?.activeProviderId || "gemini")
+                                ? "bg-blue-50 text-blue-700 border-blue-300 ring-1 ring-blue-300"
+                                : "bg-slate-100 text-slate-700 border-slate-200"
+                            }`}
+                          >
+                            <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                            {p.name.replace("Google ", "").replace(" Workers AI", "")} ON
+                          </span>
+                        ))
+                    )}
+                  </div>
                 </div>
 
-                <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-4 gap-4">
+                {/* 4 Compact Controls */}
+                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
                   {/* Provider Dropdown */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Active Provider:
                     </label>
                     <select
@@ -625,7 +652,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           activeKeyId: targetP?.apiKeys?.[0]?.id,
                         });
                       }}
-                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       {providers.map((p) => (
                         <option key={p.id} value={p.id}>
@@ -637,7 +664,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
                   {/* Model Dropdown */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Selected Model:
                     </label>
                     <select
@@ -646,7 +673,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                         handleUpdateConfig({ activeModel: e.target.value });
                         handleUpdateProvider(currentActiveProvider.id, { selectedModel: e.target.value });
                       }}
-                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
+                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
                       {currentAvailableModels.map((m) => (
                         <option key={m.id} value={m.id}>
@@ -658,14 +685,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
                   {/* API Key Dropdown */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Active API Key:
                     </label>
                     <select
                       value={config?.activeKeyId || currentProviderKeys[0]?.id || ""}
                       onChange={(e) => handleUpdateConfig({ activeKeyId: e.target.value })}
                       disabled={currentProviderKeys.length === 0}
-                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2.5 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
+                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
                     >
                       {currentProviderKeys.length === 0 ? (
                         <option value="">No Keys Configured</option>
@@ -681,14 +708,15 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
                   {/* Mode Display & Toggle */}
                   <div>
-                    <label className="block text-xs font-bold text-slate-700 mb-1.5">
+                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
                       Current Mode:
                     </label>
-                    <div className="flex items-center justify-between h-[42px] px-3 rounded-lg border border-slate-300 bg-slate-50">
-                      <span className="text-xs font-bold text-slate-800 capitalize">
+                    <div className="flex items-center justify-between h-[34px] px-2.5 rounded-lg border border-slate-300 bg-slate-50 text-xs">
+                      <span className="font-bold text-slate-800 capitalize">
                         {config?.mode} Mode
                       </span>
                       <button
+                        type="button"
                         onClick={() =>
                           handleUpdateConfig({
                             mode: config?.mode === "automatic" ? "manual" : "automatic",
@@ -703,16 +731,16 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* SECTION 3: PROVIDERS LIST (ON/OFF, Individual Keys, Model Dropdown, Priority) */}
-              <div className="space-y-4">
-                <div className="flex items-center justify-between">
+              {/* SECTION 3: CONFIGURABLE PROVIDER GRID */}
+              <div className="space-y-3">
+                <div className="flex flex-wrap items-center justify-between gap-2">
                   <div>
                     <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
                       <Server className="w-4 h-4 text-blue-600" />
-                      CONFIGURED PROVIDERS
+                      Configured AI Providers
                     </h3>
                     <p className="text-xs text-slate-500">
-                      A provider and its keys are strictly skipped unless explicitly turned ON.
+                      Explicit ON/OFF switch per provider. Providers are strictly bypassed when turned OFF.
                     </p>
                   </div>
                   <div className="text-xs text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
@@ -723,101 +751,124 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   </div>
                 </div>
 
-                <div className="space-y-4">
+                {/* 4/2/1 Responsive Grid */}
+                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
                   {providers.map((p, idx) => {
-                    const isExpanded = true; // Always clear and open as requested
+                    const helpConfig = getProviderHelp(p.id);
                     const activeKeysCount = p.apiKeys.filter((k) => k.enabled).length;
 
                     return (
                       <div
                         key={p.id}
-                        className={`bg-white rounded-xl border transition-all duration-200 overflow-hidden shadow-2xs ${
-                          p.enabled ? "border-blue-200/90 ring-1 ring-blue-100" : "border-slate-200 opacity-90"
+                        className={`bg-white rounded-xl border flex flex-col justify-between transition-all duration-200 shadow-2xs overflow-hidden ${
+                          p.enabled
+                            ? "border-blue-200/90 ring-1 ring-blue-100/80"
+                            : "border-slate-200 opacity-90"
                         }`}
                       >
-                        {/* Provider Header Bar */}
-                        <div className="p-4 bg-slate-50/70 border-b border-slate-200/80 flex flex-wrap items-center justify-between gap-3">
-                          <div className="flex items-center gap-3">
-                            {/* Priority Badge with Up/Down buttons */}
-                            <div className="flex items-center gap-1 bg-white px-2 py-1 rounded-md border border-slate-200 text-xs font-bold text-slate-700 shadow-2xs">
-                              <span>#{p.priority}</span>
-                              <div className="flex flex-col ml-1">
-                                <button
-                                  onClick={() => handleMovePriority(p.id, "up")}
-                                  disabled={idx === 0}
-                                  className="text-slate-400 hover:text-blue-600 disabled:opacity-20 cursor-pointer leading-none"
-                                  title="Increase Priority"
-                                >
-                                  <ArrowUp className="w-3 h-3" />
-                                </button>
-                                <button
-                                  onClick={() => handleMovePriority(p.id, "down")}
-                                  disabled={idx === providers.length - 1}
-                                  className="text-slate-400 hover:text-blue-600 disabled:opacity-20 cursor-pointer leading-none"
-                                  title="Decrease Priority"
-                                >
-                                  <ArrowDown className="w-3 h-3" />
-                                </button>
-                              </div>
-                            </div>
-
-                            <div>
-                              <div className="flex items-center gap-2">
-                                <h4 className="text-sm font-bold text-slate-900">{p.name}</h4>
-                                {/* Provider Status Badge */}
-                                <span
-                                  className={`text-[11px] px-2 py-0.5 rounded-full font-semibold border ${
-                                    !p.enabled
-                                      ? "bg-slate-100 text-slate-600 border-slate-200"
-                                      : p.status === "active"
-                                      ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                                      : p.status === "rate_limited"
-                                      ? "bg-amber-50 text-amber-800 border-amber-200"
-                                      : "bg-rose-50 text-rose-800 border-rose-200"
-                                  }`}
-                                >
-                                  {!p.enabled
-                                    ? "○ Disabled (OFF)"
-                                    : p.status === "active"
-                                    ? "✓ Active"
-                                    : p.status === "rate_limited"
-                                    ? "⚠ Rate Limited"
-                                    : "✕ Invalid Key / Offline"}
-                                </span>
-                              </div>
-                              <p className="text-[11px] text-slate-500 mt-0.5">
-                                {p.apiKeys.length} configured key{p.apiKeys.length === 1 ? "" : "s"} • {activeKeysCount} active (ON)
-                              </p>
-                            </div>
-                          </div>
-
-                          {/* Provider ON / OFF Switch */}
-                          <div className="flex items-center gap-3">
-                            <label className="flex items-center gap-2 cursor-pointer select-none">
-                              <span className="text-xs font-bold text-slate-700">Provider Switch:</span>
-                              <div
-                                onClick={() => handleUpdateProvider(p.id, { enabled: !p.enabled })}
-                                className={`w-14 h-7 flex items-center rounded-full p-1 cursor-pointer transition-colors ${
-                                  p.enabled ? "bg-blue-600" : "bg-slate-300"
-                                }`}
-                              >
-                                <div
-                                  className={`bg-white w-5 h-5 rounded-full shadow-md transform transition-transform flex items-center justify-center text-[9px] font-bold ${
-                                    p.enabled ? "translate-x-7 text-blue-600" : "translate-x-0 text-slate-400"
-                                  }`}
-                                >
-                                  {p.enabled ? "ON" : "OFF"}
+                        {/* Provider Header Card */}
+                        <div className="p-3.5 bg-slate-50/80 border-b border-slate-200/80 space-y-2">
+                          <div className="flex items-center justify-between gap-2">
+                            <div className="flex items-center gap-2 min-w-0">
+                              {/* Priority Badge */}
+                              <div className="flex items-center gap-0.5 bg-white px-1.5 py-0.5 rounded border border-slate-200 text-[11px] font-bold text-slate-700 shrink-0 shadow-2xs">
+                                <span>#{p.priority}</span>
+                                <div className="flex flex-col ml-0.5">
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMovePriority(p.id, "up")}
+                                    disabled={idx === 0}
+                                    className="text-slate-400 hover:text-blue-600 disabled:opacity-20 cursor-pointer leading-none"
+                                    title="Increase Priority"
+                                  >
+                                    <ArrowUp className="w-2.5 h-2.5" />
+                                  </button>
+                                  <button
+                                    type="button"
+                                    onClick={() => handleMovePriority(p.id, "down")}
+                                    disabled={idx === providers.length - 1}
+                                    className="text-slate-400 hover:text-blue-600 disabled:opacity-20 cursor-pointer leading-none"
+                                    title="Decrease Priority"
+                                  >
+                                    <ArrowDown className="w-2.5 h-2.5" />
+                                  </button>
                                 </div>
                               </div>
-                            </label>
+                              <h4 className="text-xs font-bold text-slate-900 truncate" title={p.name}>
+                                {p.name}
+                              </h4>
+                            </div>
+
+                            {/* ON/OFF Switch */}
+                            <div
+                              onClick={() => handleUpdateProvider(p.id, { enabled: !p.enabled })}
+                              className={`w-11 h-6 flex items-center rounded-full p-0.5 cursor-pointer transition-colors shrink-0 ${
+                                p.enabled ? "bg-blue-600" : "bg-slate-300"
+                              }`}
+                              title={`Toggle ${p.name} ON/OFF`}
+                            >
+                              <div
+                                className={`bg-white w-5 h-5 rounded-full shadow-xs transform transition-transform flex items-center justify-center text-[8px] font-bold ${
+                                  p.enabled ? "translate-x-5 text-blue-600" : "translate-x-0 text-slate-400"
+                                }`}
+                              >
+                                {p.enabled ? "ON" : "OFF"}
+                              </div>
+                            </div>
                           </div>
+
+                          {/* Status & Free Tier / Get Key Link */}
+                          <div className="flex items-center justify-between gap-1 text-[10px]">
+                            <span
+                              className={`px-1.5 py-0.5 rounded-full font-semibold border truncate ${
+                                !p.enabled
+                                  ? "bg-slate-100 text-slate-600 border-slate-200"
+                                  : p.status === "active"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  : p.status === "rate_limited"
+                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                  : "bg-rose-50 text-rose-800 border-rose-200"
+                              }`}
+                            >
+                              {!p.enabled
+                                ? "○ Disabled"
+                                : p.status === "active"
+                                ? "✓ Active"
+                                : p.status === "rate_limited"
+                                ? "⚠ Rate Limit"
+                                : "✕ Invalid Key"}
+                            </span>
+                            <span className="text-slate-400">
+                              {p.apiKeys.length} key{p.apiKeys.length === 1 ? "" : "s"} ({activeKeysCount} ON)
+                            </span>
+                          </div>
+
+                          {/* Free Key / Manual Config Info Line */}
+                          {p.id === "custom" ? (
+                            <div className="text-[10px] text-slate-500 bg-white/80 px-2 py-1 rounded border border-slate-200 italic">
+                              Custom endpoint — configure manually
+                            </div>
+                          ) : helpConfig ? (
+                            <div className="flex items-center justify-between gap-1 text-[11px] bg-white/90 px-2 py-1 rounded border border-slate-200">
+                              <span className="text-[10px] text-emerald-700 font-semibold truncate" title={helpConfig.freeLabel}>
+                                {helpConfig.freeLabel}
+                              </span>
+                              <button
+                                type="button"
+                                onClick={() => setFreeKeyModalProvider(helpConfig)}
+                                className="inline-flex items-center gap-1 text-[10px] font-bold text-blue-600 hover:text-blue-800 hover:underline shrink-0 cursor-pointer"
+                              >
+                                <span>Get Free API Key</span>
+                                <ExternalLink className="w-2.5 h-2.5" />
+                              </button>
+                            </div>
+                          ) : null}
                         </div>
 
-                        {/* Provider Details & Keys */}
-                        <div className="p-4 space-y-4">
-                          {/* Model selection & Endpoint row */}
-                          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-3 bg-slate-50/60 p-3 rounded-lg border border-slate-200/70">
-                            {/* Model selection */}
+                        {/* Provider Card Body */}
+                        <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
+                          <div className="space-y-2.5">
+                            {/* Model Selector */}
                             <div>
                               <label className="block text-[11px] font-bold text-slate-700 mb-1">
                                 Selected Model:
@@ -825,7 +876,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                               <select
                                 value={p.selectedModel}
                                 onChange={(e) => handleUpdateProvider(p.id, { selectedModel: e.target.value })}
-                                className="w-full text-xs bg-white border border-slate-300 rounded-md p-2 text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800 focus:ring-1 focus:ring-blue-500"
                               >
                                 {p.availableModels.map((m) => (
                                   <option key={m.id} value={m.id}>
@@ -835,192 +886,190 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                               </select>
                             </div>
 
-                            {/* Cloudflare Account ID or Custom Endpoint */}
+                            {/* Cloudflare Account ID */}
                             {p.id === "cloudflare" && (
                               <div>
                                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                  Cloudflare Account ID:
+                                  Account ID:
                                 </label>
                                 <input
                                   type="text"
                                   placeholder="e.g. 7f3b8..."
                                   value={p.accountId || ""}
                                   onChange={(e) => handleUpdateProvider(p.id, { accountId: e.target.value })}
-                                  className="w-full text-xs bg-white border border-slate-300 rounded-md p-2 text-slate-800"
+                                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800"
                                 />
                               </div>
                             )}
 
+                            {/* Custom AI Endpoint */}
                             {p.id === "custom" && (
-                              <div className="col-span-2">
+                              <div>
                                 <label className="block text-[11px] font-bold text-slate-700 mb-1">
                                   Custom Endpoint URL:
                                 </label>
                                 <input
                                   type="text"
-                                  placeholder="http://localhost:11434/v1/chat/completions"
+                                  placeholder="http://localhost:11434/v1/..."
                                   value={p.customEndpoint || ""}
                                   onChange={(e) => handleUpdateProvider(p.id, { customEndpoint: e.target.value })}
-                                  className="w-full text-xs bg-white border border-slate-300 rounded-md p-2 text-slate-800"
+                                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800 font-mono text-[11px]"
                                 />
-                              </div>
-                            )}
-
-                            {/* Free Tier Info */}
-                            {p.freeTier && (
-                              <div className="text-[11px] text-slate-500 flex flex-col justify-center">
-                                <span className="font-semibold text-slate-700">Free Tier Allowance:</span>
-                                <span>{p.freeTier.notes || "Generous free limits without credit card."}</span>
                               </div>
                             )}
                           </div>
 
-                          {/* Individual API Keys Management */}
-                          <div className="space-y-2">
+                          {/* API Keys Header and List */}
+                          <div className="space-y-2 pt-2 border-t border-slate-100">
                             <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-slate-800 flex items-center gap-1.5">
-                                <Key className="w-3.5 h-3.5 text-blue-600" />
-                                API Keys ({p.apiKeys.length}):
+                              <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
+                                <Key className="w-3 h-3 text-blue-600" />
+                                API Keys ({p.apiKeys.length})
                               </span>
                               <button
+                                type="button"
                                 onClick={() => setShowAddKeyFor(showAddKeyFor === p.id ? null : p.id)}
-                                className="inline-flex items-center gap-1 text-xs font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
+                                className="inline-flex items-center gap-0.5 text-xs font-semibold text-blue-600 hover:text-blue-800 cursor-pointer"
                               >
-                                <Plus className="w-3.5 h-3.5" />
+                                <Plus className="w-3 h-3" />
                                 <span>{showAddKeyFor === p.id ? "Cancel" : "Add Key"}</span>
                               </button>
                             </div>
 
                             {/* Add key input form */}
                             {showAddKeyFor === p.id && (
-                              <div className="p-3 bg-blue-50/50 rounded-lg border border-blue-200 space-y-2">
-                                <div className="grid grid-cols-1 sm:grid-cols-3 gap-2">
-                                  <input
-                                    type="text"
-                                    placeholder="Key Label (e.g. Personal Key 2)"
-                                    value={newKeyInputs[p.id]?.name || ""}
-                                    onChange={(e) =>
-                                      setNewKeyInputs((prev) => ({
-                                        ...prev,
-                                        [p.id]: { ...(prev[p.id] || { key: "", name: "" }), name: e.target.value },
-                                      }))
-                                    }
-                                    className="text-xs bg-white border border-slate-300 rounded-md p-2 text-slate-800"
-                                  />
-                                  <input
-                                    type="password"
-                                    placeholder="Enter raw API key secret..."
-                                    value={newKeyInputs[p.id]?.key || ""}
-                                    onChange={(e) =>
-                                      setNewKeyInputs((prev) => ({
-                                        ...prev,
-                                        [p.id]: { ...(prev[p.id] || { key: "", name: "" }), key: e.target.value },
-                                      }))
-                                    }
-                                    className="sm:col-span-2 text-xs bg-white border border-slate-300 rounded-md p-2 text-slate-800 font-mono"
-                                  />
-                                </div>
-                                <div className="flex justify-between items-center text-[11px] text-slate-500">
-                                  <span>Added keys default to <strong>OFF</strong> for safety.</span>
+                              <div className="p-2.5 bg-blue-50/70 rounded-lg border border-blue-200 space-y-2">
+                                <input
+                                  type="text"
+                                  placeholder="Key Label (e.g. Primary)"
+                                  value={newKeyInputs[p.id]?.name || ""}
+                                  onChange={(e) =>
+                                    setNewKeyInputs((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ...(prev[p.id] || { key: "", name: "" }), name: e.target.value },
+                                    }))
+                                  }
+                                  className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800"
+                                />
+                                <input
+                                  type="password"
+                                  placeholder="Enter raw secret key..."
+                                  value={newKeyInputs[p.id]?.key || ""}
+                                  onChange={(e) =>
+                                    setNewKeyInputs((prev) => ({
+                                      ...prev,
+                                      [p.id]: { ...(prev[p.id] || { key: "", name: "" }), key: e.target.value },
+                                    }))
+                                  }
+                                  className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800 font-mono"
+                                />
+                                <div className="flex justify-end">
                                   <button
+                                    type="button"
                                     onClick={() => handleAddKey(p.id)}
-                                    className="px-3 py-1.5 rounded-md bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer shadow-2xs"
+                                    className="px-2.5 py-1 rounded bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold cursor-pointer shadow-2xs"
                                   >
-                                    Save Key to Provider
+                                    Save Key
                                   </button>
                                 </div>
                               </div>
                             )}
 
-                            {/* Key Rows */}
-                            {p.apiKeys.length === 0 ? (
-                              <div className="p-3 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-center text-xs text-slate-500">
-                                No API keys configured for {p.name}. Click "Add Key" above to add one.
-                              </div>
-                            ) : (
-                              <div className="space-y-1.5">
-                                {p.apiKeys.map((k) => {
+                            {/* Internal Scrollable API Key List (max-height & overflow-y: auto) */}
+                            <div className="max-h-[160px] overflow-y-auto pr-0.5 space-y-1.5">
+                              {p.apiKeys.length === 0 ? (
+                                <div className="p-2.5 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-center text-[11px] text-slate-500">
+                                  No API keys configured.
+                                </div>
+                              ) : (
+                                p.apiKeys.map((k) => {
                                   const testKey = `${p.id}-${k.id}`;
-                                  const lastTest = testResults[testKey];
                                   const isTestingThis = testingKeyId === testKey;
 
                                   return (
                                     <div
                                       key={k.id}
-                                      className={`p-2.5 rounded-lg border flex flex-wrap items-center justify-between gap-3 text-xs ${
+                                      className={`p-2 rounded-lg border flex flex-col gap-1 text-xs transition-colors ${
                                         k.enabled
-                                          ? "bg-white border-slate-200/90 shadow-2xs"
+                                          ? "bg-white border-slate-200 shadow-2xs"
                                           : "bg-slate-50/80 border-slate-200 text-slate-500"
                                       }`}
                                     >
-                                      {/* Key info */}
-                                      <div className="flex items-center gap-3">
-                                        <span className="font-bold text-slate-900 min-w-[70px]">
+                                      {/* Key info row */}
+                                      <div className="flex items-center justify-between gap-1">
+                                        <span className="font-bold text-slate-900 truncate max-w-[90px]" title={k.name}>
                                           {k.name}
                                         </span>
-                                        <code className="px-2 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[11px] text-slate-700">
+                                        <code className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px] text-slate-700 truncate">
                                           {k.maskedKey}
                                         </code>
-                                        {/* Status badge */}
-                                        <span
-                                          className={`px-1.5 py-0.5 rounded text-[10px] font-semibold border ${
-                                            !k.enabled
-                                              ? "bg-slate-100 text-slate-500 border-slate-200"
-                                              : k.status === "active"
-                                              ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                              : k.status === "rate_limited"
-                                              ? "bg-amber-50 text-amber-800 border-amber-200"
-                                              : "bg-rose-50 text-rose-700 border-rose-200"
-                                          }`}
-                                        >
-                                          {!k.enabled ? "OFF" : k.status === "active" ? "Active" : k.status || "Ready"}
-                                        </span>
-                                        {/* Latency if available */}
-                                        {k.lastTestLatencyMs && (
-                                          <span className="text-[10px] text-slate-400">
-                                            {k.lastTestLatencyMs}ms
-                                          </span>
-                                        )}
                                       </div>
 
-                                      {/* Controls: ON/OFF toggle, Test, Delete */}
-                                      <div className="flex items-center gap-2">
-                                        {/* Individual Key ON / OFF toggle */}
-                                        <button
-                                          onClick={() => handleToggleKey(p.id, k.id, k.enabled)}
-                                          className={`px-2.5 py-1 rounded-md text-xs font-bold transition-colors cursor-pointer border ${
-                                            k.enabled
-                                              ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
-                                              : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300"
-                                          }`}
-                                        >
-                                          {k.enabled ? "[ ON ]" : "[ OFF ]"}
-                                        </button>
+                                      {/* Controls row */}
+                                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100">
+                                        {/* Status & Latency */}
+                                        <div className="flex items-center gap-1">
+                                          <span
+                                            className={`px-1 py-0.2 text-[9px] font-bold rounded border ${
+                                              !k.enabled
+                                                ? "bg-slate-100 text-slate-500 border-slate-200"
+                                                : k.status === "active"
+                                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
+                                                : k.status === "rate_limited"
+                                                ? "bg-amber-50 text-amber-800 border-amber-200"
+                                                : "bg-rose-50 text-rose-700 border-rose-200"
+                                            }`}
+                                          >
+                                            {!k.enabled ? "OFF" : k.status === "active" ? "Active" : k.status || "Ready"}
+                                          </span>
+                                          {k.lastTestLatencyMs && (
+                                            <span className="text-[9px] text-slate-400">
+                                              {k.lastTestLatencyMs}ms
+                                            </span>
+                                          )}
+                                        </div>
 
-                                        {/* Test Button */}
-                                        <button
-                                          onClick={() => handleTestKey(p.id, k.id, p.selectedModel)}
-                                          disabled={isTestingThis}
-                                          className="px-2.5 py-1 rounded-md text-xs font-semibold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1"
-                                        >
-                                          <RefreshCw className={`w-3 h-3 ${isTestingThis ? "animate-spin text-blue-600" : ""}`} />
-                                          <span>{isTestingThis ? "Testing..." : "Test"}</span>
-                                        </button>
+                                        {/* Actions: ON/OFF, Test, Delete */}
+                                        <div className="flex items-center gap-1">
+                                          <button
+                                            type="button"
+                                            onClick={() => handleToggleKey(p.id, k.id, k.enabled)}
+                                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer border ${
+                                              k.enabled
+                                                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
+                                                : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300"
+                                            }`}
+                                            title="Toggle key ON/OFF"
+                                          >
+                                            {k.enabled ? "ON" : "OFF"}
+                                          </button>
 
-                                        {/* Delete Button */}
-                                        <button
-                                          onClick={() => handleRemoveKey(p.id, k.id)}
-                                          className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
-                                          title="Remove this key"
-                                        >
-                                          <Trash2 className="w-3.5 h-3.5" />
-                                        </button>
+                                          <button
+                                            type="button"
+                                            onClick={() => handleTestKey(p.id, k.id, p.selectedModel)}
+                                            disabled={isTestingThis}
+                                            className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer disabled:opacity-50 inline-flex items-center gap-0.5"
+                                            title="Test key connection"
+                                          >
+                                            <RefreshCw className={`w-2.5 h-2.5 ${isTestingThis ? "animate-spin text-blue-600" : ""}`} />
+                                            <span>{isTestingThis ? "..." : "Test"}</span>
+                                          </button>
+
+                                          <button
+                                            type="button"
+                                            onClick={() => handleRemoveKey(p.id, k.id)}
+                                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                            title="Remove key"
+                                          >
+                                            <Trash2 className="w-3 h-3" />
+                                          </button>
+                                        </div>
                                       </div>
                                     </div>
                                   );
-                                })}
-                              </div>
-                            )}
+                                })
+                              )}
+                            </div>
                           </div>
                         </div>
                       </div>
@@ -1241,6 +1290,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           </button>
         </div>
       </div>
+
+      {/* Get Free API Key Modal */}
+      <GetFreeApiKeyModal
+        isOpen={!!freeKeyModalProvider}
+        providerHelp={freeKeyModalProvider}
+        onClose={() => setFreeKeyModalProvider(null)}
+      />
     </div>
   );
 };
