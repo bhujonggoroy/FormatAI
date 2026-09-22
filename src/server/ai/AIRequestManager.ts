@@ -59,7 +59,6 @@ export class AIRequestManager {
 
     this.registerAdapters();
     this.initializeProviders();
-    this.loadKeysFromEnvironment();
     this.loadSavedSettings();
   }
 
@@ -107,99 +106,20 @@ export class AIRequestManager {
   }
 
   /**
-   * Discovers and loads API keys from environment variables.
-   * CRITICAL INTENT & SAFETY RULES:
-   * 1. A newly detected environment key is NEVER enabled automatically
-   *    (except for existing primary GEMINI_API_KEY Key 1 which is enabled by default
-   *     to guarantee zero regressions for existing Gemini users).
-   * 2. Every other key starts with `enabled: false`.
-   * 3. Every other provider starts with `enabled: false`.
+   * Environment keys are kept strictly private on the server and are NEVER
+   * injected into user-facing provider card lists or client responses.
    */
   public loadKeysFromEnvironment() {
-    // 1. Google Gemini
-    if (process.env.GEMINI_API_KEY) {
-      this.upsertEnvKey("gemini", process.env.GEMINI_API_KEY, "GEMINI_API_KEY", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`GEMINI_API_KEY_${i}`];
-      if (k) {
-        this.upsertEnvKey("gemini", k, `GEMINI_API_KEY_${i}`, true);
-      }
-    }
-
-    // 2. Groq
-    if (process.env.GROQ_API_KEY) {
-      this.upsertEnvKey("groq", process.env.GROQ_API_KEY, "GROQ_API_KEY", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`GROQ_API_KEY_${i}`];
-      if (k) this.upsertEnvKey("groq", k, `GROQ_API_KEY_${i}`, true);
-    }
-
-    // 3. OpenRouter
-    if (process.env.OPENROUTER_API_KEY) {
-      this.upsertEnvKey("openrouter", process.env.OPENROUTER_API_KEY, "OPENROUTER_API_KEY", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`OPENROUTER_API_KEY_${i}`];
-      if (k) this.upsertEnvKey("openrouter", k, `OPENROUTER_API_KEY_${i}`, true);
-    }
-
-    // 4. Mistral
-    if (process.env.MISTRAL_API_KEY) {
-      this.upsertEnvKey("mistral", process.env.MISTRAL_API_KEY, "MISTRAL_API_KEY", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`MISTRAL_API_KEY_${i}`];
-      if (k) this.upsertEnvKey("mistral", k, `MISTRAL_API_KEY_${i}`, true);
-    }
-
-    // 5. Cohere
-    if (process.env.COHERE_API_KEY) {
-      this.upsertEnvKey("cohere", process.env.COHERE_API_KEY, "COHERE_API_KEY", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`COHERE_API_KEY_${i}`];
-      if (k) this.upsertEnvKey("cohere", k, `COHERE_API_KEY_${i}`, true);
-    }
-
-    // 6. Hugging Face
-    if (process.env.HF_API_KEY) {
-      this.upsertEnvKey("huggingface", process.env.HF_API_KEY, "HF_API_KEY", true);
-    }
-    if (process.env.HUGGINGFACE_API_KEY) {
-      this.upsertEnvKey("huggingface", process.env.HUGGINGFACE_API_KEY, "HUGGINGFACE_API_KEY", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`HF_API_KEY_${i}`];
-      if (k) this.upsertEnvKey("huggingface", k, `HF_API_KEY_${i}`, true);
-    }
-
-    // 7. Cloudflare Workers AI
-    if (process.env.CLOUDFLARE_API_KEY) {
-      this.upsertEnvKey("cloudflare", process.env.CLOUDFLARE_API_KEY, "CLOUDFLARE_API_KEY", true);
-    }
-    if (process.env.CLOUDFLARE_API_TOKEN) {
-      this.upsertEnvKey("cloudflare", process.env.CLOUDFLARE_API_TOKEN, "CLOUDFLARE_API_TOKEN", true);
-    }
-    for (let i = 1; i <= 5; i++) {
-      const k = process.env[`CLOUDFLARE_API_KEY_${i}`];
-      if (k) this.upsertEnvKey("cloudflare", k, `CLOUDFLARE_API_KEY_${i}`, true);
-    }
+    // Only configure server-side adapter endpoints if needed, never inject keys into client-facing provider lists
     if (process.env.CLOUDFLARE_ACCOUNT_ID) {
       const cf = this.providers.get("cloudflare");
       if (cf) cf.accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
     }
-
-    // 8. Custom AI Endpoint
     if (process.env.CUSTOM_AI_ENDPOINT) {
       const custom = this.providers.get("custom");
       if (custom) {
         custom.customEndpoint = process.env.CUSTOM_AI_ENDPOINT;
       }
-    }
-    if (process.env.CUSTOM_AI_KEY) {
-      this.upsertEnvKey("custom", process.env.CUSTOM_AI_KEY, "CUSTOM_AI_KEY", true);
     }
   }
 
@@ -207,33 +127,9 @@ export class AIRequestManager {
     providerId: string,
     rawKey: string,
     envVarName: string,
-    defaultEnabled = true
+    defaultEnabled = false
   ) {
-    if (!rawKey || !rawKey.trim()) return;
-    const cleanKey = rawKey.trim();
-    const provider = this.providers.get(providerId);
-    if (!provider) return;
-
-    if (!provider.apiKeys) provider.apiKeys = [];
-
-    const existing = provider.apiKeys.find(
-      (k) => k.key === cleanKey || k.envVarName === envVarName
-    );
-
-    if (!existing) {
-      const nextIdx = provider.apiKeys.length + 1;
-      provider.apiKeys.push({
-        id: `${providerId}-key-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
-        name: `Key ${nextIdx} (${envVarName})`,
-        key: cleanKey,
-        enabled: defaultEnabled,
-        envVarName,
-        status: defaultEnabled ? "active" : "disabled",
-      });
-      if (defaultEnabled) {
-        provider.enabled = true;
-      }
-    }
+    // No-op: Developer environment keys must never be exposed to users in the UI
   }
 
   /**
@@ -252,14 +148,15 @@ export class AIRequestManager {
           customEndpoint: p.customEndpoint,
           accountId: p.accountId,
           billingMode: p.billingMode,
-          keys: p.apiKeys.map((k) => ({
-            id: k.id,
-            name: k.name,
-            key: k.envVarName ? "" : k.key, // Environment keys are loaded dynamically from process.env, never stored on disk
-            enabled: k.enabled,
-            envVarName: k.envVarName,
-            status: k.status,
-          })),
+          keys: p.apiKeys
+            .filter((k) => !k.envVarName && !/API_KEY/i.test(k.name || ""))
+            .map((k) => ({
+              id: k.id,
+              name: k.name,
+              key: k.key,
+              enabled: k.enabled,
+              status: k.status,
+            })),
         };
       }
 
@@ -323,9 +220,12 @@ export class AIRequestManager {
             if (savedP.accountId !== undefined) p.accountId = savedP.accountId;
             if (savedP.billingMode !== undefined) p.billingMode = savedP.billingMode;
 
-            // Merge keys, preserving user ON/OFF states
+            // Merge keys, preserving user ON/OFF states (strictly exclude developer environment keys)
             if (Array.isArray(savedP.keys)) {
               for (const sKey of savedP.keys) {
+                if (sKey.envVarName || /API_KEY/i.test(sKey.name || "")) {
+                  continue;
+                }
                 const existingKey = p.apiKeys.find(
                   (k) => k.id === sKey.id || (k.key && k.key === sKey.key)
                 );
@@ -333,21 +233,14 @@ export class AIRequestManager {
                   existingKey.enabled = Boolean(sKey.enabled);
                   if (sKey.name) existingKey.name = sKey.name;
                   if (sKey.status) existingKey.status = sKey.status;
-                  if (!existingKey.key && sKey.envVarName) {
-                    existingKey.key = process.env[sKey.envVarName] || "";
-                  }
-                } else if (sKey.key || sKey.envVarName) {
-                  const resolvedKey = sKey.key || (sKey.envVarName ? process.env[sKey.envVarName] || "" : "");
-                  if (resolvedKey) {
-                    p.apiKeys.push({
-                      id: sKey.id || `${id}-key-${Date.now()}`,
-                      name: sKey.name || `Key ${p.apiKeys.length + 1}`,
-                      key: resolvedKey,
-                      enabled: Boolean(sKey.enabled),
-                      envVarName: sKey.envVarName,
-                      status: sKey.status || (sKey.enabled ? "active" : "disabled"),
-                    });
-                  }
+                } else if (sKey.key) {
+                  p.apiKeys.push({
+                    id: sKey.id || `${id}-key-${Date.now()}`,
+                    name: sKey.name || `Key ${p.apiKeys.length + 1}`,
+                    key: sKey.key,
+                    enabled: Boolean(sKey.enabled),
+                    status: sKey.status || (sKey.enabled ? "active" : "disabled"),
+                  });
                 }
               }
             }
@@ -420,9 +313,26 @@ export class AIRequestManager {
 
       // Filter available API keys:
       // KEY MUST BE EXPLICITLY ENABLED (key.enabled === true) AND NOT KNOWN INVALID
-      const activeKeys = (provider.apiKeys || []).filter(
+      let activeKeys = (provider.apiKeys || []).filter(
         (k) => k.enabled && !this.invalidKeys.has(k.key)
       );
+
+      // If user hasn't configured a key yet for Gemini, use server-side GEMINI_API_KEY as a silent backend execution fallback
+      if (
+        activeKeys.length === 0 &&
+        provider.id === "gemini" &&
+        process.env.GEMINI_API_KEY
+      ) {
+        activeKeys = [
+          {
+            id: "system-gemini-fallback",
+            name: "Server Gemini",
+            key: process.env.GEMINI_API_KEY,
+            enabled: true,
+            status: "active",
+          },
+        ];
+      }
 
       if (activeKeys.length === 0) {
         fallbackChain.push({
