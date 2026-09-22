@@ -6,21 +6,44 @@
     <title>NotebookLM to DOCX Converter — FormatAI</title>
     <link rel="icon" type="image/svg+xml" href="/favicon.svg" />
     <link rel="apple-touch-icon" href="/logo.png" />
+    <link rel="preconnect" href="https://fonts.googleapis.com" />
+    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+    <link href="https://fonts.googleapis.com/css2?family=Playfair+Display:ital,wght@0,600;0,700;0,800;0,900;1,700&family=Cormorant+Garamond:wght@500;600;700&display=swap" rel="stylesheet" />
     <script>
       // Suppress benign sandbox WebSocket / HMR disconnect errors in iframe preview
-      window.addEventListener('unhandledrejection', function (event) {
-        var reason = event.reason;
-        var msg = (reason && (reason.message || (typeof reason === 'string' ? reason : ''))) || '';
-        if (msg.includes('WebSocket') || msg.includes('websocket')) {
-          event.preventDefault();
-        }
-      });
-      window.addEventListener('error', function (event) {
-        var msg = (event && event.message) || '';
-        if (msg.includes('WebSocket') || msg.includes('websocket') || msg.includes('[vite] failed to connect')) {
-          event.preventDefault();
-        }
-      });
+      (function () {
+        var origConsoleError = console.error;
+        console.error = function () {
+          var firstArg = arguments[0];
+          if (typeof firstArg === 'string' && (firstArg.includes('[vite]') || firstArg.includes('websocket') || firstArg.includes('WebSocket'))) {
+            return;
+          }
+          origConsoleError.apply(console, arguments);
+        };
+        var origConsoleDebug = console.debug;
+        console.debug = function () {
+          var firstArg = arguments[0];
+          if (typeof firstArg === 'string' && firstArg.includes('[vite]')) {
+            return;
+          }
+          origConsoleDebug.apply(console, arguments);
+        };
+        window.addEventListener('unhandledrejection', function (event) {
+          var reason = event.reason;
+          var msg = (reason && (reason.message || (typeof reason === 'string' ? reason : String(reason)))) || '';
+          if (msg.includes('WebSocket') || msg.includes('websocket')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+        window.addEventListener('error', function (event) {
+          var msg = (event && (event.message || String(event))) || '';
+          if (msg.includes('WebSocket') || msg.includes('websocket') || msg.includes('[vite]')) {
+            event.preventDefault();
+            event.stopImmediatePropagation();
+          }
+        }, true);
+      })();
     </script>
     <meta name="description" content="FormatAI — Paste. Format. Get Documents. Clean up raw notes, math expressions, and LaTeX from NotebookLM, ChatGPT, Gemini, Claude, and convert them into publication-ready Word (.docx) documents." />
     <meta property="og:title" content="FormatAI — Paste. Format. Get Documents." />
