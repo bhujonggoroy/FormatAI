@@ -344,9 +344,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
   return (
     <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs antialiased">
-      <div className="bg-white w-full max-w-7xl max-h-[92vh] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+      <div className="bg-white w-full max-w-7xl h-[88vh] max-h-[92vh] min-h-[520px] sm:min-h-[580px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
         {/* Modal Header */}
-        <div className="px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
+        <div className="shrink-0 px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
           <div className="flex items-center gap-3">
             <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
               <Sparkles className="w-5 h-5" />
@@ -393,7 +393,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         {/* Global Notification Banner */}
         {statusBanner && (
           <div
-            className={`px-6 py-2.5 text-xs font-medium flex items-center justify-between border-b ${
+            className={`shrink-0 px-6 py-2.5 text-xs font-medium flex items-center justify-between border-b ${
               statusBanner.type === "error"
                 ? "bg-rose-50 text-rose-800 border-rose-200"
                 : statusBanner.type === "info"
@@ -419,55 +419,55 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         )}
 
         {/* Tabs Navigation */}
-        <div className="flex border-b border-slate-200 px-6 bg-white gap-2 text-xs font-semibold overflow-x-auto">
+        <div className="shrink-0 flex border-b border-slate-200 px-6 bg-white gap-2 text-xs font-semibold overflow-x-auto select-none">
           <button
             onClick={() => setActiveTab("control")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === "control"
                 ? "border-blue-600 text-blue-600 font-bold"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
-            <Settings2 className="w-4 h-4" />
+            <Settings2 className="w-4 h-4 shrink-0" />
             <span>AI Control Panel & Keys</span>
           </button>
           <button
             onClick={() => setActiveTab("fallback")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === "fallback"
                 ? "border-blue-600 text-blue-600 font-bold"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
-            <ShieldCheck className="w-4 h-4" />
+            <ShieldCheck className="w-4 h-4 shrink-0" />
             <span>Fallback Strategy & Safety</span>
           </button>
           <button
             onClick={() => setActiveTab("stats")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === "stats"
                 ? "border-blue-600 text-blue-600 font-bold"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
-            <Activity className="w-4 h-4" />
+            <Activity className="w-4 h-4 shrink-0" />
             <span>Usage & Health Telemetry</span>
           </button>
           <button
             onClick={() => setActiveTab("logs")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap ${
+            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
               activeTab === "logs"
                 ? "border-blue-600 text-blue-600 font-bold"
                 : "border-transparent text-slate-600 hover:text-slate-900"
             }`}
           >
-            <ScrollText className="w-4 h-4" />
+            <ScrollText className="w-4 h-4 shrink-0" />
             <span>Fallback Audit Logs</span>
           </button>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-3">
               <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
@@ -1277,7 +1277,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="px-6 py-3.5 border-t border-slate-200 flex items-center justify-between bg-slate-50 text-xs">
+        <div className="shrink-0 px-6 py-3.5 border-t border-slate-200 flex items-center justify-between bg-slate-50 text-xs">
           <div className="flex items-center gap-2 text-slate-500">
             <ShieldCheck className="w-4 h-4 text-emerald-600" />
             <span>Server-side isolated: Raw API keys are never returned to client source.</span>
