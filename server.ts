@@ -71,7 +71,7 @@ async function startServer() {
       has_gemini_key: Boolean(process.env.GEMINI_API_KEY),
       ready_providers_count: readyProviders.length,
       ready_providers: readyProviders.map((p) => p.name),
-      service: "NotebookLM to DOCX Converter",
+      service: "FormatAI",
     });
   });
 
@@ -418,7 +418,7 @@ Follow these rules strictly:
       : ACADEMIC_MATH_SYSTEM_INSTRUCTION;
 
     const prompt = `You are an expert technical editor, academic formatter, and mathematical typesetter.
-Your task is to take raw study notes, comprehensive formula sheets, exam question banks, lab manuals, and statistical problem sets copied from Google NotebookLM (which often contain messy tree-drawing pipes, broken LaTeX, unformatted math symbols, truncated equations, Bengali citations, and raw unformatted data blocks) and transform them into publication-ready, beautifully structured academic documents.
+Your task is to take raw AI-generated or copy-pasted content (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes, formula sheets, lab manuals, and exam problem sets) and transform them into publication-ready, beautifully structured academic documents.
 
 SELECTED FORMATTING MODE: "${formatMode}" (Options: auto, study_guide, exam_bank)
 
@@ -620,7 +620,7 @@ ${preCleaned}`;
       const {
         text,
         cleanedMarkdown: clientCleanedMarkdown,
-        title = "NotebookLM Notes",
+        title = "FormatAI Academic Document",
         font = "Times New Roman",
         accent = "1A365D",
         equationFormat = "native",
@@ -638,7 +638,7 @@ ${preCleaned}`;
       }
 
       if (!text || typeof text !== "string" || !text.trim()) {
-        return res.status(400).json({ error: "Please paste your NotebookLM notes to convert." });
+        return res.status(400).json({ error: "Please paste your notes or AI content to convert." });
       }
 
       console.log(`Starting export [format: ${targetFormat}] for: "${title}" (length: ${text.length} chars, eqFormat: ${equationFormat}, formatMode: ${formatMode}, hasPreview: ${Boolean(clientCleanedMarkdown)})`);
@@ -830,7 +830,7 @@ ${preCleaned}`;
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
-    console.log(`NotebookLM to DOCX Server running on http://0.0.0.0:${PORT}`);
+    console.log(`FormatAI Server running on http://0.0.0.0:${PORT}`);
   });
 }
 

@@ -789,7 +789,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             {/* Word Document Running Header */}
             <div className="pb-4 mb-6 border-b border-slate-200 flex items-center justify-between text-xs text-slate-400 select-none">
               <span className="font-serif italic text-slate-500 truncate max-w-sm">
-                {docTitle || "NotebookLM Lecture Notes"}
+                {docTitle || "Academic Notes"}
               </span>
               <span className="text-[11px] font-sans tracking-wide uppercase text-slate-400">
                 Word Document • {fontFamily}

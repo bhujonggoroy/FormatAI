@@ -60,8 +60,8 @@ export class OpenRouterAdapter extends OpenAICompatibleAdapter {
       defaultBaseUrl: "https://openrouter.ai/api/v1/chat/completions",
       defaultModels,
       customHeaders: {
-        "HTTP-Referer": "https://github.com/google/notebooklm-to-docx",
-        "X-Title": "NotebookLM to DOCX Converter",
+        "HTTP-Referer": "https://formatai.ai.studio",
+        "X-Title": "FormatAI",
       },
     });
   }

@@ -341,6 +341,16 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             </div>
           </div>
 
+          {/* FormatAI Mission & Core Motto */}
+          <div className="bg-gradient-to-br from-amber-50/80 to-orange-50/50 border border-amber-200/90 rounded-xl p-3.5 space-y-2 text-slate-800">
+            <div className="flex items-center gap-1.5 text-[11px] font-bold text-amber-950 uppercase tracking-wide">
+              <span>FormatAI Mission</span>
+            </div>
+            <p className="text-[11px] leading-relaxed text-slate-700">
+              ChatGPT, Gemini, Claude, NotebookLM বা যেকোনো source থেকে পাওয়া AI-generated বা copy-pasted content-কে স্বয়ংক্রিয়ভাবে mathematical, scientific, textual এবং academic formatting সহ একটি clean, professional, editable DOCX document-এ রূপান্তর করা—শিক্ষার্থীদের জন্য সম্পূর্ণ বিনামূল্যে।
+            </p>
+          </div>
+
           {/* SECTION 5: Open Source & MIT License */}
           <div className="border-t border-slate-200 pt-4 space-y-2">
             <button

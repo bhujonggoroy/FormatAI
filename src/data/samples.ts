@@ -368,7 +368,7 @@ $$
   },
   {
     id: "inferential-statistics",
-    title: "Inferential Statistics & Sampling (NotebookLM Outline)",
+    title: "Inferential Statistics & Sampling (AI Lecture Outline)",
     category: "Statistics & Data Science",
     text: `1. Foundations of Estimation
 

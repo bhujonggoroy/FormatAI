@@ -121,7 +121,7 @@ export default function App() {
   // Trigger preview AI polish
   const handlePreviewClean = async () => {
     if (!inputText.trim()) {
-      setErrorMessage("Please paste your NotebookLM notes first.");
+      setErrorMessage("Please paste your content first.");
       return;
     }
 
@@ -170,7 +170,7 @@ export default function App() {
   // Main export handler: Supports docx, pdf, tex, md, txt formats
   const downloadFile = async (format: "docx" | "pdf" | "tex" | "md" | "txt" = "docx") => {
     if (!inputText.trim()) {
-      setErrorMessage("Please paste your NotebookLM notes first.");
+      setErrorMessage("Please paste your content first.");
       return;
     }
 
@@ -421,12 +421,12 @@ export default function App() {
         {/* WORKSPACE VIEW: SPLIT */}
         {viewLayout === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start flex-1">
-            {/* Left Pane: NotebookLM Editor */}
+            {/* Left Pane: Raw Notes & AI Content Editor */}
             <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col h-[480px] sm:h-[580px] lg:h-[680px] overflow-hidden">
               {/* Editor Header Bar */}
               <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
                 <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                  Raw Notes (NotebookLM)
+                  Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
                 </span>
 
                 <div className="flex items-center gap-1">
@@ -461,7 +461,7 @@ export default function App() {
                   setInputText(e.target.value);
                   if (cleanedMarkdown) setCleanedMarkdown(null);
                 }}
-                placeholder="Paste raw notes copied from Google NotebookLM here...&#10;&#10;Examples:&#10;• Tree structures with pipes (|--, |__ ) are cleaned automatically&#10;• Formulas like \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} format to native Word math"
+                placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
                 className="w-full flex-1 p-4 font-mono text-xs sm:text-[13px] text-slate-800 bg-transparent resize-none focus:outline-none leading-relaxed select-text"
               />
 
@@ -500,7 +500,7 @@ export default function App() {
           <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col min-h-[640px] overflow-hidden">
             <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
               <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
-                Raw Notes (NotebookLM)
+                Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
               </span>
               <div className="flex items-center gap-2">
                 <button
@@ -529,7 +529,7 @@ export default function App() {
                 setInputText(e.target.value);
                 if (cleanedMarkdown) setCleanedMarkdown(null);
               }}
-              placeholder="Paste raw notes copied from Google NotebookLM here..."
+              placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, or any notes/equations)..."
               rows={22}
               className="w-full flex-1 p-4 font-mono text-xs sm:text-sm text-slate-800 bg-transparent resize-y focus:outline-none leading-relaxed select-text"
             />
@@ -569,7 +569,7 @@ export default function App() {
       <footer className="border-t border-slate-200 bg-white/80 py-4 px-4 sm:px-6 mt-8">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <div className="flex items-center gap-2 text-center sm:text-left flex-wrap justify-center sm:justify-start">
-            <span className="font-semibold text-slate-700">NotebookLM to Word</span>
+            <span className="font-semibold text-slate-700">FormatAI</span>
             <span>•</span>
             <span>AI to Academic DOCX Typesetter</span>
             <span>•</span>

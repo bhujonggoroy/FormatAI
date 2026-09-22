@@ -153,7 +153,7 @@ Text:
                 </span>
               </h2>
               <p className="text-xs text-slate-300">
-                Transforms unstructured NotebookLM notes into publication-ready academic documents and Word files.
+                Transforms unstructured AI and lecture notes (ChatGPT, Gemini, Claude, NotebookLM) into publication-ready academic documents and Word files.
               </p>
             </div>
           </div>
