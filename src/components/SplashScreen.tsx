@@ -59,10 +59,23 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   const [isFadingOut, setIsFadingOut] = useState<boolean>(false);
 
   useEffect(() => {
+    // When React splash mounts and app is not ready yet, remove the static early HTML splash
+    // so React's animated splash seamlessly owns the display
+    const earlyEl = document.getElementById("first-paint-splash");
+    if (earlyEl && !isAppReady) {
+      earlyEl.remove();
+    }
+  }, [shouldShowSplash]);
+
+  useEffect(() => {
     // If not showing splash for this session, remove early splash immediately
     if (!shouldShowSplash) {
-      const earlyEl = document.getElementById("first-paint-splash");
-      if (earlyEl) earlyEl.remove();
+      if (typeof window !== "undefined" && (window as any).hideFirstPaintSplash) {
+        (window as any).hideFirstPaintSplash(true);
+      } else {
+        const earlyEl = document.getElementById("first-paint-splash");
+        if (earlyEl) earlyEl.remove();
+      }
       return;
     }
 
@@ -77,9 +90,16 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       // safe fallback
     }
 
-    // Remove the early static HTML splash once React splash is running
-    const earlyEl = document.getElementById("first-paint-splash");
-    if (earlyEl) earlyEl.remove();
+    // Trigger smooth class-based fade-out on the static HTML container if still present
+    if (typeof window !== "undefined" && (window as any).hideFirstPaintSplash) {
+      (window as any).hideFirstPaintSplash(false);
+    } else {
+      const earlyEl = document.getElementById("first-paint-splash");
+      if (earlyEl) {
+        earlyEl.classList.add("splash-fade-out");
+        setTimeout(() => earlyEl.remove(), 550);
+      }
+    }
 
     // Trigger smooth fade out
     const timer = setTimeout(() => {
