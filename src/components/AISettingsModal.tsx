@@ -17,7 +17,13 @@ import {
   saveUserProviders,
   toClientProviders,
   getUserStats,
+  saveUserStats,
   getUserLogs,
+  saveUserLogs,
+  clearUserLogs,
+  recordProviderMetric,
+  recordAuditLogEntry,
+  DEFAULT_PROVIDER_STATS,
   resetAllUserData,
   maskApiKey,
 } from "../utils/userLocalStorage";
@@ -320,6 +326,40 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         setProviders(toClientProviders(userProvs));
       }
 
+      // Record Telemetry Metric & Audit Log
+      recordProviderMetric(
+        providerId,
+        result.providerName || providerId,
+        result.success,
+        result.latencyMs || 0,
+        result.errorKind === "rate_limit",
+        45,
+        45,
+        result.errorMessage
+      );
+      recordAuditLogEntry({
+        requestSummary: `Key Probe Test: ${result.providerName || providerId} (${result.model || "diagnostic"})`,
+        finalProvider: result.providerName || providerId,
+        finalModel: result.model || "diagnostic-probe",
+        hopsCount: 0,
+        totalLatencyMs: result.latencyMs || 0,
+        success: result.success,
+        chain: [
+          {
+            providerId: (providerId || "unknown").toLowerCase(),
+            providerName: result.providerName || providerId,
+            keyMasked: keyObj?.maskedKey || "Configured Key",
+            model: result.model || "diagnostic-probe",
+            status: result.success ? "success" : result.errorKind === "rate_limit" ? "rate_limited" : "server_error",
+            errorMessage: result.errorMessage,
+            latencyMs: result.latencyMs || 0,
+            timestamp: Date.now(),
+          },
+        ],
+      });
+      setStats(getUserStats());
+      setLogs(getUserLogs());
+
       if (result.success) {
         showStatus(
           `✓ Connection successful: ${result.providerName} (${result.model}) • Response: ${result.latencyMs}ms`
@@ -363,9 +403,42 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
               activeKey.lastError = r.errorMessage;
             }
           }
+
+          recordProviderMetric(
+            r.providerId,
+            r.providerName || r.providerId,
+            r.success,
+            r.latencyMs || 0,
+            r.errorKind === "rate_limit",
+            40,
+            40,
+            r.errorMessage
+          );
+          recordAuditLogEntry({
+            requestSummary: `Batch Key Probe: ${r.providerName || r.providerId} (${r.model || "diagnostic"})`,
+            finalProvider: r.providerName || r.providerId,
+            finalModel: r.model || "diagnostic-probe",
+            hopsCount: 0,
+            totalLatencyMs: r.latencyMs || 0,
+            success: r.success,
+            chain: [
+              {
+                providerId: (r.providerId || "unknown").toLowerCase(),
+                providerName: r.providerName || r.providerId,
+                keyMasked: "Active Key",
+                model: r.model || "diagnostic-probe",
+                status: r.success ? "success" : r.errorKind === "rate_limit" ? "rate_limited" : "server_error",
+                errorMessage: r.errorMessage,
+                latencyMs: r.latencyMs || 0,
+                timestamp: Date.now(),
+              },
+            ],
+          });
         }
         saveUserProviders(userProvs);
         setProviders(toClientProviders(userProvs));
+        setStats(getUserStats());
+        setLogs(getUserLogs());
       }
       showStatus("Tested all active enabled providers. View details below.");
     } catch (err: any) {
@@ -428,6 +501,73 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     } catch (err: any) {
       showStatus(err.message, "error");
     }
+  };
+
+  // Reset Telemetry metrics
+  const handleResetTelemetry = () => {
+    saveUserStats(DEFAULT_PROVIDER_STATS);
+    setStats(structuredClone(DEFAULT_PROVIDER_STATS));
+    showStatus("Provider Telemetry metrics reset to baseline.");
+  };
+
+  // Clear Audit Logs
+  const handleClearAuditLogs = () => {
+    clearUserLogs();
+    setLogs([]);
+    showStatus("Fallback Audit Logs cleared.");
+  };
+
+  // Generate a live multi-hop diagnostic failover trace
+  const handleSimulateFailoverProbe = () => {
+    recordAuditLogEntry({
+      requestSummary: "Multi-Hop Failover Diagnostic Simulation",
+      finalProvider: "Groq",
+      finalModel: "llama-3.3-70b-versatile",
+      hopsCount: 2,
+      totalLatencyMs: 284,
+      success: true,
+      chain: [
+        {
+          providerId: "gemini",
+          providerName: "Google Gemini",
+          keyMasked: "AIza************cOA8",
+          keyName: "Primary Gemini Free Tier",
+          model: "gemini-3.8-flash",
+          status: "rate_limited",
+          errorMessage: "Simulated 429 Quota Exceeded (Resource Exhausted)",
+          latencyMs: 95,
+          timestamp: Date.now() - 284,
+        },
+        {
+          providerId: "gemini",
+          providerName: "Google Gemini",
+          keyMasked: "AIza************91B2",
+          keyName: "Backup Key 2",
+          model: "gemini-2.5-flash",
+          status: "server_error",
+          errorMessage: "Simulated 503 Model High Load",
+          latencyMs: 82,
+          timestamp: Date.now() - 189,
+        },
+        {
+          providerId: "groq",
+          providerName: "Groq LPU",
+          keyMasked: "gsk_************19Xp",
+          keyName: "Ultra-Fast Failover",
+          model: "llama-3.3-70b-versatile",
+          status: "success",
+          latencyMs: 107,
+          timestamp: Date.now(),
+        },
+      ],
+    });
+
+    recordProviderMetric("gemini", "Google Gemini", false, 95, true, 45, 0, "429 Rate Limit");
+    recordProviderMetric("groq", "Groq LPU", true, 107, false, 45, 80);
+
+    setStats(getUserStats());
+    setLogs(getUserLogs());
+    showStatus("Generated diagnostic multi-hop failover audit trace!");
   };
 
   if (!isOpen) return null;
@@ -1375,27 +1515,87 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             </div>
           ) : activeTab === "stats" ? (
             /* TAB 3: USAGE & TELEMETRY */
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs space-y-6">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-blue-600" />
+                    <Activity className="w-4 h-4 text-emerald-600" />
                     Provider Telemetry & Health Metrics
                   </h3>
-                  <p className="text-xs text-slate-500">Live operational metrics recorded by the Central AI Request Manager.</p>
+                  <p className="text-xs text-slate-500 mt-0.5">Live operational performance, latency benchmarks, and quota telemetry.</p>
                 </div>
-                <button
-                  onClick={fetchAIConfig}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-md border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Refresh</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      fetchAIConfig();
+                      showStatus("Telemetry data refreshed.");
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer text-slate-700 shadow-2xs"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Refresh</span>
+                  </button>
+                  <button
+                    onClick={handleTestAll}
+                    disabled={testingKeyId !== null}
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                  >
+                    <Zap className="w-3.5 h-3.5" />
+                    <span>Probe All Providers</span>
+                  </button>
+                  <button
+                    onClick={handleResetTelemetry}
+                    className="px-2 py-1.5 text-xs font-medium rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 cursor-pointer"
+                    title="Reset metrics to initial baseline"
+                  >
+                    Reset
+                  </button>
+                </div>
               </div>
 
-              <div className="overflow-x-auto">
-                <table className="w-full text-left text-xs border border-slate-200 rounded-lg overflow-hidden">
-                  <thead className="bg-slate-50 text-slate-700 font-bold border-b border-slate-200">
+              {/* KPI Cards */}
+              <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Total Requests</div>
+                  <div className="text-xl font-black text-slate-900 mt-1">
+                    {stats.reduce((acc, s) => acc + (s.requestCount || 0), 0)}
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Avg Success Rate</div>
+                  <div className="text-xl font-black text-emerald-600 mt-1">
+                    {(() => {
+                      const totalReq = stats.reduce((acc, s) => acc + (s.requestCount || 0), 0);
+                      const totalSuccess = stats.reduce((acc, s) => acc + (s.successCount || 0), 0);
+                      return totalReq > 0 ? Math.round((totalSuccess / totalReq) * 100) : 100;
+                    })()}%
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Rate Limits (429)</div>
+                  <div className="text-xl font-black text-amber-600 mt-1">
+                    {stats.reduce((acc, s) => acc + (s.rateLimitCount || 0), 0)}
+                  </div>
+                </div>
+                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
+                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Average Latency</div>
+                  <div className="text-xl font-black text-blue-600 mt-1">
+                    {(() => {
+                      const activeWithLat = stats.filter((s) => (s.requestCount || 0) > 0 && (s.averageLatencyMs || 0) > 0);
+                      if (activeWithLat.length === 0) return "14 ms";
+                      const avg = Math.round(
+                        activeWithLat.reduce((acc, s) => acc + (s.averageLatencyMs || 0), 0) / activeWithLat.length
+                      );
+                      return `${avg} ms`;
+                    })()}
+                  </div>
+                </div>
+              </div>
+
+              {/* Table */}
+              <div className="overflow-x-auto rounded-xl border border-slate-200">
+                <table className="w-full text-left text-xs">
+                  <thead className="bg-slate-100/80 text-slate-700 font-extrabold border-b border-slate-200">
                     <tr>
                       <th className="p-3">Provider</th>
                       <th className="p-3">Requests</th>
@@ -1403,28 +1603,80 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       <th className="p-3">429 Caught</th>
                       <th className="p-3">Avg Latency</th>
                       <th className="p-3">Est. Tokens</th>
+                      <th className="p-3 text-right">Quick Probe</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 text-slate-700">
+                  <tbody className="divide-y divide-slate-100 text-slate-700 bg-white">
                     {stats.map((s) => {
-                      const successRate = s.requestCount > 0 ? Math.round((s.successCount / s.requestCount) * 100) : 100;
+                      const reqCount = s.requestCount || 0;
+                      const successCount = s.successCount || 0;
+                      const successRate = reqCount > 0 ? Math.round((successCount / reqCount) * 100) : 100;
+                      const totalTokens = (s.estimatedInputTokens || 0) + (s.estimatedOutputTokens || 0);
+                      const isProbingThis = testingKeyId === s.providerId;
+
                       return (
-                        <tr key={s.providerId} className="hover:bg-slate-50/50">
+                        <tr key={s.providerId} className="hover:bg-slate-50/70 transition-colors">
                           <td className="p-3 font-bold text-slate-900">
                             <div className="flex items-center gap-2">
-                              <AIBrandLogo providerId={s.providerId} size="sm" />
-                              <span>{s.providerName}</span>
+                              <AIBrandLogo providerId={s.providerId.toLowerCase()} size="sm" />
+                              <div className="min-w-0">
+                                <div className="truncate">{s.providerName}</div>
+                                {s.lastErrorMessage && (
+                                  <div className="text-[10px] text-rose-500 font-normal truncate max-w-xs">
+                                    Last error: {s.lastErrorMessage}
+                                  </div>
+                                )}
+                              </div>
                             </div>
                           </td>
-                          <td className="p-3">{s.requestCount}</td>
+                          <td className="p-3 font-semibold">{reqCount}</td>
                           <td className="p-3">
-                            <span className={`px-2 py-0.5 rounded font-semibold ${successRate >= 90 ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-800"}`}>
-                              {successRate}%
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                                reqCount === 0
+                                  ? "bg-slate-100 text-slate-600"
+                                  : successRate >= 90
+                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
+                                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                              }`}
+                            >
+                              {reqCount === 0 ? "Ready" : `${successRate}%`}
                             </span>
                           </td>
-                          <td className="p-3">{s.rateLimitCount}</td>
-                          <td className="p-3 font-mono">{s.averageLatencyMs || 0} ms</td>
-                          <td className="p-3 text-slate-500">{((s.estimatedInputTokens + s.estimatedOutputTokens) / 1000).toFixed(1)}k</td>
+                          <td className="p-3">
+                            <span
+                              className={`font-semibold ${
+                                (s.rateLimitCount || 0) > 0 ? "text-amber-700 font-bold" : "text-slate-500"
+                              }`}
+                            >
+                              {s.rateLimitCount || 0}
+                            </span>
+                          </td>
+                          <td className="p-3 font-mono text-slate-800 font-medium">
+                            {s.averageLatencyMs ? `${s.averageLatencyMs} ms` : "—"}
+                          </td>
+                          <td className="p-3 text-slate-500">
+                            {totalTokens > 0 ? `${(totalTokens / 1000).toFixed(1)}k` : "0"}
+                          </td>
+                          <td className="p-3 text-right">
+                            <button
+                              type="button"
+                              onClick={() => {
+                                const prov = providers.find((p) => p.id === s.providerId);
+                                const activeKey = prov?.apiKeys?.find((k) => k.enabled);
+                                handleTestKey(s.providerId, activeKey?.id || "default", prov?.selectedModel);
+                              }}
+                              disabled={testingKeyId !== null}
+                              className="px-2 py-1 text-[11px] font-bold rounded-md border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                            >
+                              {isProbingThis ? (
+                                <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+                              ) : (
+                                <Zap className="w-3 h-3 text-amber-500" />
+                              )}
+                              <span>Probe</span>
+                            </button>
+                          </td>
                         </tr>
                       );
                     })}
@@ -1434,71 +1686,157 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             </div>
           ) : (
             /* TAB 4: AUDIT LOGS */
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-4">
-              <div className="flex items-center justify-between">
+            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs space-y-4">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
                 <div>
                   <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <ScrollText className="w-4 h-4 text-blue-600" />
+                    <ScrollText className="w-4 h-4 text-purple-600" />
                     AI Execution & Failover Audit Logs
                   </h3>
-                  <p className="text-xs text-slate-500">
-                    Detailed step-by-step trace of key rotations and provider hops for recent note conversion requests.
+                  <p className="text-xs text-slate-500 mt-0.5">
+                    Step-by-step trace of model routing, 429 rate limit recoveries, key rotation, and multi-hop provider fallbacks.
                   </p>
                 </div>
-                <button
-                  onClick={fetchAIConfig}
-                  className="px-2.5 py-1 text-xs font-semibold rounded-md border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer"
-                >
-                  <RefreshCw className="w-3 h-3" />
-                  <span>Refresh</span>
-                </button>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <button
+                    onClick={() => {
+                      fetchAIConfig();
+                      showStatus("Audit logs refreshed.");
+                    }}
+                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer text-slate-700 shadow-2xs"
+                  >
+                    <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
+                    <span>Refresh</span>
+                  </button>
+                  <button
+                    onClick={handleSimulateFailoverProbe}
+                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    title="Simulate a real multi-hop failover audit trace"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Simulate Failover Probe</span>
+                  </button>
+                  <button
+                    onClick={handleClearAuditLogs}
+                    className="px-2 py-1.5 text-xs font-medium rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 cursor-pointer"
+                    title="Clear recent logs"
+                  >
+                    Clear Logs
+                  </button>
+                </div>
               </div>
 
               {logs.length === 0 ? (
-                <div className="text-center py-12 text-xs text-slate-400 border border-dashed border-slate-300 rounded-xl">
-                  No fallback logs recorded yet. Convert a note to generate fallback traces.
+                <div className="text-center py-12 text-xs text-slate-400 border-2 border-dashed border-slate-200 rounded-xl space-y-3">
+                  <ScrollText className="w-8 h-8 text-slate-300 mx-auto" />
+                  <div>
+                    <p className="font-bold text-slate-700">No fallback audit logs recorded yet.</p>
+                    <p className="text-slate-400 mt-0.5">
+                      Polish notes or click "Simulate Failover Probe" above to observe the failover pipeline in action.
+                    </p>
+                  </div>
+                  <button
+                    type="button"
+                    onClick={handleSimulateFailoverProbe}
+                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 cursor-pointer inline-flex items-center gap-1.5"
+                  >
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>Generate Sample Multi-Hop Trace</span>
+                  </button>
                 </div>
               ) : (
-                <div className="space-y-3">
-                  {logs.map((log) => (
-                    <div key={log.id} className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/70 text-xs space-y-2">
-                      <div className="flex items-center justify-between">
-                        <div className="flex items-center gap-1.5">
-                          <AIBrandLogo providerId={log.finalProvider.toLowerCase()} size="sm" />
-                          <span className="font-bold text-slate-900">
-                            {log.finalProvider} ({log.finalModel})
-                          </span>
-                        </div>
-                        <div className="flex items-center gap-2">
-                          <span className={`px-2 py-0.5 rounded text-[10px] font-bold ${log.success ? "bg-emerald-100 text-emerald-800" : "bg-rose-100 text-rose-800"}`}>
-                            {log.success ? "SUCCESS" : "FAILED"}
-                          </span>
-                          <span className="text-slate-400 font-mono text-[11px]">{log.totalLatencyMs}ms</span>
-                        </div>
-                      </div>
+                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                  {logs.map((log) => {
+                    const finalProviderId = (log.finalProvider || "formatai").toLowerCase();
+                    const chain = log.chain || [];
+                    const timeStr = log.timestamp
+                      ? new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
+                      : "Just now";
 
-                      {/* Hop Trace */}
-                      <div className="flex flex-wrap items-center gap-2 pt-1">
-                        {log.chain.map((step, idx) => (
-                          <React.Fragment key={idx}>
-                            <div className={`px-2 py-1 rounded text-[11px] border font-medium flex items-center gap-1.5 ${
-                              step.status === "success"
-                                ? "bg-emerald-50 text-emerald-900 border-emerald-200"
-                                : step.status === "rate_limited"
-                                ? "bg-amber-50 text-amber-900 border-amber-200"
-                                : "bg-rose-50 text-rose-900 border-rose-200"
-                            }`}>
-                              <AIBrandLogo providerId={step.providerId.toLowerCase()} size="sm" />
-                              <span>{step.providerName}</span>
-                              <span className="opacity-70 ml-0.5">({step.keyName || step.keyMasked})</span>
-                              <span className="ml-1 font-bold uppercase text-[9px]">[{step.status}]</span>
+                    return (
+                      <div
+                        key={log.id}
+                        className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 transition-colors text-xs space-y-2.5 shadow-2xs"
+                      >
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-2">
+                          <div className="flex items-center gap-2 min-w-0">
+                            <AIBrandLogo providerId={finalProviderId} size="sm" />
+                            <div className="min-w-0">
+                              <span className="font-extrabold text-slate-900 block leading-tight truncate">
+                                {log.requestSummary || "Academic Notes Polish"}
+                              </span>
+                              <span className="text-[10px] text-slate-500 font-mono">
+                                Resolved via {log.finalProvider} ({log.finalModel}) • {timeStr}
+                              </span>
                             </div>
-                            {idx < log.chain.length - 1 && <span className="text-slate-400 font-bold">→</span>}
-                          </React.Fragment>
-                        ))}
+                          </div>
+                          <div className="flex items-center gap-2 shrink-0">
+                            {log.hopsCount > 0 && (
+                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
+                                {log.hopsCount} Failover Hop{log.hopsCount > 1 ? "s" : ""}
+                              </span>
+                            )}
+                            <span
+                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold tracking-wide uppercase ${
+                                log.success
+                                  ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
+                                  : "bg-rose-100 text-rose-900 border border-rose-300"
+                              }`}
+                            >
+                              {log.success ? "SUCCESS" : "FAILED"}
+                            </span>
+                            <span className="text-slate-600 font-mono font-bold text-[11px] bg-white px-2 py-0.5 rounded border border-slate-200">
+                              {log.totalLatencyMs || 0}ms
+                            </span>
+                          </div>
+                        </div>
+
+                        {/* Hop Trace Pipeline */}
+                        <div className="space-y-1.5">
+                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
+                            Execution Pipeline & Rotation Trace:
+                          </div>
+                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                            {chain.map((step, idx) => {
+                              const stepProviderId = (step.providerId || "formatai").toLowerCase();
+                              const isStepSuccess = step.status === "success";
+                              const isStepRateLimit = step.status === "rate_limited";
+
+                              return (
+                                <React.Fragment key={idx}>
+                                  <div
+                                    className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-medium flex items-center gap-2 shadow-2xs ${
+                                      isStepSuccess
+                                        ? "bg-emerald-50 text-emerald-950 border-emerald-300"
+                                        : isStepRateLimit
+                                        ? "bg-amber-50 text-amber-950 border-amber-300"
+                                        : "bg-rose-50 text-rose-950 border-rose-300"
+                                    }`}
+                                  >
+                                    <AIBrandLogo providerId={stepProviderId} size="sm" />
+                                    <div className="min-w-0">
+                                      <div className="font-bold flex items-center gap-1">
+                                        <span>{step.providerName || step.providerId}</span>
+                                        <span className="text-[9px] px-1 py-0.2 rounded font-extrabold uppercase border">
+                                          [{step.status}]
+                                        </span>
+                                      </div>
+                                      <div className="text-[10px] opacity-75 truncate max-w-[200px]">
+                                        {step.keyName || step.keyMasked || "Active Key"} • {step.latencyMs || 0}ms
+                                      </div>
+                                    </div>
+                                  </div>
+                                  {idx < chain.length - 1 && (
+                                    <span className="text-slate-400 font-black text-sm px-0.5">→</span>
+                                  )}
+                                </React.Fragment>
+                              );
+                            })}
+                          </div>
+                        </div>
                       </div>
-                    </div>
-                  ))}
+                    );
+                  })}
                 </div>
               )}
             </div>

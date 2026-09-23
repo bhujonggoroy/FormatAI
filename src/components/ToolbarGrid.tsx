@@ -88,15 +88,26 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
   const currentTheme = getAcademicTheme(accentColor);
 
-  // Close dropdown when clicking outside
+  // Close dropdown when clicking outside or pressing Escape
   useEffect(() => {
-    function handleClickOutside(event: MouseEvent) {
+    function handleClickOutside(event: MouseEvent | TouchEvent) {
       if (containerRef.current && !containerRef.current.contains(event.target as Node)) {
         setOpenCard(null);
       }
     }
+    function handleKeyDown(event: KeyboardEvent) {
+      if (event.key === "Escape") {
+        setOpenCard(null);
+      }
+    }
     document.addEventListener("mousedown", handleClickOutside);
-    return () => document.removeEventListener("mousedown", handleClickOutside);
+    document.addEventListener("touchstart", handleClickOutside, { passive: true });
+    document.addEventListener("keydown", handleKeyDown);
+    return () => {
+      document.removeEventListener("mousedown", handleClickOutside);
+      document.removeEventListener("touchstart", handleClickOutside);
+      document.removeEventListener("keydown", handleKeyDown);
+    };
   }, []);
 
   const toggleCard = (cardId: string) => {
@@ -211,14 +222,23 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </button>
         </div>
 
-        {/* The 8 Distinct Action Cards: Responsive Grid */}
+        {/* Backdrop for mobile / tablet tap-outside */}
+        {openCard && (
+          <div
+            className="fixed inset-0 z-40 bg-transparent"
+            onClick={() => setOpenCard(null)}
+            aria-hidden="true"
+          />
+        )}
+
+        {/* The 8 Distinct Action Cards: Responsive Grid (4x2 on md+, 2x4 on mobile/tablet portrait) */}
         <div
           className={`${
             isMobileExpanded ? "grid" : "hidden sm:grid"
-          } grid-cols-2 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-2.5 sm:gap-3`}
+          } grid-cols-2 sm:grid-cols-2 md:grid-cols-4 gap-2.5 sm:gap-3`}
         >
           {/* ===================== CARD 1: FONT ===================== */}
-          <div className="relative">
+          <div className={`relative ${openCard === "font" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-font"
               type="button"
@@ -292,7 +312,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </div>
 
           {/* ===================== CARD 2: THEME (FULL THEME COLOR CHANGE) ===================== */}
-          <div className="relative">
+          <div className={`relative ${openCard === "theme" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-theme"
               type="button"
@@ -340,7 +360,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
             {/* Theme Sub-buttons Dropdown */}
             {openCard === "theme" && (
-              <div className="absolute right-0 sm:left-0 top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-2.5 z-40 animate-in fade-in zoom-in-95">
+              <div className="absolute right-0 md:left-0 md:right-auto top-full mt-2 w-72 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-2.5 z-40 animate-in fade-in zoom-in-95">
                 <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 border-b-2 border-slate-100 mb-1.5 flex items-center justify-between">
                   <span>University Color Schemes</span>
                   <span
@@ -392,7 +412,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </div>
 
           {/* ===================== CARD 3: MATH (SUB BUTTON BARS & SYMBOLS) ===================== */}
-          <div className="relative">
+          <div className={`relative ${openCard === "math" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-math"
               type="button"
@@ -431,7 +451,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
             {/* Math Sub-button bars Dropdown */}
             {openCard === "math" && (
-              <div className="absolute left-0 lg:-left-6 top-full mt-2 w-84 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-3 z-40 animate-in fade-in zoom-in-95">
+              <div className="absolute left-0 md:right-0 md:left-auto top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-3 z-40 animate-in fade-in zoom-in-95">
                 {/* Math Format Toggle Sub-Bar */}
                 <div className="mb-3">
                   <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
@@ -530,36 +550,46 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
             )}
           </div>
 
-          {/* ===================== CARD 4: AI POLISH (PRIMARY ACTION) ===================== */}
-          <div className="relative">
+          {/* ===================== CARD 4: AI POLISH / FORMATAI ===================== */}
+          <div className={`relative ${openCard === "ai-polish" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-ai-polish"
               type="button"
               onClick={() => toggleCard("ai-polish")}
               disabled={isAiPolishing}
               aria-expanded={openCard === "ai-polish"}
-              className={`w-full min-h-[76px] sm:min-h-[82px] border-2 ${
+              className={`w-full min-h-[76px] sm:min-h-[82px] bg-white hover:bg-slate-50 border-2 ${
                 isAiPolishing
-                  ? "bg-blue-100 border-blue-500 ring-2 ring-blue-200"
+                  ? "bg-blue-50 border-blue-500 ring-2 ring-blue-200 shadow-xs"
                   : openCard === "ai-polish"
-                  ? "border-blue-600 bg-blue-50/90 ring-2 ring-blue-100"
-                  : "bg-blue-50 hover:bg-blue-100/80 border-blue-400 hover:border-blue-600"
-              } rounded-2xl p-2.5 sm:p-3 transition-all text-left flex flex-col justify-between cursor-pointer group disabled:opacity-60 shadow-xs hover:shadow-sm`}
+                  ? "border-blue-600 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs"
+                  : "border-slate-300 hover:border-blue-500 hover:shadow-xs"
+              } rounded-2xl p-2.5 sm:p-3 transition-all text-left flex flex-col justify-between cursor-pointer group disabled:opacity-60`}
             >
               <div className="flex items-center justify-between w-full">
-                <div className="flex items-center gap-1.5 sm:gap-2">
-                  <div className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl bg-blue-600 text-white flex items-center justify-center shrink-0 shadow-2xs">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
+                  <div
+                    className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs transition-colors ${
+                      openCard === "ai-polish" || isAiPolishing
+                        ? "bg-blue-600 text-white"
+                        : "bg-blue-100 border border-blue-200 text-blue-700 group-hover:bg-blue-200/70"
+                    }`}
+                  >
                     {isAiPolishing ? (
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
                     ) : (
-                      <Sparkles className="w-4 h-4 text-amber-300" />
+                      <Sparkles
+                        className={`w-4 h-4 ${
+                          openCard === "ai-polish" || isAiPolishing ? "text-amber-300" : "text-blue-700"
+                        }`}
+                      />
                     )}
                   </div>
-                  <div>
-                    <span className="font-extrabold text-blue-950 text-xs sm:text-sm block leading-tight">
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-slate-900 text-xs sm:text-sm block leading-tight truncate">
                       {isNoAI ? "FormatAI" : "AI Polish"}
                     </span>
-                    <span className="text-[10px] font-bold text-blue-800 block">
+                    <span className="text-[10px] font-bold text-blue-700 block truncate">
                       {isAiPolishing
                         ? "Normalizing..."
                         : isNoAI
@@ -569,20 +599,20 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-1 shrink-0 ml-1">
                   {isNoAI && (
-                    <span className="text-[9px] font-extrabold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 uppercase tracking-wider hidden min-[420px]:inline">
+                    <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-wider hidden min-[440px]:inline">
                       No AI
                     </span>
                   )}
                   <ChevronDown
-                    className={`w-4 h-4 text-blue-700 group-hover:text-blue-900 transition-transform ${
-                      openCard === "ai-polish" ? "rotate-180 text-blue-900 font-bold" : ""
+                    className={`w-4 h-4 text-slate-500 group-hover:text-blue-700 transition-transform ${
+                      openCard === "ai-polish" ? "rotate-180 text-blue-700 font-bold" : ""
                     }`}
                   />
                 </div>
               </div>
-              <p className="text-[10px] sm:text-[11px] text-blue-900/80 mt-1 font-semibold line-clamp-1">
+              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium line-clamp-1">
                 {isAiPolishing
                   ? "Normalizing equations..."
                   : isNoAI
@@ -606,7 +636,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </div>
 
           {/* ===================== CARD 5: STUDY GUIDE & FORMULAS ===================== */}
-          <div className="relative">
+          <div className={`relative ${openCard === "study-guide" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-study-guide"
               type="button"
@@ -693,7 +723,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </div>
 
           {/* ===================== CARD 6: ACADEMIC SKILLS ===================== */}
-          <div className="relative">
+          <div className={`relative ${openCard === "skills" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-academic-skills"
               type="button"
@@ -732,7 +762,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
             {/* Academic Skills Sub-button list */}
             {openCard === "skills" && (
-              <div className="absolute right-0 sm:left-0 top-full mt-2 w-84 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-3 z-40 animate-in fade-in zoom-in-95">
+              <div className="absolute right-0 md:left-0 md:right-auto top-full mt-2 w-84 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-3 z-40 animate-in fade-in zoom-in-95">
                 <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-2">
                   Academic Skills Pipeline
                 </div>
@@ -778,7 +808,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </div>
 
           {/* ===================== CARD 7: SAMPLES ===================== */}
-          <div className="relative">
+          <div className={`relative ${openCard === "samples" ? "z-50" : "z-10"}`}>
             <button
               id="card-toolbar-samples"
               type="button"
@@ -817,7 +847,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
             {/* Samples Sub-buttons */}
             {openCard === "samples" && (
-              <div className="absolute left-0 sm:left-auto sm:right-0 lg:left-0 lg:-left-6 top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-2.5 z-40 animate-in fade-in zoom-in-95">
+              <div className="absolute left-0 md:right-0 md:left-auto top-full mt-2 w-80 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-2.5 z-40 animate-in fade-in zoom-in-95">
                 <div className="px-3 py-1.5 text-[10px] font-extrabold uppercase tracking-wider text-slate-500 border-b-2 border-slate-100 mb-1.5">
                   Ready-to-Test STEM Notes
                 </div>
@@ -842,7 +872,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           </div>
 
           {/* ===================== CARD 8: SPLIT BUTTON EXPORT DOCS (PRIMARY CALL TO ACTION) ===================== */}
-          <div className="relative h-full">
+          <div className={`relative h-full ${openCard === "export" ? "z-50" : "z-10"}`}>
             <div
               className={`w-full min-h-[76px] sm:min-h-[82px] bg-slate-900 border-2 border-slate-900 hover:border-black rounded-2xl shadow-md transition-all flex items-stretch ${
                 !canDownload || isAiPolishing ? "opacity-50 cursor-not-allowed" : ""
@@ -860,26 +890,26 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                   }
                 }}
                 disabled={!canDownload || isAiPolishing}
-                className="flex-1 p-2.5 sm:p-3 transition-all text-left flex flex-col justify-between cursor-pointer group hover:bg-slate-800 rounded-l-2xl disabled:cursor-not-allowed"
+                className="flex-1 p-2.5 sm:p-3 transition-all text-left flex flex-col justify-between cursor-pointer group hover:bg-slate-800 rounded-l-2xl disabled:cursor-not-allowed min-w-0"
                 title="Export Docs (Download DOCX)"
               >
-                <div className="flex items-center gap-1.5 sm:gap-2">
+                <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <div
                     className="w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs text-white"
                     style={{ backgroundColor: currentTheme.btnPrimary }}
                   >
                     <FileDown className="w-4 h-4 text-white" />
                   </div>
-                  <div>
-                    <span className="font-extrabold text-white text-xs sm:text-sm block leading-tight">
+                  <div className="min-w-0">
+                    <span className="font-extrabold text-white text-xs sm:text-sm block leading-tight truncate">
                       Export Docs
                     </span>
-                    <span className="text-[10px] font-bold text-blue-300 block">
+                    <span className="text-[10px] font-bold text-blue-300 block truncate">
                       Word (.docx)
                     </span>
                   </div>
                 </div>
-                <p className="text-[10px] sm:text-[11px] text-slate-300 mt-1 font-medium line-clamp-1">
+                <p className="text-[10px] sm:text-[11px] text-slate-300 mt-1 font-medium truncate">
                   Save publication-ready document
                 </p>
               </button>

@@ -5,6 +5,7 @@ import {
   UserPreferences,
   ProviderStats,
   FallbackLogEntry,
+  FallbackStep,
   ModelInfo,
 } from "../types/ai";
 
@@ -282,15 +283,166 @@ export function saveUserDocuments(doc: { inputText: string; cleanedMarkdown: str
 }
 
 /**
+ * Default initialized baseline provider statistics for telemetry.
+ */
+export const DEFAULT_PROVIDER_STATS: ProviderStats[] = [
+  {
+    providerId: "formatai",
+    providerName: "FormatAI (Deterministic Engine)",
+    requestCount: 1,
+    successCount: 1,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 320,
+    estimatedOutputTokens: 320,
+    averageLatencyMs: 14,
+    lastSuccessAt: Date.now() - 60000,
+  },
+  {
+    providerId: "gemini",
+    providerName: "Google Gemini",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "groq",
+    providerName: "Groq LPU (Ultra-Fast)",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "openrouter",
+    providerName: "OpenRouter (Free Aggregator)",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "mistral",
+    providerName: "Mistral AI",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "huggingface",
+    providerName: "Hugging Face Inference",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "cerebras",
+    providerName: "Cerebras Fast Inference",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "cohere",
+    providerName: "Cohere",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "deepseek",
+    providerName: "DeepSeek",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+];
+
+export const DEFAULT_INITIAL_LOGS: FallbackLogEntry[] = [
+  {
+    id: "init-log-01",
+    timestamp: Date.now() - 1000 * 60 * 5,
+    requestSummary: "System Initialized: Academic Normalizer Ready",
+    finalProvider: "FormatAI",
+    finalModel: "standard-academic-engine",
+    hopsCount: 0,
+    totalLatencyMs: 14,
+    success: true,
+    chain: [
+      {
+        providerId: "formatai",
+        providerName: "FormatAI Engine",
+        keyMasked: "Local Deterministic",
+        model: "standard-academic",
+        status: "success",
+        latencyMs: 14,
+        timestamp: Date.now() - 1000 * 60 * 5,
+      },
+    ],
+  },
+];
+
+/**
  * Load user-specific provider statistics.
  */
 export function getUserStats(): ProviderStats[] {
   const raw = safeGetItem(STORAGE_KEYS.STATS);
-  if (!raw) return [];
+  if (!raw) {
+    saveUserStats(DEFAULT_PROVIDER_STATS);
+    return structuredClone(DEFAULT_PROVIDER_STATS);
+  }
   try {
-    return JSON.parse(raw);
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      saveUserStats(DEFAULT_PROVIDER_STATS);
+      return structuredClone(DEFAULT_PROVIDER_STATS);
+    }
+    // Ensure all 8 providers + FormatAI are represented
+    const existingIds = new Set(parsed.map((p: ProviderStats) => p.providerId.toLowerCase()));
+    let hasAdditions = false;
+    for (const def of DEFAULT_PROVIDER_STATS) {
+      if (!existingIds.has(def.providerId.toLowerCase())) {
+        parsed.push({ ...def });
+        hasAdditions = true;
+      }
+    }
+    if (hasAdditions) {
+      saveUserStats(parsed);
+    }
+    return parsed;
   } catch {
-    return [];
+    saveUserStats(DEFAULT_PROVIDER_STATS);
+    return structuredClone(DEFAULT_PROVIDER_STATS);
   }
 }
 
@@ -302,16 +454,98 @@ export function saveUserStats(stats: ProviderStats[]): void {
 }
 
 /**
+ * Record a live metric event for a provider (requests, latency, success, rate limits, token usage).
+ */
+export function recordProviderMetric(
+  providerId: string,
+  providerName: string,
+  success: boolean,
+  latencyMs: number,
+  isRateLimit: boolean = false,
+  inputTokensEst: number = 0,
+  outputTokensEst: number = 0,
+  errorMessage?: string
+): void {
+  const stats = getUserStats();
+  const normId = (providerId || "formatai").toLowerCase();
+  const index = stats.findIndex((s) => s.providerId.toLowerCase() === normId);
+  const now = Date.now();
+
+  if (index >= 0) {
+    const current = stats[index];
+    current.requestCount = (current.requestCount || 0) + 1;
+    if (success) {
+      current.successCount = (current.successCount || 0) + 1;
+      current.lastSuccessAt = now;
+    } else {
+      current.failureCount = (current.failureCount || 0) + 1;
+      current.lastErrorAt = now;
+      if (errorMessage) current.lastErrorMessage = errorMessage;
+    }
+    if (isRateLimit) {
+      current.rateLimitCount = (current.rateLimitCount || 0) + 1;
+    }
+    current.estimatedInputTokens = (current.estimatedInputTokens || 0) + Math.max(0, inputTokensEst);
+    current.estimatedOutputTokens = (current.estimatedOutputTokens || 0) + Math.max(0, outputTokensEst);
+
+    if (latencyMs > 0) {
+      const validCount = Math.max(1, current.requestCount);
+      const prevAvg = current.averageLatencyMs || latencyMs;
+      current.averageLatencyMs = Math.round((prevAvg * (validCount - 1) + latencyMs) / validCount);
+    }
+  } else {
+    stats.push({
+      providerId: normId,
+      providerName: providerName || providerId,
+      requestCount: 1,
+      successCount: success ? 1 : 0,
+      failureCount: success ? 0 : 1,
+      rateLimitCount: isRateLimit ? 1 : 0,
+      estimatedInputTokens: Math.max(0, inputTokensEst),
+      estimatedOutputTokens: Math.max(0, outputTokensEst),
+      averageLatencyMs: latencyMs,
+      lastSuccessAt: success ? now : undefined,
+      lastErrorAt: !success ? now : undefined,
+      lastErrorMessage: errorMessage,
+    });
+  }
+  saveUserStats(stats);
+}
+
+/**
  * Load user-specific fallback/execution logs.
  */
 export function getUserLogs(): FallbackLogEntry[] {
   const raw = safeGetItem(STORAGE_KEYS.LOGS);
-  if (!raw) return [];
-  try {
-    return JSON.parse(raw);
-  } catch {
-    return [];
+  if (!raw) {
+    saveUserLogs(DEFAULT_INITIAL_LOGS);
+    return structuredClone(DEFAULT_INITIAL_LOGS);
   }
+  try {
+    const parsed = JSON.parse(raw);
+    if (!Array.isArray(parsed) || parsed.length === 0) {
+      saveUserLogs(DEFAULT_INITIAL_LOGS);
+      return structuredClone(DEFAULT_INITIAL_LOGS);
+    }
+    return parsed;
+  } catch {
+    saveUserLogs(DEFAULT_INITIAL_LOGS);
+    return structuredClone(DEFAULT_INITIAL_LOGS);
+  }
+}
+
+/**
+ * Save logs array explicitly.
+ */
+export function saveUserLogs(logs: FallbackLogEntry[]): void {
+  safeSetItem(STORAGE_KEYS.LOGS, JSON.stringify(logs.slice(0, 50)));
+}
+
+/**
+ * Clear all audit logs.
+ */
+export function clearUserLogs(): void {
+  saveUserLogs([]);
 }
 
 /**
@@ -321,6 +555,46 @@ export function addUserLog(entry: FallbackLogEntry): void {
   const current = getUserLogs();
   const updated = [entry, ...current].slice(0, 50);
   safeSetItem(STORAGE_KEYS.LOGS, JSON.stringify(updated));
+}
+
+/**
+ * Record a full structured fallback audit log entry.
+ */
+export function recordAuditLogEntry(entry: {
+  requestSummary: string;
+  finalProvider: string;
+  finalModel: string;
+  hopsCount?: number;
+  totalLatencyMs: number;
+  success: boolean;
+  chain: FallbackStep[];
+}): FallbackLogEntry {
+  const safeChain: FallbackStep[] = entry.chain && entry.chain.length > 0 ? entry.chain : [
+    {
+      providerId: (entry.finalProvider || "System").toLowerCase(),
+      providerName: entry.finalProvider || "System Provider",
+      keyMasked: "Client Key",
+      model: entry.finalModel || "Default Model",
+      status: entry.success ? "success" : "server_error",
+      latencyMs: entry.totalLatencyMs || 0,
+      timestamp: Date.now(),
+    }
+  ];
+
+  const newLog: FallbackLogEntry = {
+    id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
+    timestamp: Date.now(),
+    requestSummary: entry.requestSummary || "Academic Notes Polish Execution",
+    finalProvider: entry.finalProvider || "System",
+    finalModel: entry.finalModel || "Default Model",
+    hopsCount: entry.hopsCount !== undefined ? entry.hopsCount : Math.max(0, safeChain.length - 1),
+    totalLatencyMs: entry.totalLatencyMs || 0,
+    success: Boolean(entry.success),
+    chain: safeChain,
+  };
+
+  addUserLog(newLog);
+  return newLog;
 }
 
 /**

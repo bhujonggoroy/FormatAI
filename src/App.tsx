@@ -21,6 +21,8 @@ import {
   getUserProviders,
   saveUserProviders,
   getUserPreferences,
+  recordProviderMetric,
+  recordAuditLogEntry,
 } from "./utils/userLocalStorage";
 import {
   Sparkles,
@@ -56,7 +58,12 @@ export default function App() {
   } | null>(null);
 
   const [cleanedMarkdown, setCleanedMarkdown] = useState<string | null>(null);
-  const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">("editor");
+  const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">(() => {
+    if (typeof window !== "undefined" && window.innerWidth >= 1024) {
+      return "split";
+    }
+    return "editor";
+  });
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isAISettingsModalOpen, setIsAISettingsModalOpen] = useState<boolean>(false);
   const [isSkillModalOpen, setIsSkillModalOpen] = useState<boolean>(false);
@@ -183,13 +190,45 @@ export default function App() {
     setConversionStage("Normalizing with FormatAI Academic Engine (No AI)...");
 
     try {
+      const startMs = Date.now();
       const cleaned = cleanClientSideNotebookLM(
         inputText,
         formatMode,
         skillRegistry.getEnabledSkillIds()
       );
+      const latencyMs = Math.max(1, Date.now() - startMs);
       setCleanedMarkdown(cleaned);
       setSuccessMessage("Normalized successfully with FormatAI (Deterministic Academic Engine — No AI).");
+
+      // Record Telemetry Metric & Audit Log
+      recordProviderMetric(
+        "formatai",
+        "FormatAI (Deterministic Engine)",
+        true,
+        latencyMs,
+        false,
+        Math.round(inputText.length / 4),
+        Math.round(cleaned.length / 4)
+      );
+      recordAuditLogEntry({
+        requestSummary: `FormatAI Offline Normalization (${inputText.slice(0, 42).replace(/[\n\r]+/g, " ")}...)`,
+        finalProvider: "FormatAI",
+        finalModel: "standard-academic-engine",
+        hopsCount: 0,
+        totalLatencyMs: latencyMs,
+        success: true,
+        chain: [
+          {
+            providerId: "formatai",
+            providerName: "FormatAI Engine",
+            keyMasked: "Local Deterministic",
+            model: "standard-academic-engine",
+            status: "success",
+            latencyMs,
+            timestamp: Date.now(),
+          },
+        ],
+      });
     } catch (err: any) {
       setErrorMessage(err.message || "FormatAI normalization failed.");
     } finally {
@@ -218,6 +257,7 @@ export default function App() {
 
     // Capture the current verified FormatAI Result before firing AI Polish
     const prePolishFormatAiResult = effectiveMarkdown;
+    const reqStartTime = Date.now();
 
     try {
       const userConfig = getUserSettings();
@@ -239,8 +279,43 @@ export default function App() {
         }),
       });
 
+      const latencyMs = Math.max(1, Date.now() - reqStartTime);
       const data = await res.json();
       if (!res.ok) {
+        // Record Telemetry Metric & Audit Log for failure
+        recordProviderMetric(
+          userConfig.activeProviderId || "formatai",
+          userConfig.activeProviderId || "AI Provider",
+          false,
+          latencyMs,
+          res.status === 429,
+          Math.round(inputText.length / 4),
+          0,
+          data.error || "Failed to polish notes with AI."
+        );
+        recordAuditLogEntry({
+          requestSummary: `Academic LaTeX Polish (${inputText.slice(0, 42).replace(/[\n\r]+/g, " ")}...)`,
+          finalProvider: userConfig.activeProviderId || "AI Provider",
+          finalModel: userConfig.activeModel || "default",
+          hopsCount: (data.fallback_chain && data.fallback_chain.length > 0) ? data.fallback_chain.length - 1 : 0,
+          totalLatencyMs: latencyMs,
+          success: false,
+          chain: (data.fallback_chain && data.fallback_chain.length > 0)
+            ? data.fallback_chain
+            : [
+                {
+                  providerId: (userConfig.activeProviderId || "unknown").toLowerCase(),
+                  providerName: userConfig.activeProviderId || "AI Provider",
+                  keyMasked: "Client Key",
+                  model: userConfig.activeModel || "default",
+                  status: res.status === 429 ? "rate_limited" : "server_error",
+                  errorMessage: data.error,
+                  latencyMs,
+                  timestamp: Date.now(),
+                },
+              ],
+        });
+
         // Update provider statuses if returned in error payload
         if (data.fallback_chain && Array.isArray(data.fallback_chain)) {
           const currentProvs = getUserProviders();
@@ -305,6 +380,40 @@ export default function App() {
           errors: errorsList,
         });
 
+        // Record Telemetry Metric & Audit Log
+        recordProviderMetric(
+          data.provider_id || userConfig.activeProviderId,
+          data.provider_name || userConfig.activeProviderId,
+          false,
+          latencyMs,
+          false,
+          Math.round(inputText.length / 4),
+          Math.round((data.cleaned_markdown || "").length / 4),
+          `Quality-Gate: ${reason}`
+        );
+        recordAuditLogEntry({
+          requestSummary: `Academic LaTeX Polish (${inputText.slice(0, 42).replace(/[\n\r]+/g, " ")}...)`,
+          finalProvider: data.provider_name || userConfig.activeProviderId,
+          finalModel: data.model || userConfig.activeModel,
+          hopsCount: data.fallback_count || 0,
+          totalLatencyMs: latencyMs,
+          success: false,
+          chain: (data.fallback_chain && data.fallback_chain.length > 0)
+            ? data.fallback_chain
+            : [
+                {
+                  providerId: (data.provider_id || userConfig.activeProviderId).toLowerCase(),
+                  providerName: data.provider_name || userConfig.activeProviderId,
+                  keyMasked: "Client Key",
+                  model: data.model || userConfig.activeModel,
+                  status: "server_error",
+                  errorMessage: `Quality-Gate Discarded: ${reason}`,
+                  latencyMs,
+                  timestamp: Date.now(),
+                },
+              ],
+        });
+
         setErrorMessage(
           `AI Output ❌ Validation FAILED (${reason}). Discarded AI Output. FormatAI Result restored — preview remains unchanged.`
         );
@@ -314,6 +423,38 @@ export default function App() {
       // ── VALIDATION PASSED ───────────────────────────────────────────────────────
       setValidationAlert(null);
       setCleanedMarkdown(data.cleaned_markdown);
+
+      // Record Telemetry Metric & Audit Log
+      recordProviderMetric(
+        data.provider_id || userConfig.activeProviderId,
+        data.provider_name || userConfig.activeProviderId,
+        true,
+        latencyMs,
+        false,
+        Math.round(inputText.length / 4),
+        Math.round((data.cleaned_markdown || "").length / 4)
+      );
+      recordAuditLogEntry({
+        requestSummary: `Academic LaTeX Polish (${inputText.slice(0, 42).replace(/[\n\r]+/g, " ")}...)`,
+        finalProvider: data.provider_name || userConfig.activeProviderId,
+        finalModel: data.model || userConfig.activeModel,
+        hopsCount: data.fallback_count || 0,
+        totalLatencyMs: latencyMs,
+        success: true,
+        chain: (data.fallback_chain && data.fallback_chain.length > 0)
+          ? data.fallback_chain
+          : [
+              {
+                providerId: (data.provider_id || userConfig.activeProviderId).toLowerCase(),
+                providerName: data.provider_name || userConfig.activeProviderId,
+                keyMasked: "Client Key",
+                model: data.model || userConfig.activeModel,
+                status: "success",
+                latencyMs,
+                timestamp: Date.now(),
+              },
+            ],
+      });
 
       // Update provider statuses from fallback chain if present
       if (data.fallback_chain && Array.isArray(data.fallback_chain)) {
@@ -551,7 +692,7 @@ export default function App() {
             type="button"
             id="view-tab-split"
             onClick={() => setViewLayout("split")}
-            className={`flex-1 min-h-[42px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`flex-1 min-h-[46px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-1.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
               viewLayout === "split"
                 ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
                 : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
@@ -561,8 +702,8 @@ export default function App() {
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "split" ? currentTheme.hex : undefined }}
             />
-            <span className="text-xs sm:text-sm">Split View</span>
-            <span className="hidden md:inline-block text-[10px] text-slate-500 font-normal ml-0.5">(Desktop)</span>
+            <span className="text-xs sm:text-sm truncate">Split View</span>
+            <span className="hidden lg:inline-block text-[10px] text-slate-500 font-normal ml-0.5">(Desktop)</span>
           </button>
 
           <div className="w-px h-5 bg-slate-300 shrink-0" />
@@ -571,7 +712,7 @@ export default function App() {
             type="button"
             id="view-tab-editor"
             onClick={() => setViewLayout("editor")}
-            className={`flex-1 min-h-[42px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`flex-1 min-h-[46px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-1.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
               viewLayout === "editor"
                 ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
                 : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
@@ -581,9 +722,9 @@ export default function App() {
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "editor" ? currentTheme.hex : undefined }}
             />
-            <span className="text-xs sm:text-sm">Raw Editor</span>
+            <span className="text-xs sm:text-sm truncate">Raw Editor</span>
             {charCount > 0 && (
-              <span className="text-[10px] bg-slate-300/80 text-slate-900 px-1.5 py-0.2 rounded-full font-bold">
+              <span className="hidden min-[400px]:inline-block text-[10px] bg-slate-300/80 text-slate-900 px-1.5 py-0.2 rounded-full font-bold">
                 {wordCount}w
               </span>
             )}
@@ -595,7 +736,7 @@ export default function App() {
             type="button"
             id="view-tab-preview"
             onClick={() => setViewLayout("preview")}
-            className={`flex-1 min-h-[42px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`flex-1 min-h-[46px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-1.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
               viewLayout === "preview"
                 ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
                 : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
@@ -605,7 +746,7 @@ export default function App() {
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "preview" ? currentTheme.hex : undefined }}
             />
-            <span className="text-xs sm:text-sm">Document Sheet</span>
+            <span className="text-xs sm:text-sm truncate">Document Sheet</span>
           </button>
         </div>
       </div>

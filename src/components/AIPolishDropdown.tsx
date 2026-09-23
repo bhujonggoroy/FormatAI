@@ -301,7 +301,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
   const isFormatAiActive = selectedProviderId === "formatai" || selectedProviderId === "local" || isNoAI;
 
   return (
-    <div className="absolute left-0 sm:left-0 md:left-0 lg:left-auto lg:right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md max-h-[calc(100vh-140px)] overflow-y-auto bg-white rounded-2xl shadow-2xl border-2 border-slate-300 p-3.5 sm:p-4 z-40 animate-in fade-in zoom-in-95 space-y-3.5">
+    <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md max-h-[calc(100vh-140px)] overflow-y-auto bg-white rounded-2xl shadow-2xl border-2 border-slate-300 p-3.5 sm:p-4 z-50 animate-in fade-in zoom-in-95 space-y-3.5">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5">
         <div className="min-w-0 pr-2">
