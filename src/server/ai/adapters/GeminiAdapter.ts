@@ -1,10 +1,13 @@
 import { GoogleGenAI } from "@google/genai";
 import {
   estimateTokenCount,
+  maskApiKey,
   type AIProviderAdapter,
   type AdapterOptions,
 } from "./BaseAdapter.ts";
 import type {
+  AIErrorCode,
+  AIErrorKind,
   AIRequest,
   ModelInfo,
   NormalizedAIError,
@@ -17,274 +20,341 @@ export class GeminiAdapter implements AIProviderAdapter {
 
   private defaultModels: ModelInfo[] = [
     {
-      id: "gemini-3.8-flash",
-      name: "Gemini 3.8 Flash (Fast & Recommended)",
+      id: "gemini-2.5-flash",
+      name: "Gemini 2.5 Flash (Fast & Recommended)",
       contextWindow: 1048576,
       isFree: true,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Standard model for math, LaTeX, academic notes & reasoning.",
+      description: "Fast, versatile model for academic notes, LaTeX, and mathematical formatting.",
     },
     {
-      id: "gemini-flash-latest",
-      name: "Gemini Flash (Latest)",
-      contextWindow: 1048576,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Latest stable Gemini Flash model alias.",
-    },
-    {
-      id: "gemini-3.1-flash-lite",
-      name: "Gemini 3.1 Flash Lite",
-      contextWindow: 1048576,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Ultra-fast lightweight generation.",
-    },
-    {
-      id: "gemini-3.1-pro-preview",
-      name: "Gemini 3.1 Pro (Complex STEM)",
+      id: "gemini-2.5-pro",
+      name: "Gemini 2.5 Pro (Advanced Reasoning)",
       contextWindow: 2097152,
       isFree: false,
       capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "State-of-the-art complex technical and mathematical problem solving.",
+      description: "State-of-the-art reasoning for complex STEM, multi-step math derivations.",
+    },
+    {
+      id: "gemini-2.0-flash",
+      name: "Gemini 2.0 Flash",
+      contextWindow: 1048576,
+      isFree: true,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      description: "High-speed multimodal generation with long context.",
+    },
+    {
+      id: "gemini-1.5-flash",
+      name: "Gemini 1.5 Flash",
+      contextWindow: 1048576,
+      isFree: true,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      description: "Lightweight, efficient generation for standard notes.",
     },
   ];
 
+  async getModels(apiKey?: string, options?: AdapterOptions): Promise<ModelInfo[]> {
+    const key = apiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
+    if (!key) return this.defaultModels;
+
+    try {
+      const res = await fetch(`https://generativelanguage.googleapis.com/v1beta/models?key=${key}`, {
+        signal: AbortSignal.timeout(options?.timeoutMs || 8000),
+      });
+
+      if (!res.ok) return this.defaultModels;
+      const data = await res.json();
+      if (!Array.isArray(data?.models)) return this.defaultModels;
+
+      const chatModels: ModelInfo[] = data.models
+        .filter((m: any) => {
+          const methods = m.supportedGenerationMethods || [];
+          const name = m.name || "";
+          return (
+            methods.includes("generateContent") &&
+            !name.includes("embedding") &&
+            !name.includes("aqa") &&
+            !name.includes("imagen")
+          );
+        })
+        .map((m: any) => {
+          const rawId = m.name.replace(/^models\//, "");
+          const isPro = rawId.includes("pro");
+          return {
+            id: rawId,
+            name: m.displayName || rawId,
+            contextWindow: m.inputTokenLimit || 1048576,
+            isFree: !isPro,
+            capabilities: ["text", "math", "long_context", "json", "code"],
+            description: m.description?.slice(0, 140) || `Google Gemini model (${rawId})`,
+          };
+        });
+
+      return chatModels.length > 0 ? chatModels : this.defaultModels;
+    } catch {
+      return this.defaultModels;
+    }
+  }
+
   async listModels(): Promise<ModelInfo[]> {
-    return this.defaultModels;
+    return this.getModels();
   }
 
   supportsCapability(capability: string, modelId: string): boolean {
     const model = this.defaultModels.find((m) => m.id === modelId) || this.defaultModels[0];
+    if (!model) return true;
     return model.capabilities.includes(capability);
   }
 
-  normalizeError(error: any): NormalizedAIError {
-    const message = error?.message || String(error);
+  classifyError(error: any): NormalizedAIError {
+    const message = error?.message || (typeof error === "string" ? error : JSON.stringify(error));
     const status = error?.status || error?.statusCode || error?.response?.status;
+    const msgLower = message.toLowerCase();
 
-    if (status === 401 || /api[_\s]?key|unauthenticated|unauthorized|API_KEY_INVALID/i.test(message)) {
+    // 1. Model unavailable / Not found (Must check before 400 generic)
+    if (
+      status === 404 ||
+      msgLower.includes("not_found") ||
+      msgLower.includes("models/") && msgLower.includes("not found") ||
+      msgLower.includes("model not found") ||
+      msgLower.includes("is not found for api version") ||
+      msgLower.includes("is not supported for generatecontent") ||
+      msgLower.includes("model is deprecated") ||
+      msgLower.includes("model unavailable")
+    ) {
       return {
-        kind: "invalid_key",
-        statusCode: 401,
-        message: "Gemini API key is invalid or unauthenticated.",
+        code: "MODEL_UNAVAILABLE",
+        kind: "model_unavailable",
+        statusCode: status || 404,
+        title: "❌ Model Unavailable on Gemini",
+        message: `The requested Gemini model is not found or unsupported: ${message}`,
+        userFacingMessage: "The selected model is unavailable on Gemini. Click 'Refresh Models' or select an active model (e.g. gemini-2.5-flash).",
         retryable: false,
         rawError: error,
       };
     }
 
-    if (status === 403 || /permission[_\s]?denied|forbidden/i.test(message)) {
-      return {
-        kind: "permission_denied",
-        statusCode: 403,
-        message: "Gemini API permission denied or project restriction.",
-        retryable: false,
-        rawError: error,
-      };
-    }
-
+    // 2. Rate limit / Quota exceeded
     if (
       status === 429 ||
-      /resource[_\s]?exhausted|quota|rate[_\s]?limit|429/i.test(message)
+      msgLower.includes("resource_exhausted") ||
+      msgLower.includes("quota") ||
+      msgLower.includes("rate limit") ||
+      msgLower.includes("too many requests") ||
+      msgLower.includes("exceeded your current quota")
     ) {
       return {
+        code: "RATE_LIMIT",
         kind: "rate_limit",
         statusCode: 429,
-        message: "Gemini free rate limit or quota exceeded (429).",
+        title: "⚠️ Gemini Rate Limit Exceeded",
+        message: `Gemini free tier quota or rate limit reached (429): ${message}`,
+        userFacingMessage: "Gemini rate limit or quota exceeded. Please wait a moment or switch to another provider.",
         retryable: true,
         rawError: error,
       };
     }
 
+    // 3. Invalid API Key
     if (
-      status === 408 ||
-      /timeout|timed out|aborted|ETIMEDOUT|ECONNRESET/i.test(message)
+      status === 401 ||
+      msgLower.includes("api_key_invalid") ||
+      msgLower.includes("invalid api key") ||
+      msgLower.includes("unauthenticated") ||
+      msgLower.includes("api key not valid")
     ) {
       return {
-        kind: "timeout",
-        statusCode: status || 408,
-        message: "Gemini API request timed out.",
-        retryable: true,
-        rawError: error,
-      };
-    }
-
-    if (
-      /context length|maximum context|token limit|too many tokens/i.test(
-        message
-      )
-    ) {
-      return {
-        kind: "token_limit",
-        statusCode: 400,
-        message: "Gemini context window or token limit exceeded.",
+        code: "INVALID_API_KEY",
+        kind: "invalid_key",
+        statusCode: 401,
+        title: "❌ Invalid Gemini API Key",
+        message: "Gemini API key is invalid or unauthorized.",
+        userFacingMessage: "The Gemini API key was rejected as invalid. Please check the key in AI Settings.",
         retryable: false,
         rawError: error,
       };
     }
 
-    if (status >= 500 && status < 600) {
+    // 4. Permission Denied / Forbidden
+    if (
+      status === 403 ||
+      msgLower.includes("permission_denied") ||
+      msgLower.includes("forbidden") ||
+      msgLower.includes("access denied") ||
+      msgLower.includes("user location is not supported")
+    ) {
       return {
-        kind: "server_error",
-        statusCode: status,
-        message: `Gemini service temporarily unavailable (${status}).`,
+        code: "FORBIDDEN",
+        kind: "permission_denied",
+        statusCode: 403,
+        title: "❌ Gemini Permission Denied (403)",
+        message: `Gemini access forbidden: ${message}`,
+        userFacingMessage: "This API key does not have permission or Gemini is not supported in the current region.",
+        retryable: false,
+        rawError: error,
+      };
+    }
+
+    // 5. Token Limit
+    if (
+      msgLower.includes("context length") ||
+      msgLower.includes("maximum context") ||
+      msgLower.includes("token limit") ||
+      msgLower.includes("too many tokens")
+    ) {
+      return {
+        code: "BAD_REQUEST",
+        kind: "token_limit",
+        statusCode: 400,
+        title: "⚠️ Context Window Exceeded",
+        message: "Gemini context window or token limit exceeded.",
+        userFacingMessage: "The document is too large for the model's context window.",
+        retryable: false,
+        rawError: error,
+      };
+    }
+
+    // 6. Timeout
+    if (
+      status === 408 ||
+      status === 504 ||
+      msgLower.includes("timeout") ||
+      msgLower.includes("deadline_exceeded") ||
+      msgLower.includes("aborted")
+    ) {
+      return {
+        code: "TIMEOUT",
+        kind: "timeout",
+        statusCode: status || 408,
+        title: "⚠️ Gemini Request Timeout",
+        message: "Gemini API request timed out.",
+        userFacingMessage: "The request timed out waiting for Gemini to respond.",
         retryable: true,
         rawError: error,
       };
     }
 
-    if (/fetch failed|network|dns|getaddrinfo/i.test(message)) {
+    // 7. Server error (5xx / UNAVAILABLE / Overloaded)
+    if (
+      (status && status >= 500 && status < 600) ||
+      msgLower.includes("unavailable") ||
+      msgLower.includes("high demand") ||
+      msgLower.includes("spikes in demand") ||
+      msgLower.includes("overloaded")
+    ) {
       return {
+        code: "SERVER_ERROR",
+        kind: "server_error",
+        statusCode: status || 503,
+        title: "⚠️ Gemini Service Temporarily Unavailable",
+        message: `Gemini service unavailable: ${message}`,
+        userFacingMessage: "Google Gemini servers are experiencing temporary high demand (503).",
+        retryable: true,
+        rawError: error,
+      };
+    }
+
+    // 8. Network Error
+    if (
+      msgLower.includes("fetch failed") ||
+      msgLower.includes("network") ||
+      msgLower.includes("dns") ||
+      msgLower.includes("getaddrinfo")
+    ) {
+      return {
+        code: "NETWORK_ERROR",
         kind: "network_error",
-        message: "Network error connecting to Gemini API.",
+        title: "⚠️ Connection Problem",
+        message: `Network error connecting to Gemini API: ${message}`,
+        userFacingMessage: "Could not establish a network connection to Google Gemini.",
         retryable: true,
         rawError: error,
       };
     }
 
     return {
+      code: "UNKNOWN_ERROR",
       kind: "unknown",
       statusCode: status,
+      title: "❌ Gemini Error",
       message: message || "Unknown Gemini error",
+      userFacingMessage: message || "An unexpected error occurred while communicating with Gemini.",
       retryable: false,
       rawError: error,
     };
   }
 
+  normalizeError(error: any): NormalizedAIError {
+    return this.classifyError(error);
+  }
+
   async generate(
-    request: AIRequest,
-    key: string,
-    model: string,
+    requestOrKey: AIRequest | string,
+    keyOrModelId?: string,
+    modelOrRequest?: string | AIRequest,
     options?: AdapterOptions
-  ): Promise<{ text: string; inputTokens?: number; outputTokens?: number }> {
+  ): Promise<{ text: string; inputTokens?: number; outputTokens?: number; modelUsed?: string }> {
+    let req: AIRequest;
+    let key: string;
+    let effectiveModel: string;
+
+    if (typeof requestOrKey === "string") {
+      key = requestOrKey;
+      effectiveModel = keyOrModelId || this.defaultModels[0]?.id;
+      req = (modelOrRequest as AIRequest) || { prompt: "" };
+    } else {
+      req = requestOrKey;
+      key = keyOrModelId || "";
+      effectiveModel = (typeof modelOrRequest === "string" ? modelOrRequest : "") || req.model || this.defaultModels[0]?.id;
+    }
+
     if (!key) {
       throw new Error("No API key provided for Google Gemini.");
     }
 
-    const ai = new GoogleGenAI({ apiKey: key });
-
+    const ai = new GoogleGenAI({ apiKey: key.trim() });
     const config: any = {
-      temperature: options?.temperature ?? request.temperature ?? 0.2,
+      temperature: options?.temperature ?? req.temperature ?? 0.2,
     };
-    if (request.systemPrompt) {
-      config.systemInstruction = request.systemPrompt;
+    if (req.systemPrompt) {
+      config.systemInstruction = req.systemPrompt;
     }
 
-    let selectedModel = model || "gemini-3.8-flash";
-    // Normalize deprecated or unavailable models automatically to valid models
-    if (
-      selectedModel === "gemini-3.6-flash" ||
-      selectedModel === "gemini-3.5-flash-lite" ||
-      selectedModel === "gemini-2.5-flash" ||
-      selectedModel === "gemini-2.0-flash" ||
-      selectedModel === "gemini-1.5-flash"
-    ) {
-      selectedModel = "gemini-3.8-flash";
-    }
+    const response = await ai.models.generateContent({
+      model: effectiveModel,
+      contents: req.prompt,
+      config,
+    });
 
-    // Build ordered candidate models list for maximum resilience against demand spikes & 503 errors
-    const candidateModels: string[] = [selectedModel];
-    const fallbackOptions = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
-    for (const opt of fallbackOptions) {
-      if (!candidateModels.includes(opt)) {
-        candidateModels.push(opt);
-      }
-    }
-
-    let response: any = null;
-    let lastError: any = null;
-    let successfulModel = selectedModel;
-
-    for (let i = 0; i < candidateModels.length; i++) {
-      const currentModel = candidateModels[i];
-      try {
-        response = await ai.models.generateContent({
-          model: currentModel,
-          contents: request.prompt,
-          config,
-        });
-        successfulModel = currentModel;
-        lastError = null;
-        break;
-      } catch (err: any) {
-        lastError = err;
-        const msg = String(err?.message || "");
-        const isAuthError =
-          err?.status === 401 ||
-          err?.status === 403 ||
-          msg.includes("API_KEY_INVALID") ||
-          msg.includes("unauthenticated") ||
-          msg.includes("permission_denied");
-
-        // Auth errors are not model-specific; don't cycle through models with bad credentials
-        if (isAuthError) {
-          throw err;
-        }
-
-        const isTransientOrModelError =
-          err?.status === 503 ||
-          err?.status === 429 ||
-          err?.status === 500 ||
-          err?.status === 404 ||
-          msg.includes("high demand") ||
-          msg.includes("Spikes in demand") ||
-          msg.includes("UNAVAILABLE") ||
-          msg.includes("RESOURCE_EXHAUSTED") ||
-          msg.includes("quota") ||
-          msg.includes("rate limit") ||
-          msg.includes("no longer available") ||
-          msg.includes("NOT_FOUND") ||
-          msg.includes("Overloaded");
-
-        // If there are more models to try and this is a transient model error, proceed to next model
-        if (isTransientOrModelError && i < candidateModels.length - 1) {
-          console.warn(
-            `[GeminiAdapter] Model '${currentModel}' returned status ${err?.status || "error"} (${err?.message?.slice(0, 80)}...). Cascading to '${candidateModels[i + 1]}' for resilience...`
-          );
-          continue;
-        }
-
-        throw err;
-      }
-    }
-
-    if (!response && lastError) {
-      throw lastError;
-    }
-
-    const inPrompt = request.systemPrompt
-      ? `${request.systemPrompt}\n\n${request.prompt}`
-      : request.prompt;
+    const inPrompt = req.systemPrompt ? `${req.systemPrompt}\n\n${req.prompt}` : req.prompt;
     const text = response?.text || "";
     const inTokens = estimateTokenCount(inPrompt);
     const outTokens = estimateTokenCount(text);
 
-    return { text, inputTokens: inTokens, outputTokens: outTokens, modelUsed: successfulModel } as any;
+    return {
+      text,
+      inputTokens: inTokens,
+      outputTokens: outTokens,
+      modelUsed: effectiveModel,
+    };
   }
 
-  async testConnection(
-    key: string,
-    model: string,
-    customEndpoint?: string,
-    timeoutMs: number = 15000
+  async test(
+    apiKey: string,
+    modelId: string,
+    options?: AdapterOptions
   ): Promise<TestResult> {
     const startTime = Date.now();
-    const targetModel =
-      model === "gemini-3.6-flash" ||
-      model === "gemini-3.5-flash-lite" ||
-      model === "gemini-2.5-flash" ||
-      model === "gemini-2.0-flash" ||
-      model === "gemini-1.5-flash" ||
-      !model
-        ? "gemini-3.8-flash"
-        : model;
+    const effectiveModel = modelId || this.defaultModels[0]?.id;
+    const masked = maskApiKey(apiKey);
+    const endpoint = "https://generativelanguage.googleapis.com";
 
     try {
       const res = await this.generate(
-        { prompt: "Respond with the word 'OK' if you can read this." },
-        key,
-        targetModel,
-        { timeoutMs }
+        { prompt: "Respond with the single word 'OK'." },
+        apiKey,
+        effectiveModel,
+        { timeoutMs: options?.timeoutMs || 15000 }
       );
 
       const latency = Date.now() - startTime;
@@ -293,25 +363,64 @@ export class GeminiAdapter implements AIProviderAdapter {
           success: true,
           providerId: this.id,
           providerName: this.name,
-          model: (res as any).modelUsed || targetModel,
+          model: effectiveModel,
+          keyId: options?.keyId,
+          keyName: options?.keyName,
+          maskedKey: masked,
+          endpoint,
           latencyMs: latency,
+          diagnostic: {
+            provider: this.name,
+            keyId: options?.keyId || "key_selected",
+            modelId: effectiveModel,
+            endpoint,
+            maskedKey: masked,
+            result: "SUCCESS",
+            latencyMs: latency,
+          },
         };
       }
 
       throw new Error("Empty response returned from Gemini test.");
     } catch (err: any) {
       const latency = Date.now() - startTime;
-      const normalized = this.normalizeError(err);
+      const normalized = this.classifyError(err);
       return {
         success: false,
         providerId: this.id,
         providerName: this.name,
-        model: targetModel,
+        model: effectiveModel,
+        keyId: options?.keyId,
+        keyName: options?.keyName,
+        maskedKey: masked,
+        endpoint,
         latencyMs: latency,
+        errorCode: normalized.code,
+        errorKind: normalized.kind,
+        errorTitle: normalized.title,
+        userFacingMessage: normalized.userFacingMessage,
         errorMessage: normalized.message,
         statusCode: normalized.statusCode,
-        errorKind: normalized.kind,
+        diagnostic: {
+          provider: this.name,
+          keyId: options?.keyId || "key_selected",
+          modelId: effectiveModel,
+          endpoint,
+          maskedKey: masked,
+          result: normalized.code || "FAILED",
+          latencyMs: latency,
+          rawMessage: normalized.message,
+        },
       };
     }
+  }
+
+  async testConnection(
+    key: string,
+    model: string,
+    customEndpoint?: string,
+    timeoutMs: number = 15000
+  ): Promise<TestResult> {
+    return this.test(key, model, { customEndpoint, timeoutMs });
   }
 }

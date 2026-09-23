@@ -7,20 +7,32 @@ import {
   FallbackLogEntry,
   FallbackStep,
   ModelInfo,
+  UserApiKeyItem,
+  AIErrorCode,
 } from "../types/ai";
 
 /**
  * FormatAI — STRICT USER-SPECIFIC LOCAL ISOLATION
  *
  * User-specific application state (API keys, provider ON/OFF, models, preferences)
- * is stored strictly on the client in the current browser/profile environment (localStorage).
+ * is stored strictly in the user's browser localStorage under:
+ * formatai:user:<userId>:ai-settings
  *
- * The server never maintains global user state or persists user keys.
+ * Default guest/local user:
+ * formatai:user:local_default:ai-settings
  */
 
+export const STORAGE_VERSION = 2;
+export const MODEL_CACHE_TTL_MS = 24 * 60 * 60 * 1000; // 24 hours
+
+export function getUserSettingsStorageKey(userId?: string): string {
+  const cleanId = userId?.trim() || "local_default";
+  return `formatai:user:${cleanId}:ai-settings`;
+}
+
 export const STORAGE_KEYS = {
-  SETTINGS: "formatAI.settings",
-  PROVIDERS: "formatAI.providers",
+  LEGACY_SETTINGS: "formatAI.settings",
+  LEGACY_PROVIDERS: "formatAI.providers",
   PREFERENCES: "formatAI.preferences",
   DOCUMENTS: "formatAI.documents",
   STATS: "formatAI.stats",
@@ -30,7 +42,7 @@ export const STORAGE_KEYS = {
 export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
   mode: "automatic",
   activeProviderId: "gemini",
-  activeModel: "gemini-3.8-flash",
+  activeModel: "gemini-2.5-flash",
   enableFallback: true,
   freeOnlyMode: true,
   billingMode: "free_only",
@@ -47,6 +59,15 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   viewLayout: "editor",
   customPrompt: "",
 });
+
+export interface UserAISettingsPackage {
+  version: number;
+  userId: string;
+  config: ManagerConfig;
+  providers: UserProviderConfig[];
+  modelsCache?: Record<string, { models: ModelInfo[]; cachedAt: number }>;
+  lastUpdated: number;
+}
 
 /**
  * Mask raw API key for safe UI display (e.g., "AIza************cOA8").
@@ -87,115 +108,346 @@ function safeRemoveItem(key: string): void {
 }
 
 /**
- * Load user-specific AI Manager configuration.
- * Returns clean isolated copy of defaults if not present.
+ * Perform self-healing migration and validation on loaded provider configs.
+ * - Detects stale model IDs and replaces them with active models
+ * - Ensures all keys have standard fields (id, name, maskedKey, enabled, status)
+ * - Removes obsolete deprecated model selections
  */
-export function getUserSettings(): ManagerConfig {
-  const raw = safeGetItem(STORAGE_KEYS.SETTINGS);
-  if (!raw) {
-    return structuredClone(DEFAULT_MANAGER_CONFIG) as ManagerConfig;
-  }
-  try {
-    const parsed = JSON.parse(raw);
+export function healAndNormalizeProviders(
+  providers: UserProviderConfig[],
+  templates?: ClientProviderConfig[]
+): UserProviderConfig[] {
+  const templateMap = new Map((templates || []).map((t) => [t.id, t]));
+
+  return providers.map((provider) => {
+    const tmpl = templateMap.get(provider.id);
+    const available = (provider.availableModels && provider.availableModels.length > 0)
+      ? provider.availableModels
+      : (tmpl?.availableModels || []);
+
+    // 1. Stale model repair:
+    let selectedModel = provider.selectedModel;
+    const isObsoleteGemini =
+      provider.id === "gemini" &&
+      (selectedModel === "gemini-3.6-flash" ||
+        selectedModel === "gemini-3.5-flash-lite" ||
+        selectedModel === "gemini-3.8-flash" ||
+        selectedModel === "gemini-1.5-flash-latest");
+
+    if (isObsoleteGemini) {
+      selectedModel = "gemini-2.5-flash";
+    }
+
+    // Check if selectedModel is valid in available list (except for custom provider)
+    if (available.length > 0 && provider.id !== "custom") {
+      const exists = available.some((m) => m.id === selectedModel);
+      if (!exists) {
+        selectedModel = available[0].id;
+      }
+    }
+
+    // 2. Normalize API keys:
+    const apiKeys: UserApiKeyItem[] = (provider.apiKeys || []).map((keyItem, idx) => ({
+      id: keyItem.id || `key-${idx + 1}`,
+      name: keyItem.name || `API Key ${idx + 1}`,
+      key: keyItem.key || "",
+      maskedKey: keyItem.maskedKey || maskApiKey(keyItem.key),
+      enabled: typeof keyItem.enabled === "boolean" ? keyItem.enabled : true,
+      status: keyItem.status || "active",
+      lastTestedAt: keyItem.lastTestedAt,
+      lastTestLatencyMs: keyItem.lastTestLatencyMs,
+      lastTestedModel: keyItem.lastTestedModel,
+      lastErrorCode: keyItem.lastErrorCode,
+      lastError: keyItem.lastError,
+      cooldownUntil: keyItem.cooldownUntil,
+    }));
+
     return {
-      ...structuredClone(DEFAULT_MANAGER_CONFIG),
-      ...parsed,
+      ...provider,
+      selectedModel,
+      availableModels: available,
+      apiKeys,
     };
-  } catch {
-    return structuredClone(DEFAULT_MANAGER_CONFIG) as ManagerConfig;
-  }
+  });
 }
 
 /**
- * Save user-specific AI Manager configuration to current browser environment.
+ * Load complete UserAISettingsPackage with self-healing migration.
  */
-export function saveUserSettings(config: ManagerConfig): void {
-  safeSetItem(STORAGE_KEYS.SETTINGS, JSON.stringify(config));
+export function loadUserAISettingsPackage(
+  userId = "local_default",
+  templates?: ClientProviderConfig[]
+): UserAISettingsPackage {
+  const storageKey = getUserSettingsStorageKey(userId);
+  const raw = safeGetItem(storageKey);
+
+  if (raw) {
+    try {
+      const parsed: UserAISettingsPackage = JSON.parse(raw);
+      if (parsed && Array.isArray(parsed.providers)) {
+        // Self-heal loaded settings
+        const healedProviders = healAndNormalizeProviders(parsed.providers, templates);
+        const healedPkg: UserAISettingsPackage = {
+          version: STORAGE_VERSION,
+          userId,
+          config: { ...DEFAULT_MANAGER_CONFIG, ...(parsed.config || {}) },
+          providers: healedProviders,
+          modelsCache: parsed.modelsCache || {},
+          lastUpdated: Date.now(),
+        };
+        safeSetItem(storageKey, JSON.stringify(healedPkg));
+        return healedPkg;
+      }
+    } catch (e) {
+      console.warn("FormatAI: Failed parsing user settings package, checking legacy backups:", e);
+    }
+  }
+
+  // --- SELF-HEALING MIGRATION FROM LEGACY STORAGE FORMATS ---
+  let legacyProviders: UserProviderConfig[] = [];
+  let legacyConfig: ManagerConfig = { ...DEFAULT_MANAGER_CONFIG };
+
+  // Check legacy formatAI.providers
+  const rawLegacyProviders = safeGetItem(STORAGE_KEYS.LEGACY_PROVIDERS);
+  if (rawLegacyProviders) {
+    try {
+      legacyProviders = JSON.parse(rawLegacyProviders);
+    } catch {}
+  }
+
+  // Check legacy formatAI.settings
+  const rawLegacySettings = safeGetItem(STORAGE_KEYS.LEGACY_SETTINGS);
+  if (rawLegacySettings) {
+    try {
+      legacyConfig = { ...legacyConfig, ...JSON.parse(rawLegacySettings) };
+    } catch {}
+  }
+
+  // Check raw keys from localAISettings if available
+  const rawLegacyRawKeys = safeGetItem("formatai_local_raw_api_keys_v1");
+  if (rawLegacyRawKeys) {
+    try {
+      const parsedRawKeys: Array<{ providerId: string; rawKey: string; name?: string; enabled?: boolean; id?: string }> = JSON.parse(rawLegacyRawKeys);
+      if (Array.isArray(parsedRawKeys)) {
+        for (const item of parsedRawKeys) {
+          let p = legacyProviders.find((lp) => lp.id === item.providerId);
+          if (!p) {
+            p = {
+              id: item.providerId,
+              name: item.providerId,
+              enabled: true,
+              priority: 99,
+              apiKeys: [],
+              selectedModel: "default",
+              availableModels: [],
+              maxRetries: 2,
+              timeoutMs: 45000,
+              billingMode: "free_only",
+              status: "active",
+            };
+            legacyProviders.push(p);
+          }
+          if (!p.apiKeys) p.apiKeys = [];
+          if (!p.apiKeys.some((k) => k.key === item.rawKey)) {
+            p.apiKeys.push({
+              id: item.id || `key-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`,
+              name: item.name || `Key ${p.apiKeys.length + 1}`,
+              key: item.rawKey,
+              maskedKey: maskApiKey(item.rawKey),
+              enabled: item.enabled ?? true,
+              status: "active",
+            });
+          }
+        }
+      }
+    } catch {}
+  }
+
+  // Reconcile with templates if provided
+  let initialProviders = legacyProviders;
+  if (templates && templates.length > 0) {
+    const existingMap = new Map(legacyProviders.map((p) => [p.id, p]));
+    initialProviders = templates.map((tmpl) => {
+      const existing = existingMap.get(tmpl.id);
+      if (existing) {
+        return {
+          ...tmpl,
+          enabled: existing.enabled,
+          priority: existing.priority ?? tmpl.priority,
+          selectedModel: existing.selectedModel || tmpl.selectedModel,
+          selectedKeyId: existing.selectedKeyId,
+          customEndpoint: existing.customEndpoint || tmpl.customEndpoint,
+          accountId: existing.accountId || tmpl.accountId,
+          billingMode: existing.billingMode || tmpl.billingMode,
+          apiKeys: existing.apiKeys || [],
+          status: existing.status || tmpl.status,
+          lastError: existing.lastError,
+        };
+      }
+      return {
+        id: tmpl.id,
+        name: tmpl.name,
+        enabled: tmpl.enabled,
+        priority: tmpl.priority,
+        apiKeys: [],
+        selectedModel: tmpl.selectedModel,
+        availableModels: tmpl.availableModels || [],
+        maxRetries: tmpl.maxRetries,
+        timeoutMs: tmpl.timeoutMs,
+        customEndpoint: tmpl.customEndpoint,
+        accountId: tmpl.accountId,
+        billingMode: tmpl.billingMode,
+        freeTier: tmpl.freeTier,
+        notes: tmpl.notes,
+        status: tmpl.status || "active",
+      };
+    });
+  }
+
+  const healed = healAndNormalizeProviders(initialProviders, templates);
+  const newPkg: UserAISettingsPackage = {
+    version: STORAGE_VERSION,
+    userId,
+    config: legacyConfig,
+    providers: healed,
+    modelsCache: {},
+    lastUpdated: Date.now(),
+  };
+
+  safeSetItem(storageKey, JSON.stringify(newPkg));
+  return newPkg;
+}
+
+/**
+ * Save complete UserAISettingsPackage.
+ */
+export function saveUserAISettingsPackage(pkg: UserAISettingsPackage): void {
+  const storageKey = getUserSettingsStorageKey(pkg.userId);
+  pkg.lastUpdated = Date.now();
+  safeSetItem(storageKey, JSON.stringify(pkg));
+
+  // Mirror to legacy keys for seamless backward compatibility
+  safeSetItem(STORAGE_KEYS.LEGACY_SETTINGS, JSON.stringify(pkg.config));
+  safeSetItem(STORAGE_KEYS.LEGACY_PROVIDERS, JSON.stringify(pkg.providers));
+}
+
+/**
+ * Load user-specific AI Manager configuration.
+ */
+export function getUserSettings(userId = "local_default"): ManagerConfig {
+  const pkg = loadUserAISettingsPackage(userId);
+  return pkg.config;
+}
+
+/**
+ * Save user-specific AI Manager configuration.
+ */
+export function saveUserSettings(config: ManagerConfig, userId = "local_default"): void {
+  const pkg = loadUserAISettingsPackage(userId);
+  pkg.config = { ...pkg.config, ...config };
+  saveUserAISettingsPackage(pkg);
 }
 
 /**
  * Load user-specific providers and API keys.
- * If not present in current browser, initializes from provided metadata templates or defaults.
  */
 export function getUserProviders(
-  metadataTemplates?: ClientProviderConfig[]
+  metadataTemplates?: ClientProviderConfig[],
+  userId = "local_default"
 ): UserProviderConfig[] {
-  const raw = safeGetItem(STORAGE_KEYS.PROVIDERS);
-  let storedProviders: UserProviderConfig[] = [];
+  const pkg = loadUserAISettingsPackage(userId, metadataTemplates);
+  return pkg.providers;
+}
 
-  if (raw) {
-    try {
-      storedProviders = JSON.parse(raw);
-    } catch (err) {
-      console.warn("FormatAI: Failed to parse stored providers:", err);
-      storedProviders = [];
+/**
+ * Save user-specific providers and keys.
+ */
+export function saveUserProviders(
+  providers: UserProviderConfig[],
+  userId = "local_default"
+): void {
+  const pkg = loadUserAISettingsPackage(userId);
+  pkg.providers = healAndNormalizeProviders(providers);
+  saveUserAISettingsPackage(pkg);
+}
+
+/**
+ * Update ONLY a specific key's status, leaving all other keys and providers untouched.
+ */
+export function updateProviderKeyStatus(
+  providerId: string,
+  keyId: string,
+  updates: Partial<UserApiKeyItem>,
+  userId = "local_default"
+): UserProviderConfig[] {
+  const pkg = loadUserAISettingsPackage(userId);
+  const provider = pkg.providers.find((p) => p.id === providerId);
+  if (!provider) return pkg.providers;
+
+  const keyItem = (provider.apiKeys || []).find((k) => k.id === keyId);
+  if (keyItem) {
+    Object.assign(keyItem, updates);
+  }
+
+  saveUserAISettingsPackage(pkg);
+  return pkg.providers;
+}
+
+/**
+ * Model Cache Management (24 hour TTL)
+ */
+export function getCachedProviderModels(
+  providerId: string,
+  userId = "local_default"
+): ModelInfo[] | null {
+  const pkg = loadUserAISettingsPackage(userId);
+  const entry = pkg.modelsCache?.[providerId];
+  if (!entry) return null;
+
+  if (Date.now() - entry.cachedAt > MODEL_CACHE_TTL_MS) {
+    return null; // Expired
+  }
+  return entry.models;
+}
+
+export function setCachedProviderModels(
+  providerId: string,
+  models: ModelInfo[],
+  userId = "local_default"
+): void {
+  const pkg = loadUserAISettingsPackage(userId);
+  if (!pkg.modelsCache) pkg.modelsCache = {};
+  pkg.modelsCache[providerId] = {
+    models,
+    cachedAt: Date.now(),
+  };
+
+  // Also update provider's availableModels in providers array
+  const provider = pkg.providers.find((p) => p.id === providerId);
+  if (provider) {
+    provider.availableModels = models;
+    // If selected model is not in new list, pick the first one
+    if (models.length > 0 && !models.some((m) => m.id === provider.selectedModel)) {
+      provider.selectedModel = models[0].id;
     }
   }
 
-  // If already stored and no new templates, return as is
-  if (storedProviders.length > 0 && !metadataTemplates) {
-    return storedProviders;
+  saveUserAISettingsPackage(pkg);
+}
+
+export function invalidateProviderModelCache(
+  providerId: string,
+  userId = "local_default"
+): void {
+  const pkg = loadUserAISettingsPackage(userId);
+  if (pkg.modelsCache && pkg.modelsCache[providerId]) {
+    delete pkg.modelsCache[providerId];
+    saveUserAISettingsPackage(pkg);
   }
-
-  // If we have templates from server (static metadata), reconcile them:
-  if (metadataTemplates && metadataTemplates.length > 0) {
-    const storedMap = new Map(storedProviders.map((p) => [p.id, p]));
-
-    const reconciled: UserProviderConfig[] = metadataTemplates.map((template) => {
-      const existing = storedMap.get(template.id);
-      if (existing) {
-        return {
-          ...template,
-          enabled: existing.enabled,
-          priority: existing.priority ?? template.priority,
-          selectedModel: existing.selectedModel || template.selectedModel,
-          selectedKeyId: existing.selectedKeyId,
-          customEndpoint: existing.customEndpoint || template.customEndpoint,
-          accountId: existing.accountId || template.accountId,
-          billingMode: existing.billingMode || template.billingMode,
-          apiKeys: existing.apiKeys || [],
-          status: existing.status || template.status,
-          lastError: existing.lastError,
-        };
-      } else {
-        // Fresh provider for this user
-        return {
-          id: template.id,
-          name: template.name,
-          enabled: template.enabled,
-          priority: template.priority,
-          apiKeys: [],
-          selectedModel: template.selectedModel,
-          availableModels: template.availableModels || [],
-          maxRetries: template.maxRetries,
-          timeoutMs: template.timeoutMs,
-          customEndpoint: template.customEndpoint,
-          accountId: template.accountId,
-          billingMode: template.billingMode,
-          freeTier: template.freeTier,
-          notes: template.notes,
-          status: template.status || "active",
-        };
-      }
-    });
-
-    // Save reconciled providers back to local storage
-    safeSetItem(STORAGE_KEYS.PROVIDERS, JSON.stringify(reconciled));
-    return reconciled;
-  }
-
-  return storedProviders;
 }
 
 /**
- * Save user-specific providers and keys to current browser environment.
- */
-export function saveUserProviders(providers: UserProviderConfig[]): void {
-  safeSetItem(STORAGE_KEYS.PROVIDERS, JSON.stringify(providers));
-}
-
-/**
- * Convert user provider configs (with raw keys) into sanitized client configs (masked keys + counts).
+ * Convert user provider configs into sanitized client configs for UI.
  */
 export function toClientProviders(
   providers: UserProviderConfig[]
@@ -227,6 +479,8 @@ export function toClientProviders(
       status: k.status,
       lastTestedAt: k.lastTestedAt,
       lastTestLatencyMs: k.lastTestLatencyMs,
+      lastTestedModel: k.lastTestedModel,
+      lastErrorCode: k.lastErrorCode,
       lastError: k.lastError,
     })),
   }));
@@ -261,7 +515,7 @@ export function saveUserPreferences(prefs: Partial<UserPreferences>): void {
 }
 
 /**
- * Load user document state (input text and cleaned markdown).
+ * Load user document state.
  */
 export function getUserDocuments(): { inputText: string; cleanedMarkdown: string | null } {
   const raw = safeGetItem(STORAGE_KEYS.DOCUMENTS);
@@ -283,7 +537,7 @@ export function saveUserDocuments(doc: { inputText: string; cleanedMarkdown: str
 }
 
 /**
- * Default initialized baseline provider statistics for telemetry.
+ * Telemetry and Stats
  */
 export const DEFAULT_PROVIDER_STATS: ProviderStats[] = [
   {
@@ -354,17 +608,6 @@ export const DEFAULT_PROVIDER_STATS: ProviderStats[] = [
     averageLatencyMs: 0,
   },
   {
-    providerId: "cerebras",
-    providerName: "Cerebras Fast Inference",
-    requestCount: 0,
-    successCount: 0,
-    failureCount: 0,
-    rateLimitCount: 0,
-    estimatedInputTokens: 0,
-    estimatedOutputTokens: 0,
-    averageLatencyMs: 0,
-  },
-  {
     providerId: "cohere",
     providerName: "Cohere",
     requestCount: 0,
@@ -376,8 +619,19 @@ export const DEFAULT_PROVIDER_STATS: ProviderStats[] = [
     averageLatencyMs: 0,
   },
   {
-    providerId: "deepseek",
-    providerName: "DeepSeek",
+    providerId: "cloudflare",
+    providerName: "Cloudflare Workers AI",
+    requestCount: 0,
+    successCount: 0,
+    failureCount: 0,
+    rateLimitCount: 0,
+    estimatedInputTokens: 0,
+    estimatedOutputTokens: 0,
+    averageLatencyMs: 0,
+  },
+  {
+    providerId: "custom",
+    providerName: "Custom / Self-Hosted",
     requestCount: 0,
     successCount: 0,
     failureCount: 0,
@@ -388,220 +642,91 @@ export const DEFAULT_PROVIDER_STATS: ProviderStats[] = [
   },
 ];
 
-export const DEFAULT_INITIAL_LOGS: FallbackLogEntry[] = [
-  {
-    id: "init-log-01",
-    timestamp: Date.now() - 1000 * 60 * 5,
-    requestSummary: "System Initialized: Academic Normalizer Ready",
-    finalProvider: "FormatAI",
-    finalModel: "standard-academic-engine",
-    hopsCount: 0,
-    totalLatencyMs: 14,
-    success: true,
-    chain: [
-      {
-        providerId: "formatai",
-        providerName: "FormatAI Engine",
-        keyMasked: "Local Deterministic",
-        model: "standard-academic",
-        status: "success",
-        latencyMs: 14,
-        timestamp: Date.now() - 1000 * 60 * 5,
-      },
-    ],
-  },
-];
-
-/**
- * Load user-specific provider statistics.
- */
 export function getUserStats(): ProviderStats[] {
   const raw = safeGetItem(STORAGE_KEYS.STATS);
-  if (!raw) {
-    saveUserStats(DEFAULT_PROVIDER_STATS);
-    return structuredClone(DEFAULT_PROVIDER_STATS);
-  }
+  if (!raw) return DEFAULT_PROVIDER_STATS;
   try {
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      saveUserStats(DEFAULT_PROVIDER_STATS);
-      return structuredClone(DEFAULT_PROVIDER_STATS);
-    }
-    // Ensure all 8 providers + FormatAI are represented
-    const existingIds = new Set(parsed.map((p: ProviderStats) => p.providerId.toLowerCase()));
-    let hasAdditions = false;
-    for (const def of DEFAULT_PROVIDER_STATS) {
-      if (!existingIds.has(def.providerId.toLowerCase())) {
-        parsed.push({ ...def });
-        hasAdditions = true;
-      }
-    }
-    if (hasAdditions) {
-      saveUserStats(parsed);
-    }
-    return parsed;
+    return Array.isArray(parsed) && parsed.length > 0 ? parsed : DEFAULT_PROVIDER_STATS;
   } catch {
-    saveUserStats(DEFAULT_PROVIDER_STATS);
-    return structuredClone(DEFAULT_PROVIDER_STATS);
+    return DEFAULT_PROVIDER_STATS;
   }
 }
 
-/**
- * Save user-specific provider statistics.
- */
 export function saveUserStats(stats: ProviderStats[]): void {
   safeSetItem(STORAGE_KEYS.STATS, JSON.stringify(stats));
 }
 
-/**
- * Record a live metric event for a provider (requests, latency, success, rate limits, token usage).
- */
 export function recordProviderMetric(
   providerId: string,
-  providerName: string,
   success: boolean,
   latencyMs: number,
-  isRateLimit: boolean = false,
-  inputTokensEst: number = 0,
-  outputTokensEst: number = 0,
-  errorMessage?: string
+  inTokens = 0,
+  outTokens = 0,
+  errorMsg?: string
 ): void {
   const stats = getUserStats();
-  const normId = (providerId || "formatai").toLowerCase();
-  const index = stats.findIndex((s) => s.providerId.toLowerCase() === normId);
+  const existing = stats.find((s) => s.providerId === providerId);
   const now = Date.now();
 
-  if (index >= 0) {
-    const current = stats[index];
-    current.requestCount = (current.requestCount || 0) + 1;
+  if (existing) {
+    existing.requestCount += 1;
     if (success) {
-      current.successCount = (current.successCount || 0) + 1;
-      current.lastSuccessAt = now;
+      existing.successCount += 1;
+      existing.lastSuccessAt = now;
+      existing.averageLatencyMs = Math.round(
+        (existing.averageLatencyMs * (existing.successCount - 1) + latencyMs) / existing.successCount
+      );
     } else {
-      current.failureCount = (current.failureCount || 0) + 1;
-      current.lastErrorAt = now;
-      if (errorMessage) current.lastErrorMessage = errorMessage;
+      existing.failureCount += 1;
+      existing.lastErrorAt = now;
+      existing.lastErrorMessage = errorMsg;
+      if (errorMsg?.toLowerCase().includes("rate limit") || errorMsg?.includes("429")) {
+        existing.rateLimitCount += 1;
+      }
     }
-    if (isRateLimit) {
-      current.rateLimitCount = (current.rateLimitCount || 0) + 1;
-    }
-    current.estimatedInputTokens = (current.estimatedInputTokens || 0) + Math.max(0, inputTokensEst);
-    current.estimatedOutputTokens = (current.estimatedOutputTokens || 0) + Math.max(0, outputTokensEst);
-
-    if (latencyMs > 0) {
-      const validCount = Math.max(1, current.requestCount);
-      const prevAvg = current.averageLatencyMs || latencyMs;
-      current.averageLatencyMs = Math.round((prevAvg * (validCount - 1) + latencyMs) / validCount);
-    }
-  } else {
-    stats.push({
-      providerId: normId,
-      providerName: providerName || providerId,
-      requestCount: 1,
-      successCount: success ? 1 : 0,
-      failureCount: success ? 0 : 1,
-      rateLimitCount: isRateLimit ? 1 : 0,
-      estimatedInputTokens: Math.max(0, inputTokensEst),
-      estimatedOutputTokens: Math.max(0, outputTokensEst),
-      averageLatencyMs: latencyMs,
-      lastSuccessAt: success ? now : undefined,
-      lastErrorAt: !success ? now : undefined,
-      lastErrorMessage: errorMessage,
-    });
+    existing.estimatedInputTokens += inTokens;
+    existing.estimatedOutputTokens += outTokens;
   }
   saveUserStats(stats);
 }
 
-/**
- * Load user-specific fallback/execution logs.
- */
 export function getUserLogs(): FallbackLogEntry[] {
   const raw = safeGetItem(STORAGE_KEYS.LOGS);
-  if (!raw) {
-    saveUserLogs(DEFAULT_INITIAL_LOGS);
-    return structuredClone(DEFAULT_INITIAL_LOGS);
-  }
+  if (!raw) return [];
   try {
     const parsed = JSON.parse(raw);
-    if (!Array.isArray(parsed) || parsed.length === 0) {
-      saveUserLogs(DEFAULT_INITIAL_LOGS);
-      return structuredClone(DEFAULT_INITIAL_LOGS);
-    }
-    return parsed;
+    return Array.isArray(parsed) ? parsed : [];
   } catch {
-    saveUserLogs(DEFAULT_INITIAL_LOGS);
-    return structuredClone(DEFAULT_INITIAL_LOGS);
+    return [];
   }
 }
 
-/**
- * Save logs array explicitly.
- */
 export function saveUserLogs(logs: FallbackLogEntry[]): void {
   safeSetItem(STORAGE_KEYS.LOGS, JSON.stringify(logs.slice(0, 50)));
 }
 
-/**
- * Clear all audit logs.
- */
 export function clearUserLogs(): void {
-  saveUserLogs([]);
+  safeRemoveItem(STORAGE_KEYS.LOGS);
 }
 
-/**
- * Append an execution log entry to user-specific logs (capped at 50 entries).
- */
-export function addUserLog(entry: FallbackLogEntry): void {
-  const current = getUserLogs();
-  const updated = [entry, ...current].slice(0, 50);
-  safeSetItem(STORAGE_KEYS.LOGS, JSON.stringify(updated));
-}
-
-/**
- * Record a full structured fallback audit log entry.
- */
-export function recordAuditLogEntry(entry: {
-  requestSummary: string;
-  finalProvider: string;
-  finalModel: string;
-  hopsCount?: number;
-  totalLatencyMs: number;
-  success: boolean;
-  chain: FallbackStep[];
-  isSimulation?: boolean;
-}): FallbackLogEntry {
-  const safeChain: FallbackStep[] = entry.chain && entry.chain.length > 0 ? entry.chain : [
-    {
-      providerId: (entry.finalProvider || "System").toLowerCase(),
-      providerName: entry.finalProvider || "System Provider",
-      keyMasked: "Client Key",
-      model: entry.finalModel || "Default Model",
-      status: entry.success ? "success" : "server_error",
-      latencyMs: entry.totalLatencyMs || 0,
-      timestamp: Date.now(),
-    }
-  ];
-
-  const newLog: FallbackLogEntry = {
+export function recordAuditLogEntry(entry: Omit<FallbackLogEntry, "id" | "timestamp">): void {
+  const logs = getUserLogs();
+  const newEntry: FallbackLogEntry = {
+    ...entry,
     id: `log-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`,
     timestamp: Date.now(),
-    requestSummary: entry.requestSummary || "Academic Notes Polish Execution",
-    finalProvider: entry.finalProvider || "System",
-    finalModel: entry.finalModel || "Default Model",
-    hopsCount: entry.hopsCount !== undefined ? entry.hopsCount : Math.max(0, safeChain.length - 1),
-    totalLatencyMs: entry.totalLatencyMs || 0,
-    success: Boolean(entry.success),
-    chain: safeChain,
-    isSimulation: Boolean(entry.isSimulation || entry.requestSummary?.toLowerCase().includes("simulation")),
   };
-
-  addUserLog(newLog);
-  return newLog;
+  logs.unshift(newEntry);
+  saveUserLogs(logs);
 }
 
-/**
- * Reset all user-specific data in the current browser/profile environment to clean initial defaults.
- */
-export function resetAllUserData(): void {
-  Object.values(STORAGE_KEYS).forEach((k) => safeRemoveItem(k));
+export function resetAllUserData(userId = "local_default"): void {
+  safeRemoveItem(getUserSettingsStorageKey(userId));
+  safeRemoveItem(STORAGE_KEYS.LEGACY_SETTINGS);
+  safeRemoveItem(STORAGE_KEYS.LEGACY_PROVIDERS);
+  safeRemoveItem(STORAGE_KEYS.PREFERENCES);
+  safeRemoveItem(STORAGE_KEYS.DOCUMENTS);
+  safeRemoveItem(STORAGE_KEYS.STATS);
+  safeRemoveItem(STORAGE_KEYS.LOGS);
 }

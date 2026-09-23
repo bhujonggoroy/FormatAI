@@ -1,12 +1,13 @@
 import { OpenAICompatibleAdapter } from "./OpenAICompatibleAdapter.ts";
 import type { ModelInfo } from "../types.ts";
+import type { AdapterOptions } from "./BaseAdapter.ts";
 
 export class GroqAdapter extends OpenAICompatibleAdapter {
   constructor() {
     const defaultModels: ModelInfo[] = [
       {
         id: "llama-3.3-70b-versatile",
-        name: "Llama 3.3 70B Versatile (Free Tier Favorite)",
+        name: "Llama 3.3 70B Versatile",
         contextWindow: 128000,
         isFree: true,
         capabilities: ["text", "math", "long_context", "json", "code"],
@@ -14,7 +15,7 @@ export class GroqAdapter extends OpenAICompatibleAdapter {
       },
       {
         id: "llama-3.1-8b-instant",
-        name: "Llama 3.1 8B Instant (Ultra-fast)",
+        name: "Llama 3.1 8B Instant",
         contextWindow: 128000,
         isFree: true,
         capabilities: ["text", "math", "long_context", "json", "code"],
@@ -26,7 +27,7 @@ export class GroqAdapter extends OpenAICompatibleAdapter {
         contextWindow: 32768,
         isFree: true,
         capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Mistral's popular mixture-of-experts model.",
+        description: "Mistral's mixture-of-experts model on Groq.",
       },
       {
         id: "gemma2-9b-it",
@@ -34,7 +35,7 @@ export class GroqAdapter extends OpenAICompatibleAdapter {
         contextWindow: 8192,
         isFree: true,
         capabilities: ["text", "math", "json", "code"],
-        description: "Google's lightweight open model optimized for academic instruction.",
+        description: "Google lightweight open model on Groq.",
       },
     ];
 
@@ -43,9 +44,51 @@ export class GroqAdapter extends OpenAICompatibleAdapter {
       name: "Groq (Fast LPU)",
       defaultBaseUrl: "https://api.groq.com/openai/v1/chat/completions",
       defaultModels,
+      modelsEndpoint: "https://api.groq.com/openai/v1/models",
       customHeaders: {
-        "User-Agent": "notebooklm-docx-converter/1.0",
+        "User-Agent": "formatai/2.0",
       },
     });
+  }
+
+  override async getModels(apiKey?: string, options?: AdapterOptions): Promise<ModelInfo[]> {
+    if (!apiKey?.trim()) return this.defaultModels;
+    try {
+      const res = await fetch("https://api.groq.com/openai/v1/models", {
+        headers: {
+          Authorization: `Bearer ${apiKey.trim()}`,
+        },
+        signal: AbortSignal.timeout(options?.timeoutMs || 8000),
+      });
+
+      if (!res.ok) return this.defaultModels;
+      const data = await res.json();
+      if (!Array.isArray(data?.data)) return this.defaultModels;
+
+      // Filter active chat models (excluding whisper/audio/embeddings)
+      const chatModels = data.data.filter((m: any) => {
+        const id = (m.id || "").toLowerCase();
+        return (
+          m.active !== false &&
+          !id.includes("whisper") &&
+          !id.includes("embed") &&
+          !id.includes("guard")
+        );
+      });
+
+      if (chatModels.length > 0) {
+        return chatModels.map((m: any) => ({
+          id: m.id,
+          name: m.id.replace(/[-_]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+          contextWindow: m.context_window || 32768,
+          isFree: true, // Groq free tier applies to all standard models
+          capabilities: ["text", "math", "long_context", "json", "code"],
+          description: `Groq LPU model (${m.id})`,
+        }));
+      }
+      return this.defaultModels;
+    } catch {
+      return this.defaultModels;
+    }
   }
 }

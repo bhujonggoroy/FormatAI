@@ -1,9 +1,12 @@
 import {
   estimateTokenCount,
+  maskApiKey,
   type AIProviderAdapter,
   type AdapterOptions,
 } from "./BaseAdapter.ts";
 import type {
+  AIErrorCode,
+  AIErrorKind,
   AIRequest,
   ModelInfo,
   NormalizedAIError,
@@ -50,8 +53,12 @@ export class CloudflareAdapter implements AIProviderAdapter {
   readonly name = "Cloudflare Workers AI";
   private defaultAccountId: string = process.env.CLOUDFLARE_ACCOUNT_ID || "";
 
-  async listModels(): Promise<ModelInfo[]> {
+  async getModels(): Promise<ModelInfo[]> {
     return CLOUDFLARE_DEFAULT_MODELS;
+  }
+
+  async listModels(): Promise<ModelInfo[]> {
+    return this.getModels();
   }
 
   supportsCapability(capability: string, modelId: string): boolean {
@@ -60,55 +67,71 @@ export class CloudflareAdapter implements AIProviderAdapter {
     return model.capabilities.includes(capability);
   }
 
-  normalizeError(error: any): NormalizedAIError {
-    const message = error?.message || String(error);
+  classifyError(error: any): NormalizedAIError {
+    const message = error?.message || (typeof error === "string" ? error : JSON.stringify(error));
     const status = error?.status || error?.statusCode;
+    const msgLower = message.toLowerCase();
 
-    if (status === 401 || /unauthorized|invalid api key|invalid token|401/i.test(message)) {
+    if (status === 404 || msgLower.includes("model not found") || msgLower.includes("could not find model")) {
       return {
+        code: "MODEL_UNAVAILABLE",
+        kind: "model_unavailable",
+        statusCode: 404,
+        title: "❌ Cloudflare Model Unavailable",
+        message: "Cloudflare model not found or currently unavailable.",
+        userFacingMessage: "The selected Cloudflare Workers AI model is not available.",
+        retryable: false,
+        rawError: error,
+      };
+    }
+
+    if (status === 401 || msgLower.includes("unauthorized") || msgLower.includes("invalid api key") || msgLower.includes("invalid token")) {
+      return {
+        code: "INVALID_API_KEY",
         kind: "invalid_key",
         statusCode: 401,
+        title: "❌ Invalid Cloudflare API Token",
         message: "Cloudflare Workers AI API token is invalid or lacks Workers AI read/run permissions.",
+        userFacingMessage: "Invalid Cloudflare API token. Please verify your token and account permissions.",
         retryable: false,
         rawError: error,
       };
     }
 
-    if (status === 403 || /forbidden|403|access denied/i.test(message)) {
+    if (status === 403 || msgLower.includes("forbidden") || msgLower.includes("access denied")) {
       return {
+        code: "FORBIDDEN",
         kind: "permission_denied",
         statusCode: 403,
+        title: "❌ Cloudflare Permission Denied (403)",
         message: "Cloudflare permission denied. Ensure Account ID is correct and API token has Workers AI permission.",
+        userFacingMessage: "Permission denied on Cloudflare. Check your Account ID and token permissions.",
         retryable: false,
         rawError: error,
       };
     }
 
-    if (status === 429 || /rate[_\s]?limit|too many requests|daily limit|neuron/i.test(message)) {
+    if (status === 429 || msgLower.includes("rate limit") || msgLower.includes("neuron") || msgLower.includes("daily limit")) {
       return {
+        code: "RATE_LIMIT",
         kind: "rate_limit",
         statusCode: 429,
+        title: "⚠️ Cloudflare Rate Limit Exceeded",
         message: "Cloudflare Workers AI rate limit or neuron quota exceeded (429).",
+        userFacingMessage: "Cloudflare daily neuron quota or rate limit exceeded.",
         retryable: true,
         rawError: error,
       };
     }
 
-    if (status === 404 || /model not found|could not find model/i.test(message)) {
+    if (status === 408 || status === 504 || msgLower.includes("timeout") || msgLower.includes("abort")) {
       return {
-        kind: "model_unavailable",
-        statusCode: 404,
-        message: "Cloudflare model not found or currently unavailable.",
-        retryable: false,
-        rawError: error,
-      };
-    }
-
-    if (status === 408 || status === 504 || /timeout|timed out|abort/i.test(message)) {
-      return {
+        code: "TIMEOUT",
         kind: "timeout",
         statusCode: status || 408,
+        title: "⚠️ Cloudflare Request Timeout",
         message: "Cloudflare Workers AI request timed out.",
+        userFacingMessage: "Request timed out waiting for Cloudflare Workers AI.",
         retryable: true,
         rawError: error,
       };
@@ -116,54 +139,91 @@ export class CloudflareAdapter implements AIProviderAdapter {
 
     if (status && status >= 500) {
       return {
+        code: "SERVER_ERROR",
         kind: "server_error",
         statusCode: status,
-        message: `Cloudflare server error (${status}).`,
+        title: `⚠️ Cloudflare Server Error (${status})`,
+        message: `Cloudflare server error (${status}): ${message}`,
+        userFacingMessage: "Cloudflare Workers AI servers are experiencing temporary issues.",
         retryable: true,
         rawError: error,
       };
     }
 
     return {
+      code: "UNKNOWN_ERROR",
       kind: "unknown",
       statusCode: status,
+      title: "❌ Cloudflare Error",
       message: message || "Unknown error occurred with Cloudflare Workers AI.",
+      userFacingMessage: message || "An unexpected error occurred with Cloudflare Workers AI.",
       retryable: false,
       rawError: error,
     };
   }
 
+  normalizeError(error: any): NormalizedAIError {
+    return this.classifyError(error);
+  }
+
   private resolveAccountId(options?: AdapterOptions): string {
+    if (options?.accountId?.trim()) {
+      return options.accountId.trim();
+    }
     if (options?.customEndpoint && options.customEndpoint.includes("/accounts/")) {
       const match = options.customEndpoint.match(/\/accounts\/([^/]+)/);
       if (match && match[1]) return match[1];
     }
-    return process.env.CLOUDFLARE_ACCOUNT_ID || this.defaultAccountId || "dummy-account";
+    return this.defaultAccountId;
   }
 
   async generate(
-    request: AIRequest,
-    key: string,
-    model: string,
+    requestOrKey: AIRequest | string,
+    keyOrModelId?: string,
+    modelOrRequest?: string | AIRequest,
     options?: AdapterOptions
-  ): Promise<{ text: string; inputTokens?: number; outputTokens?: number }> {
-    const accountId = this.resolveAccountId(options);
-    const timeoutMs = options?.timeoutMs || 45000;
-    const cleanModel = model.startsWith("@cf/") ? model : `@cf/${model}`;
+  ): Promise<{ text: string; inputTokens?: number; outputTokens?: number; modelUsed?: string }> {
+    let req: AIRequest;
+    let key: string;
+    let effectiveModel: string;
 
-    const url = `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${cleanModel}`;
+    if (typeof requestOrKey === "string") {
+      key = requestOrKey;
+      effectiveModel = keyOrModelId || CLOUDFLARE_DEFAULT_MODELS[0].id;
+      req = (modelOrRequest as AIRequest) || { prompt: "" };
+    } else {
+      req = requestOrKey;
+      key = keyOrModelId || "";
+      effectiveModel = (typeof modelOrRequest === "string" ? modelOrRequest : "") || req.model || CLOUDFLARE_DEFAULT_MODELS[0].id;
+    }
+
+    if (!key) {
+      throw new Error("No API key/token provided for Cloudflare Workers AI.");
+    }
+
+    const accountId = this.resolveAccountId(options);
+    if (!accountId) {
+      throw new Error(
+        "Missing Cloudflare Account ID. Please configure your Account ID in AI Settings or provide a full custom endpoint."
+      );
+    }
+
+    const url =
+      options?.customEndpoint ||
+      `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${effectiveModel}`;
 
     const messages: Array<{ role: string; content: string }> = [];
-    if (request.systemPrompt) {
-      messages.push({ role: "system", content: request.systemPrompt });
+    if (req.systemPrompt) {
+      messages.push({ role: "system", content: req.systemPrompt });
     }
-    messages.push({ role: "user", content: request.prompt });
+    messages.push({ role: "user", content: req.prompt });
 
     const controller = new AbortController();
+    const timeoutMs = options?.timeoutMs || 45000;
     const timer = setTimeout(() => controller.abort(), timeoutMs);
 
     try {
-      const response = await fetch(url, {
+      const res = await fetch(url, {
         method: "POST",
         headers: {
           Authorization: `Bearer ${key.trim()}`,
@@ -171,32 +231,38 @@ export class CloudflareAdapter implements AIProviderAdapter {
         },
         body: JSON.stringify({
           messages,
-          max_tokens: request.maxTokens || 4096,
-          temperature: request.temperature ?? 0.2,
+          max_tokens: options?.maxTokens ?? req.maxTokens ?? 2048,
+          temperature: options?.temperature ?? req.temperature ?? 0.2,
         }),
         signal: controller.signal,
       });
 
       clearTimeout(timer);
 
-      if (!response.ok) {
-        let errData: any = {};
-        try {
-          errData = await response.json();
-        } catch {
-          // ignore json parse error
-        }
-        const errorMsg =
-          errData?.errors?.[0]?.message ||
-          errData?.error ||
-          `Cloudflare HTTP ${response.status}: ${response.statusText}`;
-        const err: any = new Error(errorMsg);
-        err.status = response.status;
-        err.raw = errData;
-        throw err;
+      const raw = await res.text();
+      let data: any;
+      try {
+        data = JSON.parse(raw);
+      } catch {
+        throw {
+          status: res.status,
+          statusCode: res.status,
+          message: `Cloudflare returned non-JSON response (HTTP ${res.status}): ${raw.slice(0, 160)}`,
+        };
       }
 
-      const data = await response.json();
+      if (!res.ok || data?.success === false) {
+        const errMessage =
+          data?.errors?.[0]?.message ||
+          data?.messages?.[0] ||
+          `Cloudflare request failed with HTTP ${res.status}`;
+        throw {
+          status: res.status,
+          statusCode: res.status,
+          message: errMessage,
+        };
+      }
+
       const text =
         data?.result?.response ||
         data?.result?.choices?.[0]?.message?.content ||
@@ -204,8 +270,9 @@ export class CloudflareAdapter implements AIProviderAdapter {
 
       return {
         text,
-        inputTokens: estimateTokenCount(request.prompt + (request.systemPrompt || "")),
+        inputTokens: estimateTokenCount(req.prompt + (req.systemPrompt || "")),
         outputTokens: estimateTokenCount(text),
+        modelUsed: effectiveModel,
       };
     } catch (err: any) {
       clearTimeout(timer);
@@ -218,45 +285,89 @@ export class CloudflareAdapter implements AIProviderAdapter {
     }
   }
 
+  async test(
+    apiKey: string,
+    modelId: string,
+    options?: AdapterOptions
+  ): Promise<TestResult> {
+    const start = Date.now();
+    const effectiveModel = modelId || CLOUDFLARE_DEFAULT_MODELS[0].id;
+    const masked = maskApiKey(apiKey);
+    const accountId = this.resolveAccountId(options);
+    const endpoint = options?.customEndpoint || `https://api.cloudflare.com/client/v4/accounts/${accountId || "{account_id}"}/ai/run/${effectiveModel}`;
+
+    try {
+      const result = await this.generate(
+        {
+          prompt: "Respond with the single word 'OK'.",
+          maxTokens: 10,
+          temperature: 0.1,
+        },
+        apiKey,
+        effectiveModel,
+        options
+      );
+
+      const latency = Date.now() - start;
+      return {
+        success: Boolean(result.text && result.text.length > 0),
+        providerId: this.id,
+        providerName: this.name,
+        model: effectiveModel,
+        keyId: options?.keyId,
+        keyName: options?.keyName,
+        maskedKey: masked,
+        endpoint,
+        latencyMs: latency,
+        diagnostic: {
+          provider: this.name,
+          keyId: options?.keyId || "key_selected",
+          modelId: effectiveModel,
+          endpoint,
+          maskedKey: masked,
+          result: "SUCCESS",
+          latencyMs: latency,
+        },
+      };
+    } catch (err: any) {
+      const latency = Date.now() - start;
+      const norm = this.classifyError(err);
+      return {
+        success: false,
+        providerId: this.id,
+        providerName: this.name,
+        model: effectiveModel,
+        keyId: options?.keyId,
+        keyName: options?.keyName,
+        maskedKey: masked,
+        endpoint,
+        latencyMs: latency,
+        errorCode: norm.code,
+        errorKind: norm.kind,
+        errorTitle: norm.title,
+        userFacingMessage: norm.userFacingMessage,
+        errorMessage: norm.message,
+        statusCode: norm.statusCode,
+        diagnostic: {
+          provider: this.name,
+          keyId: options?.keyId || "key_selected",
+          modelId: effectiveModel,
+          endpoint,
+          maskedKey: masked,
+          result: norm.code || "FAILED",
+          latencyMs: latency,
+          rawMessage: norm.message,
+        },
+      };
+    }
+  }
+
   async testConnection(
     key: string,
     model: string,
     customEndpoint?: string,
     timeoutMs = 15000
   ): Promise<TestResult> {
-    const start = Date.now();
-    try {
-      const result = await this.generate(
-        {
-          prompt: "Echo the word 'Ready' and compute 2 + 2.",
-          systemPrompt: "You are a fast healthcheck probe. Answer concisely.",
-          maxTokens: 30,
-          temperature: 0.1,
-        },
-        key,
-        model || CLOUDFLARE_DEFAULT_MODELS[0].id,
-        { timeoutMs, customEndpoint }
-      );
-
-      return {
-        success: Boolean(result.text && result.text.length > 0),
-        providerId: this.id,
-        providerName: this.name,
-        model: model || CLOUDFLARE_DEFAULT_MODELS[0].id,
-        latencyMs: Date.now() - start,
-      };
-    } catch (err: any) {
-      const norm = this.normalizeError(err);
-      return {
-        success: false,
-        providerId: this.id,
-        providerName: this.name,
-        model: model || CLOUDFLARE_DEFAULT_MODELS[0].id,
-        latencyMs: Date.now() - start,
-        errorMessage: norm.message,
-        statusCode: norm.statusCode,
-        errorKind: norm.kind,
-      };
-    }
+    return this.test(key, model, { customEndpoint, timeoutMs });
   }
 }

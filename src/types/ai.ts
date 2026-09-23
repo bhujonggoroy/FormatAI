@@ -1,3 +1,28 @@
+export type AIErrorCode =
+  | "INVALID_API_KEY"
+  | "MODEL_UNAVAILABLE"
+  | "RATE_LIMIT"
+  | "QUOTA_EXCEEDED"
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "SERVER_ERROR"
+  | "NETWORK_ERROR"
+  | "TIMEOUT"
+  | "UNKNOWN_ERROR";
+
+export type AIErrorKind =
+  | "invalid_key"          // HTTP 401
+  | "permission_denied"    // HTTP 403
+  | "rate_limit"           // HTTP 429 / Quota exceeded
+  | "timeout"              // HTTP 408 / Timeout
+  | "server_error"         // HTTP 500, 502, 503
+  | "token_limit"          // Context / token limit exceeded
+  | "model_unavailable"    // Model not found or deprecated
+  | "network_error"        // Network disconnect or DNS failure
+  | "unsupported_capability" // Model lacks required capabilities
+  | "unknown";
+
 export interface ModelInfo {
   id: string;
   name: string;
@@ -13,10 +38,13 @@ export interface UserApiKeyItem {
   key: string; // Raw API key stored strictly in local browser storage
   maskedKey: string; // Masked key for UI display e.g. "AIza************cOA8"
   enabled: boolean; // ON / OFF toggle
-  status?: "active" | "rate_limited" | "invalid" | "disabled";
+  status?: "active" | "rate_limited" | "invalid" | "disabled" | "model_unavailable";
   lastTestedAt?: number;
   lastTestLatencyMs?: number;
+  lastTestedModel?: string;
+  lastErrorCode?: AIErrorCode;
   lastError?: string;
+  cooldownUntil?: number;
 }
 
 export interface UserProviderConfig {
@@ -207,8 +235,23 @@ export interface TestResult {
   model: string;
   keyId?: string;
   keyName?: string;
+  maskedKey?: string;
+  endpoint?: string;
   latencyMs: number;
+  errorCode?: AIErrorCode;
+  errorKind?: AIErrorKind;
+  errorTitle?: string;
+  userFacingMessage?: string;
   errorMessage?: string;
   statusCode?: number;
-  errorKind?: string;
+  diagnostic?: {
+    provider: string;
+    keyId: string;
+    modelId: string;
+    endpoint: string;
+    maskedKey: string;
+    result: string;
+    latencyMs: number;
+    rawMessage?: string;
+  };
 }

@@ -123,17 +123,56 @@ export function createServerApp(): express.Express {
     });
   });
 
+  // Authoritative model catalog retrieval endpoint
+  app.post("/api/ai/models", async (req, res) => {
+    try {
+      const { providerId, apiKey, customEndpoint } = req.body || {};
+      if (!providerId) {
+        return res.status(400).json({ success: false, error: "Missing providerId" });
+      }
+      const result = await aiRequestManager.fetchProviderModels(providerId, apiKey, customEndpoint);
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({ success: false, error: err.message || "Failed to fetch models" });
+    }
+  });
+
+  // Explicit test endpoint: testApiConnection(providerId, keyId, modelId)
+  app.post("/api/ai/test", async (req, res) => {
+    try {
+      const { providerId, keyId, modelId, model, apiKey, customEndpoint, accountId, timeoutMs } = req.body || {};
+      if (!providerId) {
+        return res.status(400).json({ success: false, errorMessage: "Missing providerId" });
+      }
+      const targetModel = modelId || model || "";
+      const result = await aiRequestManager.testApiConnection(
+        providerId,
+        keyId || "key_probe",
+        targetModel,
+        apiKey || "",
+        { customEndpoint, accountId, timeoutMs }
+      );
+      res.json(result);
+    } catch (err: any) {
+      res.status(500).json({
+        success: false,
+        errorMessage: err.message || "Test execution failed.",
+      });
+    }
+  });
+
   // Test provider connection with a request-scoped key (stateless; does NOT save key)
   app.post("/api/ai/providers/:id/test", async (req, res) => {
     try {
       const { id } = req.params;
-      const { apiKey, model, customEndpoint, accountId } = req.body || {};
-      const result = await aiRequestManager.testProviderScoped(
+      const { apiKey, keyId, model, modelId, customEndpoint, accountId, timeoutMs } = req.body || {};
+      const targetModel = modelId || model || "";
+      const result = await aiRequestManager.testApiConnection(
         id,
-        apiKey,
-        model,
-        customEndpoint,
-        accountId
+        keyId || "key_probe",
+        targetModel,
+        apiKey || "",
+        { customEndpoint, accountId, timeoutMs }
       );
       res.json(result);
     } catch (err: any) {

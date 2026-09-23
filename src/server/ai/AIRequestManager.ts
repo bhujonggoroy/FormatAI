@@ -2,16 +2,15 @@ import {
   maskApiKey,
   estimateTokenCount,
   type AIProviderAdapter,
+  type AdapterOptions,
 } from "./adapters/BaseAdapter.ts";
-import { GeminiAdapter } from "./adapters/GeminiAdapter.ts";
-import { GroqAdapter } from "./adapters/GroqAdapter.ts";
-import { OpenRouterAdapter } from "./adapters/OpenRouterAdapter.ts";
-import { MistralAdapter } from "./adapters/MistralAdapter.ts";
-import { CohereAdapter } from "./adapters/CohereAdapter.ts";
-import { HuggingFaceAdapter } from "./adapters/HuggingFaceAdapter.ts";
-import { CloudflareAdapter } from "./adapters/CloudflareAdapter.ts";
-import { CustomAdapter } from "./adapters/CustomAdapter.ts";
+import {
+  providerRegistry,
+  getProvider,
+  listProviders,
+} from "../../providers/index.ts";
 import type {
+  AIErrorCode,
   AIRequest,
   AIResponse,
   ApiKeyItem,
@@ -42,11 +41,15 @@ export interface FallbackLogEntry {
 /**
  * AIRequestManager
  *
- * Implements FormatAI's STRICT USER-SPECIFIC LOCAL ISOLATION architecture:
- * - The server does NOT maintain global mutable user configuration.
- * - The server does NOT persist user API keys to disk, database, or shared memory.
- * - AI requests are executed with REQUEST-SCOPED configuration and keys passed directly from the client.
- * - Concurrent requests from different users/browsers execute with absolute isolation and zero cross-talk.
+ * Implements FormatAI's Authoritative Single Source of Truth Pipeline:
+ * resolveProvider()
+ * → resolveUserKey() (Strictly enabled === true for generation; explicit key for test)
+ * → resolveModel()
+ * → validateModel()
+ * → buildRequest()
+ * → sendRequest()
+ * → classifyResponse()
+ * → updateKeyStatus()
  */
 export class AIRequestManager {
   private adapters: Map<string, AIProviderAdapter> = new Map();
@@ -58,29 +61,22 @@ export class AIRequestManager {
   }
 
   private registerAdapters() {
-    const defaultAdapters: AIProviderAdapter[] = [
-      new GeminiAdapter(),
-      new GroqAdapter(),
-      new OpenRouterAdapter(),
-      new MistralAdapter(),
-      new CohereAdapter(),
-      new HuggingFaceAdapter(),
-      new CloudflareAdapter(),
-      new CustomAdapter(),
-    ];
-
-    for (const adapter of defaultAdapters) {
+    for (const adapter of listProviders()) {
       this.adapters.set(adapter.id, adapter);
     }
   }
 
   public registerCustomAdapter(adapter: AIProviderAdapter) {
+    providerRegistry.register(adapter);
     this.adapters.set(adapter.id, adapter);
+  }
+
+  public getAdapter(providerId: string): AIProviderAdapter | undefined {
+    return getProvider(providerId) || this.adapters.get(providerId);
   }
 
   /**
    * Return static public provider metadata templates (available models, free tier limits, docs).
-   * Notice: all `apiKeys` are empty arrays. User-specific keys are stored strictly on the client.
    */
   public getStaticProviderTemplates(): ClientProviderConfig[] {
     return this.templateProviders.map((p) => ({
@@ -105,7 +101,6 @@ export class AIRequestManager {
     }));
   }
 
-  // Backward compatibility alias
   public getClientProviders(): ClientProviderConfig[] {
     return this.getStaticProviderTemplates();
   }
@@ -114,14 +109,200 @@ export class AIRequestManager {
     return { ...DEFAULT_MANAGER_CONFIG };
   }
 
-  // --- REQUEST-SCOPED AI EXECUTION ENGINE ---
+  /**
+   * Dynamically fetch live models from official provider catalog.
+   */
+  public async fetchProviderModels(
+    providerId: string,
+    apiKey?: string,
+    customEndpoint?: string
+  ): Promise<{ success: boolean; models: ModelInfo[]; error?: string }> {
+    const adapter = this.adapters.get(providerId);
+    if (!adapter) {
+      return { success: false, models: [], error: `Unknown provider '${providerId}'.` };
+    }
+
+    try {
+      const models = await adapter.getModels(apiKey, { customEndpoint });
+      return { success: true, models: models.length > 0 ? models : (this.templateProviders.find(p => p.id === providerId)?.availableModels || []) };
+    } catch (err: any) {
+      const norm = adapter.classifyError ? adapter.classifyError(err) : { message: err?.message };
+      return {
+        success: false,
+        models: this.templateProviders.find(p => p.id === providerId)?.availableModels || [],
+        error: norm.message || "Failed to fetch models catalog",
+      };
+    }
+  }
+
+  /**
+   * Explicitly test a single key + model connection.
+   *
+   * NEVER silently uses environment keys or another key in array.
+   * Strictly tests THAT exact key and THAT exact model.
+   * Can test keys where enabled === false (OFF).
+   */
+  public async testApiConnection(
+    providerId: string,
+    keyId: string,
+    modelId: string,
+    apiKey: string,
+    options?: AdapterOptions
+  ): Promise<TestResult> {
+    const adapter = this.adapters.get(providerId);
+    const providerTemplate = this.templateProviders.find((p) => p.id === providerId);
+    const providerName = providerTemplate?.name || adapter?.name || providerId;
+    const cleanKey = apiKey ? apiKey.trim() : "";
+    const masked = maskApiKey(cleanKey);
+
+    if (!adapter) {
+      return {
+        success: false,
+        providerId,
+        providerName,
+        model: modelId || "unknown",
+        keyId,
+        maskedKey: masked,
+        latencyMs: 0,
+        errorCode: "BAD_REQUEST",
+        errorTitle: "❌ Unknown Provider",
+        errorMessage: `Unknown provider adapter '${providerId}'.`,
+        userFacingMessage: `The provider adapter '${providerId}' is not supported.`,
+      };
+    }
+
+    const effectiveModel =
+      modelId?.trim() ||
+      providerTemplate?.selectedModel ||
+      providerTemplate?.availableModels[0]?.id ||
+      "default";
+
+    // Enforce explicit key requirement: never silently inject environment key for user test
+    if (!cleanKey && providerId !== "custom") {
+      return {
+        success: false,
+        providerId,
+        providerName,
+        model: effectiveModel,
+        keyId,
+        maskedKey: "no-key",
+        latencyMs: 0,
+        errorCode: "INVALID_API_KEY",
+        errorKind: "invalid_key",
+        errorTitle: "❌ Missing API Key",
+        errorMessage: "No API key was provided to test. Please enter a valid API key.",
+        userFacingMessage: "Please enter or paste an API key before testing.",
+        diagnostic: {
+          provider: providerName,
+          keyId: keyId || "unassigned",
+          modelId: effectiveModel,
+          endpoint: options?.customEndpoint || "default",
+          maskedKey: "no-key",
+          result: "MISSING_KEY",
+          latencyMs: 0,
+          rawMessage: "No key provided.",
+        },
+      };
+    }
+
+    try {
+      const result = await adapter.test(cleanKey, effectiveModel, {
+        keyId,
+        customEndpoint: options?.customEndpoint,
+        accountId: options?.accountId,
+        timeoutMs: options?.timeoutMs || 15000,
+      });
+
+      return {
+        ...result,
+        keyId,
+        model: effectiveModel,
+        providerId,
+        providerName,
+        maskedKey: masked,
+      };
+    } catch (err: any) {
+      const norm = adapter.classifyError ? adapter.classifyError(err) : adapter.normalizeError(err);
+      return {
+        success: false,
+        providerId,
+        providerName,
+        model: effectiveModel,
+        keyId,
+        maskedKey: masked,
+        latencyMs: 0,
+        errorCode: norm.code || "UNKNOWN_ERROR",
+        errorKind: norm.kind,
+        errorTitle: norm.title || "❌ Connection Failed",
+        errorMessage: norm.message,
+        statusCode: norm.statusCode,
+        userFacingMessage: norm.userFacingMessage || norm.message,
+        diagnostic: {
+          provider: providerName,
+          keyId: keyId || "unassigned",
+          modelId: effectiveModel,
+          endpoint: options?.customEndpoint || "default",
+          maskedKey: masked,
+          result: norm.code || "FAILED",
+          latencyMs: 0,
+          rawMessage: norm.message,
+        },
+      };
+    }
+  }
+
+  /**
+   * Scoped test for a provider key and model (backward-compatibility alias).
+   */
+  public async testProviderScoped(
+    providerId: string,
+    apiKey?: string,
+    model?: string,
+    customEndpoint?: string,
+    accountId?: string
+  ): Promise<TestResult> {
+    const cleanKey = apiKey?.trim() || "";
+    return this.testApiConnection(providerId, "probe-key", model || "", cleanKey, {
+      customEndpoint,
+      accountId,
+    });
+  }
+
+  /**
+   * Batch test active providers scoped to a user's request.
+   */
+  public async testAllScoped(providers: any[]): Promise<TestResult[]> {
+    const results: TestResult[] = [];
+    for (const p of providers) {
+      if (!p.enabled) continue;
+      // Test the first enabled key, or first available key
+      const keyObj = (p.apiKeys || []).find((k: any) => k.enabled && k.key) || (p.apiKeys || [])[0];
+      const res = await this.testApiConnection(
+        p.id,
+        keyObj?.id || "key-1",
+        p.selectedModel,
+        keyObj?.key || "",
+        { customEndpoint: p.customEndpoint, accountId: p.accountId }
+      );
+      results.push(res);
+    }
+    return results;
+  }
+
+  // --- REQUEST-SCOPED AUTHORITATIVE GENERATION PIPELINE ---
 
   /**
    * Central AI Request Execution with strict request-scoped isolation.
    *
-   * @param request The AI request payload (prompt, systemPrompt, capabilities, etc.)
-   * @param scopedConfig Optional user-specific manager configuration (mode, freeOnlyMode, fallback, etc.)
-   * @param scopedProviders Optional user-specific providers and API keys
+   * Pipeline steps:
+   * 1. resolveProvider()
+   * 2. resolveUserKey() (STRICTLY enabled === true)
+   * 3. resolveModel()
+   * 4. validateModel()
+   * 5. buildRequest()
+   * 6. sendRequest()
+   * 7. classifyResponse()
+   * 8. updateKeyStatus()
    */
   public async executeRequestScoped(
     request: AIRequest,
@@ -132,13 +313,13 @@ export class AIRequestManager {
     const fallbackChain: FallbackStep[] = [];
     const requiredCapabilities = request.capabilities || ["text", "math"];
 
-    // 1. Resolve local request configuration (never mutate defaults)
+    // 1. Resolve configuration
     const config: ManagerConfig = {
       ...DEFAULT_MANAGER_CONFIG,
       ...(scopedConfig || {}),
     };
 
-    // 2. Resolve candidate providers for this request
+    // 2. Resolve candidate providers
     const templates = getInitialProviders();
     let candidateProviders: ProviderConfig[] = [];
 
@@ -173,7 +354,7 @@ export class AIRequestManager {
       candidateProviders = templates;
     }
 
-    // 3. Determine candidate providers according to Mode and ON/OFF switch
+    // 3. Determine candidate providers according to Mode and Provider ON/OFF switch
     if (config.mode === "manual") {
       const activePId = config.activeProviderId || "gemini";
       const manualProvider = candidateProviders.find((p) => p.id === activePId);
@@ -188,7 +369,7 @@ export class AIRequestManager {
         }
       } else {
         throw new Error(
-          `Selected provider '${manualProvider?.name || activePId}' is currently turned OFF. Please turn it ON or switch to Automatic mode.`
+          `Selected provider '${manualProvider?.name || activePId}' is currently turned OFF. Please turn it ON in AI Settings or enable Automatic mode.`
         );
       }
     } else {
@@ -203,8 +384,6 @@ export class AIRequestManager {
       );
     }
 
-    let hadFreeEligibleProvider = false;
-
     // 4. Iterate through candidate providers in priority sequence
     for (const provider of candidateProviders) {
       if (!provider.enabled) continue;
@@ -212,102 +391,32 @@ export class AIRequestManager {
       const adapter = this.adapters.get(provider.id);
       if (!adapter) continue;
 
-      let activeKeys = (provider.apiKeys || []).filter((k) => k.enabled && k.key);
+      // RESOLVE USER KEYS: ONLY enabled === true keys can be used for normal generation!
+      let activeKeys = (provider.apiKeys || []).filter((k) => k.enabled && k.key && k.key.trim());
 
-      // Silent server-side API environment key fallback (if user has not provided their own key)
-      if (activeKeys.length === 0) {
-        if (provider.id === "gemini") {
-          const envKeys = [
-            process.env.GEMINI_API_KEY,
-            process.env.GEMINI_API_KEY_1,
-            process.env.GEMINI_API_KEY_2,
-          ].filter(Boolean) as string[];
-
-          if (envKeys.length > 0) {
-            activeKeys = envKeys.map((k, idx) => ({
-              id: `system-gemini-fallback-${idx + 1}`,
-              name: `Server Gemini ${idx + 1}`,
-              key: k,
-              enabled: true,
-              status: "active",
-            }));
-          }
-        } else if (provider.id === "groq") {
-          const envKeys = [
-            process.env.GROQ_API_KEY,
-            process.env.GROQ_API_KEY_1,
-          ].filter(Boolean) as string[];
-          if (envKeys.length > 0) {
-            activeKeys = envKeys.map((k, idx) => ({
-              id: `system-groq-fallback-${idx + 1}`,
-              name: `Server Groq ${idx + 1}`,
-              key: k,
-              enabled: true,
-              status: "active",
-            }));
-          }
-        } else if (provider.id === "openrouter" && process.env.OPENROUTER_API_KEY) {
+      // If user has not added any custom keys, allow server Gemini API environment fallback if available
+      if (activeKeys.length === 0 && provider.id === "gemini") {
+        const envKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_1;
+        if (envKey) {
           activeKeys = [
             {
-              id: "system-openrouter-fallback",
-              name: "Server OpenRouter",
-              key: process.env.OPENROUTER_API_KEY,
+              id: "server-gemini-default",
+              name: "Server Gemini Default",
+              key: envKey,
               enabled: true,
               status: "active",
             },
           ];
-        } else if (provider.id === "mistral" && process.env.MISTRAL_API_KEY) {
-          activeKeys = [
-            {
-              id: "system-mistral-fallback",
-              name: "Server Mistral",
-              key: process.env.MISTRAL_API_KEY,
-              enabled: true,
-              status: "active",
-            },
-          ];
-        } else if (provider.id === "cohere" && process.env.COHERE_API_KEY) {
-          activeKeys = [
-            {
-              id: "system-cohere-fallback",
-              name: "Server Cohere",
-              key: process.env.COHERE_API_KEY,
-              enabled: true,
-              status: "active",
-            },
-          ];
-        } else if (provider.id === "huggingface" && process.env.HF_API_KEY) {
-          activeKeys = [
-            {
-              id: "system-hf-fallback",
-              name: "Server HuggingFace",
-              key: process.env.HF_API_KEY,
-              enabled: true,
-              status: "active",
-            },
-          ];
-        } else if (provider.id === "cloudflare" && process.env.CLOUDFLARE_API_KEY) {
-          activeKeys = [
-            {
-              id: "system-cloudflare-fallback",
-              name: "Server Cloudflare",
-              key: process.env.CLOUDFLARE_API_KEY,
-              enabled: true,
-              status: "active",
-            },
-          ];
-          if (!provider.accountId && process.env.CLOUDFLARE_ACCOUNT_ID) {
-            provider.accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
-          }
         }
       }
 
+      // If this provider has NO enabled keys, record step and proceed to next provider
       if (activeKeys.length === 0) {
         fallbackChain.push({
           providerId: provider.id,
           providerName: provider.name,
           keyMasked: "none",
-          keyName: "No Active Keys",
+          keyName: "No Enabled Keys",
           model: provider.selectedModel,
           status: "invalid_key",
           errorMessage: "Provider has no enabled API keys (all keys are turned OFF or unconfigured).",
@@ -317,41 +426,32 @@ export class AIRequestManager {
         continue;
       }
 
-      // Determine model to use
+      // RESOLVE MODEL
       let modelToUse = provider.selectedModel;
       if (config.mode === "manual" && provider.id === config.activeProviderId && config.activeModel) {
         modelToUse = config.activeModel;
       }
 
+      // Check model in catalog
       let modelInfo = provider.availableModels.find((m) => m.id === modelToUse);
+      if (!modelInfo && provider.availableModels.length > 0) {
+        // Stale model detection: use first available model if stored model is no longer in catalog
+        modelToUse = provider.availableModels[0].id;
+        modelInfo = provider.availableModels[0];
+      }
 
-      // Check Cost Guardrail: Free-Only Mode
+      // Check Free-Only Guardrail
       const isFreeOnly =
         config.freeOnlyMode ||
         config.billingMode === "free_only" ||
         provider.billingMode === "free_only";
 
-      if (isFreeOnly) {
-        if (modelInfo && !modelInfo.isFree) {
-          if (config.enableModelFallback) {
-            const freeAlternative = provider.availableModels.find((m) => m.isFree);
-            if (freeAlternative) {
-              modelToUse = freeAlternative.id;
-              modelInfo = freeAlternative;
-              hadFreeEligibleProvider = true;
-            } else {
-              fallbackChain.push({
-                providerId: provider.id,
-                providerName: provider.name,
-                keyMasked: "all",
-                model: modelToUse,
-                status: "skipped_paid",
-                errorMessage: "Provider has no free models; skipped due to Free-Only mode.",
-                latencyMs: 0,
-                timestamp: Date.now(),
-              });
-              continue;
-            }
+      if (isFreeOnly && modelInfo && !modelInfo.isFree) {
+        if (config.enableModelFallback) {
+          const freeAlternative = provider.availableModels.find((m) => m.isFree);
+          if (freeAlternative) {
+            modelToUse = freeAlternative.id;
+            modelInfo = freeAlternative;
           } else {
             fallbackChain.push({
               providerId: provider.id,
@@ -359,14 +459,24 @@ export class AIRequestManager {
               keyMasked: "all",
               model: modelToUse,
               status: "skipped_paid",
-              errorMessage: "Model is paid; skipped due to Free-Only mode.",
+              errorMessage: "Provider has no free models; skipped due to Free-Only mode.",
               latencyMs: 0,
               timestamp: Date.now(),
             });
             continue;
           }
         } else {
-          hadFreeEligibleProvider = true;
+          fallbackChain.push({
+            providerId: provider.id,
+            providerName: provider.name,
+            keyMasked: "all",
+            model: modelToUse,
+            status: "skipped_paid",
+            errorMessage: "Model is paid; skipped due to Free-Only mode.",
+            latencyMs: 0,
+            timestamp: Date.now(),
+          });
+          continue;
         }
       }
 
@@ -428,6 +538,7 @@ export class AIRequestManager {
           const callStart = Date.now();
 
           try {
+            // BUILD & SEND REQUEST through Authoritative Adapter
             const result = await adapter.generate(
               { ...request, model: modelToUse },
               apiKey,
@@ -435,13 +546,13 @@ export class AIRequestManager {
               {
                 timeoutMs: provider.timeoutMs || config.defaultTimeoutMs,
                 customEndpoint: provider.customEndpoint,
+                accountId: provider.accountId,
                 temperature: request.temperature,
                 maxTokens: request.maxTokens,
               }
             );
 
             const latency = Date.now() - callStart;
-
             const effectiveModel = (result as any).modelUsed || modelToUse;
 
             fallbackChain.push({
@@ -467,9 +578,22 @@ export class AIRequestManager {
               outputTokensEst: result.outputTokens,
               fallbackChain,
             };
-          } catch (callErr: any) {
+          } catch (err: any) {
             const latency = Date.now() - callStart;
-            const norm = adapter.normalizeError(callErr);
+            const normalized = adapter.classifyError ? adapter.classifyError(err) : adapter.normalizeError(err);
+
+            const stepStatus =
+              normalized.code === "RATE_LIMIT" || normalized.kind === "rate_limit"
+                ? "rate_limited"
+                : normalized.code === "INVALID_API_KEY" || normalized.kind === "invalid_key"
+                ? "invalid_key"
+                : normalized.code === "MODEL_UNAVAILABLE" || normalized.kind === "model_unavailable"
+                ? "model_unavailable"
+                : normalized.code === "FORBIDDEN" || normalized.kind === "permission_denied"
+                ? "permission_denied"
+                : normalized.code === "TIMEOUT" || normalized.kind === "timeout"
+                ? "timeout"
+                : "server_error";
 
             fallbackChain.push({
               providerId: provider.id,
@@ -477,159 +601,40 @@ export class AIRequestManager {
               keyMasked: masked,
               keyName: keyItem.name,
               model: modelToUse,
-              status: norm.kind,
-              errorMessage: `[Attempt ${attempt}/${maxRetries}] ${norm.message}`,
+              status: stepStatus as any,
+              errorMessage: normalized.message,
               latencyMs: latency,
               timestamp: Date.now(),
             });
 
-            if (norm.kind === "invalid_key") {
-              break; // Don't retry invalid key
+            // If non-retryable (invalid key, model unavailable, forbidden), stop retrying this specific key
+            if (!normalized.retryable || normalized.code === "INVALID_API_KEY" || normalized.code === "MODEL_UNAVAILABLE") {
+              break;
             }
 
-            if (attempt < maxRetries) {
-              // If model fallback is enabled and we experienced a transient error (e.g. 503 high demand or 429 rate limit)
-              if (
-                config.enableModelFallback &&
-                (norm.kind === "server_error" || norm.kind === "rate_limit" || norm.kind === "timeout")
-              ) {
-                const altModel = provider.availableModels.find(
-                  (m) => m.id !== modelToUse && (isFreeOnly ? m.isFree : true)
-                );
-                if (altModel) {
-                  modelToUse = altModel.id;
-                }
-              }
-
-              const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
-              await new Promise((r) => setTimeout(r, backoff));
+            if (attempt < maxRetries && normalized.retryable) {
+              await new Promise((r) => setTimeout(r, 400 * attempt));
             }
           }
-        } // while attempt
-      } // for keyIdx
-
-      if (config.mode === "manual" && !config.enableFallback) {
-        break;
+        }
       }
-    } // for candidateProviders
+    }
 
-    const isFreeOnlyActive = config.freeOnlyMode || config.billingMode === "free_only";
-    const errorMessage =
-      isFreeOnlyActive && !hadFreeEligibleProvider
-        ? "All configured AI providers failed. All enabled free AI providers are currently unavailable."
-        : "All configured AI providers failed. All enabled AI providers are currently unavailable.";
+    const lastStep = fallbackChain[fallbackChain.length - 1];
+    const errorMessage = lastStep
+      ? `All configured AI providers failed. Last failure (${lastStep.providerName} / ${lastStep.model}): ${lastStep.errorMessage}`
+      : "All configured AI providers failed. All enabled AI providers are currently unavailable.";
 
     const error = new Error(errorMessage);
     (error as any).fallbackChain = fallbackChain;
     throw error;
   }
 
-  /**
-   * Execute using default configuration (backward-compatible fallback).
-   */
   public async execute(request: AIRequest): Promise<AIResponse> {
     return this.executeRequestScoped(request);
   }
 
-  /**
-   * Scoped test for a specific provider key and model.
-   * Completely isolated; never saves key or configuration to server memory or disk.
-   */
-  public async testProviderScoped(
-    providerId: string,
-    apiKey?: string,
-    model?: string,
-    customEndpoint?: string,
-    accountId?: string
-  ): Promise<TestResult> {
-    const adapter = this.adapters.get(providerId);
-    if (!adapter) {
-      return {
-        success: false,
-        providerId,
-        providerName: providerId,
-        model: model || "unknown",
-        latencyMs: 0,
-        errorMessage: `Unknown provider adapter '${providerId}'.`,
-      };
-    }
-
-    const providerTemplate = this.templateProviders.find((p) => p.id === providerId);
-    const providerName = providerTemplate?.name || adapter.name;
-    const modelToUse =
-      model ||
-      providerTemplate?.selectedModel ||
-      providerTemplate?.availableModels[0]?.id ||
-      "default";
-
-    let keyToUse = apiKey?.trim();
-    if (!keyToUse && providerId === "gemini" && process.env.GEMINI_API_KEY) {
-      keyToUse = process.env.GEMINI_API_KEY;
-    }
-
-    if (!keyToUse && providerId !== "custom") {
-      return {
-        success: false,
-        providerId,
-        providerName,
-        model: modelToUse,
-        latencyMs: 0,
-        errorMessage: "No API key provided to test. Please enter a valid API key.",
-        errorKind: "invalid_key",
-      };
-    }
-
-    const start = Date.now();
-    try {
-      const testRes = await adapter.testConnection(
-        keyToUse || "",
-        modelToUse,
-        customEndpoint,
-        15000
-      );
-      return {
-        ...testRes,
-        providerId,
-        providerName,
-        model: modelToUse,
-      };
-    } catch (err: any) {
-      const latencyMs = Date.now() - start;
-      const normalized = adapter.normalizeError(err);
-      return {
-        success: false,
-        providerId,
-        providerName,
-        model: modelToUse,
-        latencyMs,
-        errorMessage: normalized.message,
-        statusCode: normalized.statusCode,
-        errorKind: normalized.kind,
-      };
-    }
-  }
-
-  /**
-   * Batch test multiple providers scoped to a user's request.
-   */
-  public async testAllScoped(providers: any[]): Promise<TestResult[]> {
-    const results: TestResult[] = [];
-    for (const p of providers) {
-      if (!p.enabled) continue;
-      const activeKey = (p.apiKeys || []).find((k: any) => k.enabled && k.key);
-      const res = await this.testProviderScoped(
-        p.id,
-        activeKey?.key,
-        p.selectedModel,
-        p.customEndpoint,
-        p.accountId
-      );
-      results.push(res);
-    }
-    return results;
-  }
-
-  // --- No-Op compatibility stubs (settings are stored on the client) ---
+  // Compatibility stubs
   public updateManagerConfig(_updates: Partial<ManagerConfig>) {}
   public updateProvider(_id: string, _updates: Partial<ProviderConfig>): boolean {
     return true;
@@ -658,5 +663,4 @@ export class AIRequestManager {
   public resetToDefaults() {}
 }
 
-// Global Singleton instance for server runtime (stateless request dispatcher)
 export const aiRequestManager = new AIRequestManager();

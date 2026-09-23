@@ -26,6 +26,8 @@ import {
   DEFAULT_PROVIDER_STATS,
   resetAllUserData,
   maskApiKey,
+  setCachedProviderModels,
+  invalidateProviderModelCache,
 } from "../utils/userLocalStorage";
 import {
   X,
@@ -141,6 +143,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
   // Key testing state
   const [testingKeyId, setTestingKeyId] = useState<string | null>(null);
+  const [refreshingProviderId, setRefreshingProviderId] = useState<string | null>(null);
   const [testResults, setTestResults] = useState<Record<string, TestResult>>({});
 
   // Adding key state per provider
@@ -299,6 +302,45 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     }
   };
 
+  // Refresh live model catalog from provider API
+  const handleRefreshModels = async (providerId: string) => {
+    setRefreshingProviderId(providerId);
+    try {
+      const userProvs = getUserProviders();
+      const prov = userProvs.find((p) => p.id === providerId);
+      const keyObj = prov?.apiKeys?.find((k) => k.enabled && k.key) || prov?.apiKeys?.[0];
+
+      const res = await fetch("/api/ai/models", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          providerId,
+          apiKey: keyObj?.key,
+          customEndpoint: prov?.customEndpoint,
+        }),
+      });
+      const data = await res.json();
+      if (data.success && Array.isArray(data.models) && data.models.length > 0) {
+        setCachedProviderModels(providerId, data.models);
+        if (prov) {
+          prov.availableModels = data.models;
+          if (!data.models.some((m: ModelInfo) => m.id === prov.selectedModel)) {
+            prov.selectedModel = data.models[0].id;
+          }
+          saveUserProviders(userProvs);
+          setProviders(toClientProviders(userProvs));
+        }
+        showStatus(`✓ Refreshed models for ${prov?.name || providerId} (${data.models.length} active models)`);
+      } else {
+        showStatus(data.error || `Could not refresh models for ${prov?.name || providerId}`, "error");
+      }
+    } catch (err: any) {
+      showStatus(err.message || "Failed to refresh models", "error");
+    } finally {
+      setRefreshingProviderId(null);
+    }
+  };
+
   // Test individual API key + selected model
   const handleTestKey = async (providerId: string, keyId: string, model?: string) => {
     const testId = `${providerId}-${keyId}`;
@@ -308,13 +350,17 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       const prov = userProvs.find((p) => p.id === providerId);
       const keyObj = prov?.apiKeys?.find((k) => k.id === keyId);
       const rawKey = keyObj?.key;
+      const targetModel = model || prov?.selectedModel;
 
-      const res = await fetch(`/api/ai/providers/${providerId}/test`, {
+      const res = await fetch(`/api/ai/test`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
+          providerId,
+          keyId,
           apiKey: rawKey,
-          model: model || prov?.selectedModel,
+          modelId: targetModel,
+          model: targetModel,
           customEndpoint: prov?.customEndpoint,
           accountId: prov?.accountId,
         }),
@@ -325,12 +371,21 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       if (keyObj) {
         keyObj.lastTestedAt = Date.now();
         keyObj.lastTestLatencyMs = result.latencyMs;
+        keyObj.lastTestedModel = result.model || targetModel;
+        keyObj.lastErrorCode = result.errorCode;
         if (result.success) {
           keyObj.status = "active";
           keyObj.lastError = undefined;
+        } else if (result.errorCode === "MODEL_UNAVAILABLE" || result.errorKind === "model_unavailable") {
+          keyObj.status = "model_unavailable";
+          keyObj.lastError = result.userFacingMessage || result.errorMessage;
+          invalidateProviderModelCache(providerId);
+        } else if (result.errorCode === "RATE_LIMIT" || result.errorKind === "rate_limit") {
+          keyObj.status = "rate_limited";
+          keyObj.lastError = result.userFacingMessage || result.errorMessage;
         } else {
-          keyObj.status = result.errorKind === "rate_limit" ? "rate_limited" : "invalid";
-          keyObj.lastError = result.errorMessage;
+          keyObj.status = "invalid";
+          keyObj.lastError = result.userFacingMessage || result.errorMessage;
         }
         saveUserProviders(userProvs);
         setProviders(toClientProviders(userProvs));
@@ -375,8 +430,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           `✓ Connection successful: ${result.providerName} (${result.model}) • Response: ${result.latencyMs}ms`
         );
       } else {
+        const title = result.errorTitle || (result.errorCode ? `[${result.errorCode}]` : "Connection failed");
         showStatus(
-          `✕ Connection failed for ${result.providerName}: ${result.errorMessage || "Unknown error"}`,
+          `${title}: ${result.userFacingMessage || result.errorMessage || "Unknown error"}`,
           "error"
         );
       }
@@ -1239,11 +1295,23 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                         {/* Provider Card Body */}
                         <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
                           <div className="space-y-2.5">
-                            {/* Model Selector */}
+                            {/* Model Selector with Dynamic Catalog Refresh */}
                             <div>
-                              <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                Selected Model:
-                              </label>
+                              <div className="flex items-center justify-between mb-1">
+                                <label className="text-[11px] font-bold text-slate-700">
+                                  Selected Model:
+                                </label>
+                                <button
+                                  type="button"
+                                  onClick={() => handleRefreshModels(p.id)}
+                                  disabled={refreshingProviderId === p.id}
+                                  className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer disabled:opacity-50"
+                                  title="Fetch latest models from provider catalog"
+                                >
+                                  <RefreshCw className={`w-2.5 h-2.5 ${refreshingProviderId === p.id ? "animate-spin" : ""}`} />
+                                  <span>{refreshingProviderId === p.id ? "Fetching..." : "Refresh"}</span>
+                                </button>
+                              </div>
                               <select
                                 value={p.selectedModel}
                                 onChange={(e) => handleUpdateProvider(p.id, { selectedModel: e.target.value })}
@@ -1436,6 +1504,30 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                           </button>
                                         </div>
                                       </div>
+
+                                      {/* Key Error details if any */}
+                                      {k.lastError && (
+                                        <div className="mt-1 p-1.5 rounded bg-rose-50 border border-rose-200 text-[10px] text-rose-700 leading-tight">
+                                          {k.lastErrorCode && <span className="font-bold mr-1">[{k.lastErrorCode}]</span>}
+                                          {k.lastError}
+                                          {k.lastTestedModel && (
+                                            <span className="block text-[9px] text-rose-500 mt-0.5 font-mono">
+                                              Model: {k.lastTestedModel}
+                                            </span>
+                                          )}
+                                        </div>
+                                      )}
+
+                                      {/* Safe Diagnostic Info (Requirement 20) */}
+                                      {testResults[testKey]?.diagnostic && (
+                                        <div className="mt-1 p-1.5 rounded bg-slate-900 text-slate-100 font-mono text-[9px] space-y-0.5 leading-tight">
+                                          <div className="text-amber-400 font-bold">Diagnostic:</div>
+                                          <div className="truncate">Provider: {testResults[testKey].diagnostic?.provider}</div>
+                                          <div className="truncate">Model: {testResults[testKey].diagnostic?.modelId}</div>
+                                          <div className="truncate">Key: {testResults[testKey].diagnostic?.maskedKey}</div>
+                                          <div className="truncate">Result: {testResults[testKey].diagnostic?.result} ({testResults[testKey].latencyMs}ms)</div>
+                                        </div>
+                                      )}
                                     </div>
                                   );
                                 })

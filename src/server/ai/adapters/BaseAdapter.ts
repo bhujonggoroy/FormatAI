@@ -4,38 +4,19 @@ import type {
   NormalizedAIError,
   TestResult,
 } from "../types.ts";
+import type {
+  IAIProviderAdapter,
+  AIProviderAdapter,
+  AdapterOptions,
+  GenerationResult,
+} from "../../../providers/IAIProviderAdapter.ts";
 
-export interface AdapterOptions {
-  timeoutMs?: number;
-  customEndpoint?: string;
-  temperature?: number;
-  maxTokens?: number;
-}
-
-export interface AIProviderAdapter {
-  readonly id: string;
-  readonly name: string;
-
-  generate(
-    request: AIRequest,
-    key: string,
-    model: string,
-    options?: AdapterOptions
-  ): Promise<{ text: string; inputTokens?: number; outputTokens?: number }>;
-
-  testConnection(
-    key: string,
-    model: string,
-    customEndpoint?: string,
-    timeoutMs?: number
-  ): Promise<TestResult>;
-
-  listModels(): Promise<ModelInfo[]>;
-
-  normalizeError(error: any): NormalizedAIError;
-
-  supportsCapability(capability: string, modelId: string): boolean;
-}
+export type {
+  IAIProviderAdapter,
+  AIProviderAdapter,
+  AdapterOptions,
+  GenerationResult,
+};
 
 export function maskApiKey(key: string): string {
   if (!key) return "no-key";
