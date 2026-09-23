@@ -179,11 +179,11 @@ export class AIRequestManager {
       const manualProvider = candidateProviders.find((p) => p.id === activePId);
 
       if (manualProvider && manualProvider.enabled) {
+        const others = candidateProviders
+          .filter((p) => p.enabled && p.id !== activePId)
+          .sort((a, b) => a.priority - b.priority);
         candidateProviders = [manualProvider];
         if (config.enableFallback) {
-          const others = candidateProviders
-            .filter((p) => p.enabled && p.id !== activePId)
-            .sort((a, b) => a.priority - b.priority);
           candidateProviders.push(...others);
         }
       } else {
@@ -214,21 +214,92 @@ export class AIRequestManager {
 
       let activeKeys = (provider.apiKeys || []).filter((k) => k.enabled && k.key);
 
-      // Silent server-side Gemini environment key fallback (if user has not provided their own key)
-      if (
-        activeKeys.length === 0 &&
-        provider.id === "gemini" &&
-        process.env.GEMINI_API_KEY
-      ) {
-        activeKeys = [
-          {
-            id: "system-gemini-fallback",
-            name: "Server Gemini",
-            key: process.env.GEMINI_API_KEY,
-            enabled: true,
-            status: "active",
-          },
-        ];
+      // Silent server-side API environment key fallback (if user has not provided their own key)
+      if (activeKeys.length === 0) {
+        if (provider.id === "gemini") {
+          const envKeys = [
+            process.env.GEMINI_API_KEY,
+            process.env.GEMINI_API_KEY_1,
+            process.env.GEMINI_API_KEY_2,
+          ].filter(Boolean) as string[];
+
+          if (envKeys.length > 0) {
+            activeKeys = envKeys.map((k, idx) => ({
+              id: `system-gemini-fallback-${idx + 1}`,
+              name: `Server Gemini ${idx + 1}`,
+              key: k,
+              enabled: true,
+              status: "active",
+            }));
+          }
+        } else if (provider.id === "groq") {
+          const envKeys = [
+            process.env.GROQ_API_KEY,
+            process.env.GROQ_API_KEY_1,
+          ].filter(Boolean) as string[];
+          if (envKeys.length > 0) {
+            activeKeys = envKeys.map((k, idx) => ({
+              id: `system-groq-fallback-${idx + 1}`,
+              name: `Server Groq ${idx + 1}`,
+              key: k,
+              enabled: true,
+              status: "active",
+            }));
+          }
+        } else if (provider.id === "openrouter" && process.env.OPENROUTER_API_KEY) {
+          activeKeys = [
+            {
+              id: "system-openrouter-fallback",
+              name: "Server OpenRouter",
+              key: process.env.OPENROUTER_API_KEY,
+              enabled: true,
+              status: "active",
+            },
+          ];
+        } else if (provider.id === "mistral" && process.env.MISTRAL_API_KEY) {
+          activeKeys = [
+            {
+              id: "system-mistral-fallback",
+              name: "Server Mistral",
+              key: process.env.MISTRAL_API_KEY,
+              enabled: true,
+              status: "active",
+            },
+          ];
+        } else if (provider.id === "cohere" && process.env.COHERE_API_KEY) {
+          activeKeys = [
+            {
+              id: "system-cohere-fallback",
+              name: "Server Cohere",
+              key: process.env.COHERE_API_KEY,
+              enabled: true,
+              status: "active",
+            },
+          ];
+        } else if (provider.id === "huggingface" && process.env.HF_API_KEY) {
+          activeKeys = [
+            {
+              id: "system-hf-fallback",
+              name: "Server HuggingFace",
+              key: process.env.HF_API_KEY,
+              enabled: true,
+              status: "active",
+            },
+          ];
+        } else if (provider.id === "cloudflare" && process.env.CLOUDFLARE_API_KEY) {
+          activeKeys = [
+            {
+              id: "system-cloudflare-fallback",
+              name: "Server Cloudflare",
+              key: process.env.CLOUDFLARE_API_KEY,
+              enabled: true,
+              status: "active",
+            },
+          ];
+          if (!provider.accountId && process.env.CLOUDFLARE_ACCOUNT_ID) {
+            provider.accountId = process.env.CLOUDFLARE_ACCOUNT_ID;
+          }
+        }
       }
 
       if (activeKeys.length === 0) {
@@ -371,12 +442,14 @@ export class AIRequestManager {
 
             const latency = Date.now() - callStart;
 
+            const effectiveModel = (result as any).modelUsed || modelToUse;
+
             fallbackChain.push({
               providerId: provider.id,
               providerName: provider.name,
               keyMasked: masked,
               keyName: keyItem.name,
-              model: modelToUse,
+              model: effectiveModel,
               status: "success",
               latencyMs: latency,
               timestamp: Date.now(),
@@ -386,7 +459,7 @@ export class AIRequestManager {
               text: result.text,
               providerId: provider.id,
               providerName: provider.name,
-              model: modelToUse,
+              model: effectiveModel,
               keyMasked: masked,
               keyName: keyItem.name,
               latencyMs: Date.now() - overallStartTime,
@@ -415,6 +488,19 @@ export class AIRequestManager {
             }
 
             if (attempt < maxRetries) {
+              // If model fallback is enabled and we experienced a transient error (e.g. 503 high demand or 429 rate limit)
+              if (
+                config.enableModelFallback &&
+                (norm.kind === "server_error" || norm.kind === "rate_limit" || norm.kind === "timeout")
+              ) {
+                const altModel = provider.availableModels.find(
+                  (m) => m.id !== modelToUse && (isFreeOnly ? m.isFree : true)
+                );
+                if (altModel) {
+                  modelToUse = altModel.id;
+                }
+              }
+
               const backoff = Math.min(1000 * Math.pow(2, attempt - 1), 4000);
               await new Promise((r) => setTimeout(r, backoff));
             }

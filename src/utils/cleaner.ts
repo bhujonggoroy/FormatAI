@@ -5,6 +5,7 @@
  */
 
 import { executeSkillPipeline } from "../skills/pipeline.ts";
+import type { SkillMode } from "../skills/types.ts";
 
 export type FormatMode = "auto" | "study_guide" | "exam_bank";
 
@@ -57,13 +58,14 @@ export function cleanMathFormula(expr: string): string {
 export function cleanClientSideNotebookLM(
   text: string,
   formatMode: FormatMode = "auto",
-  enabledSkillIds?: string[]
+  enabledSkillIds?: string[],
+  skillMode?: SkillMode
 ): string {
   if (!text) return "";
 
   // 1. Execute Modular Skills Pipeline in priority order:
   // (1. Math -> 2. Scientific -> 3. Academic Manuscript -> 4. General Text)
-  const skillResult = executeSkillPipeline(text, enabledSkillIds);
+  const skillResult = executeSkillPipeline(text, enabledSkillIds, skillMode);
   let s = skillResult.text;
 
   // 0. Remove trailing copy-pasted user prompt artifacts or chat commands
@@ -100,11 +102,12 @@ export function cleanClientSideNotebookLM(
     }
 
     // Do NOT merge if buffer or line is a display equation delimiter or block
-    const isBufferBlockMath = /^(?:\\)+\[|^(?:\\)+\]|^\$\$$/.test(buffer.trim()) || buffer.trim().endsWith("\\]") || buffer.trim().endsWith("$$");
-    const isLineBlockMath = /^(?:\\)+\[|^(?:\\)+\]|^\$\$$/.test(line) || line.endsWith("\\]") || line.endsWith("$$");
-    const isLineStructural = /^#{1,6}\s+|^(?:[-*•⁃◦▪▫–—]|o|\d+[\.\)])\s+|^>|^\|/.test(line);
+    const isBufferBlockMath = /^(?:\\)+\[|^(?:\\)+\]|^\$\$$/.test(buffer.trim()) || /(?:\\)+\]$/.test(buffer.trim()) || buffer.trim().endsWith("$$");
+    const isLineBlockMath = /^(?:\\)+\[|^(?:\\)+\]|^\$\$$/.test(line) || /(?:\\)+\]$/.test(line) || line.endsWith("$$");
+    const isLineStructural = /^#{1,6}\s+|^(?:[-*•⁃◦▪▫–—]|o|\d+[\.\)])\s+|^>|^\||^(\*{3,}|-{3,}|_{3,})$/.test(line);
+    const isBufferStructural = /^#{1,6}\s+|^(?:[-*•⁃◦▪▫–—]|o|\d+[\.\)])\s+|^>|^\||^(\*{3,}|-{3,}|_{3,})$/.test(buffer.trim());
 
-    if (isBufferBlockMath || isLineBlockMath || isLineStructural) {
+    if (isBufferBlockMath || isLineBlockMath || isLineStructural || isBufferStructural) {
       mergedLines.push(buffer);
       buffer = line;
       continue;
@@ -653,7 +656,7 @@ function normalizeLineMath(line: string): string {
   };
 
   // 1. Protect all existing math blocks ($$...$$, \[...\], \(...\), $...$, `...`) BEFORE any other regex
-  s = s.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
+  s = s.replace(/(\$\$[\s\S]*?\$\$|(?:\\)+\[[\s\S]*?(?:\\)+\]|(?:\\)+\([\s\S]*?(?:\\)+\)|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
 
   // Normalize terms with math: **Parameter ($\theta$):** -> **Parameter** ($\theta$):
   s = s.replace(/\*\*([^*]+?)\s*\(\$([^$]+?)\$\)\s*:\*\*/g, (_, term, math) => `**${term}** ($${math}$):`);

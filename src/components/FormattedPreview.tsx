@@ -91,12 +91,20 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     math,
     display = false,
   }) => {
-    const cleanMath = math.trim();
+    const cleanMath = useMemo(() => {
+      let m = math.trim();
+      // Strip trailing spacers and spurious newline tokens that trigger KaTeX display mode warnings
+      m = m.replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "");
+      m = m.replace(/^(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+/g, "");
+      return m.trim();
+    }, [math]);
+
     const html = useMemo(() => {
       try {
         return katex.renderToString(cleanMath, {
           displayMode: display,
           throwOnError: false,
+          strict: "ignore",
         });
       } catch (err) {
         return `<span class="text-rose-700 font-mono text-xs">${cleanMath}</span>`;
@@ -116,8 +124,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   };
 
   function renderInline(text: string) {
-    // Splits by display math ($$...$$), inline math ($...$ or \(...\)), bold (**...**), italic (*...*), and inline code (`...`)
-    const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+    // Splits by display math ($$...$$ or \[...\]), inline math ($...$ or \(...\)), bold (**...**), italic (*...*), and inline code (`...`)
+    const parts = text.split(/(\$\$[\s\S]+?\$\$|(?:\\)+\[[^\n]+?(?:\\)+\]|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
 
     return parts.map((part, i) => {
       if (!part) return null;
@@ -129,15 +137,22 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       }
 
       // Inline LaTeX math: \(...\) or \\(...\\)
-      const inlineParenMatch = part.match(/^(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)$/);
+      const inlineParenMatch = part.match(/^(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\)$/);
       if (inlineParenMatch) {
-        const mathContent = inlineParenMatch[1].trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+        const mathContent = inlineParenMatch[1].trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
         return <MathComponent key={i} math={mathContent} display={false} />;
       }
 
       // Display LaTeX math if embedded: $$...$$
       if (part.startsWith("$$") && part.endsWith("$$") && part.length >= 4) {
         const mathContent = part.slice(2, -2).trim();
+        return <MathComponent key={i} math={mathContent} display={true} />;
+      }
+
+      // Display bracket LaTeX math if embedded inline: \[...\]
+      const inlineBracketMatch = part.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\]$/);
+      if (inlineBracketMatch) {
+        const mathContent = inlineBracketMatch[1].trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
         return <MathComponent key={i} math={mathContent} display={true} />;
       }
 
@@ -194,8 +209,9 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     // Display equation block: $$...$$ (single or multi-line)
     if (trimmed.startsWith("$$")) {
       let mathContent = "";
-      if (trimmed.endsWith("$$") && trimmed.length >= 4) {
-        mathContent = trimmed.slice(2, -2).trim();
+      if (trimmed.length >= 4 && trimmed.slice(2).includes("$$")) {
+        const endIdx = trimmed.slice(2).indexOf("$$");
+        mathContent = trimmed.slice(2, 2 + endIdx).trim();
         i++;
       } else {
         const mathLines: string[] = [];
@@ -204,10 +220,15 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         i++;
         while (i < lines.length) {
           const nextTrimmed = lines[i].trim();
-          if (nextTrimmed.endsWith("$$")) {
-            const endPart = nextTrimmed.slice(0, -2).trim();
+          if (nextTrimmed.includes("$$")) {
+            const endIdx = nextTrimmed.indexOf("$$");
+            const endPart = nextTrimmed.slice(0, endIdx).trim();
             if (endPart) mathLines.push(endPart);
             i++;
+            break;
+          }
+          // CRITICAL SAFETY GUARD: Never swallow structural markdown into an unclosed equation
+          if (/^#{1,6}\s+|^(\*{3,}|-{3,}|_{3,})$|^>\s+|^\|/.test(nextTrimmed)) {
             break;
           }
           mathLines.push(lines[i]);
@@ -232,9 +253,13 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     // Display equation block: \[...\] or \\[...\\] (single or multi-line)
     if (/^(?:\\)+\[/.test(trimmed)) {
       let mathContent = "";
-      const singleMatch = trimmed.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]$/);
-      if (singleMatch) {
-        mathContent = singleMatch[1].trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+      // Check if closing bracket is on this same line:
+      const closeBracketIndex = trimmed.search(/(?:\\)+\]/);
+      if (closeBracketIndex !== -1) {
+        const openMatch = trimmed.match(/^(?:\\)+\[\s*/)!;
+        const startIdx = openMatch[0].length;
+        mathContent = trimmed.slice(startIdx, closeBracketIndex).trim();
+        mathContent = mathContent.replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
         i++;
       } else {
         const mathLines: string[] = [];
@@ -243,16 +268,21 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         i++;
         while (i < lines.length) {
           const nextTrimmed = lines[i].trim();
-          if (/(?:\\)+\]$/.test(nextTrimmed)) {
-            const endPart = nextTrimmed.replace(/(?:\\)+\]$/, "").trim();
+          const nextCloseIdx = nextTrimmed.search(/(?:\\)+\]/);
+          if (nextCloseIdx !== -1) {
+            const endPart = nextTrimmed.slice(0, nextCloseIdx).trim();
             if (endPart) mathLines.push(endPart);
             i++;
+            break;
+          }
+          // CRITICAL SAFETY GUARD: Never swallow structural markdown into an unclosed equation
+          if (/^#{1,6}\s+|^(\*{3,}|-{3,}|_{3,})$|^>\s+|^\|/.test(nextTrimmed)) {
             break;
           }
           mathLines.push(lines[i]);
           i++;
         }
-        mathContent = mathLines.join(" ").trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+        mathContent = mathLines.join(" ").trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
       }
 
       if (mathContent) {

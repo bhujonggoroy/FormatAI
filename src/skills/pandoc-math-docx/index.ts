@@ -74,14 +74,18 @@ export const pandocMathDocxSkill: Skill = {
     let s = text;
 
     // 1. Normalize bracketed display math: \[ ... \] or \\[ ... \\]
-    s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]/g, (_, math) => {
-      const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\]/g, (match, math) => {
+      // Safety guard: if math contains a markdown heading or divider, it was an unclosed bracket
+      if (/(?:^|\n)#{1,6}\s+|(?:^|\n)(?:\*{3,}|-{3,}|_{3,})(?:\n|$)/.test(math)) {
+        return match;
+      }
+      const cleaned = math.trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
       return `\n\n$$\n${cleaned}\n$$\n\n`;
     });
 
     // 2. Normalize bracketed inline math: \( ... \) or \\( ... \\)
-    s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
-      const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\)/g, (_, math) => {
+      const cleaned = math.trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
       return `$${cleaned}$`;
     });
 

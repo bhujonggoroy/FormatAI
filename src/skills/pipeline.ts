@@ -17,21 +17,36 @@ export function executeSkillPipeline(
       text: "",
       executedSkillIds: [],
       appliedTransformations: [],
-      mode: mode || "auto",
+      mode: mode || skillOrchestrator.getMode(),
     };
   }
 
-  // If specific skill IDs are provided, run with mode = 'manual' and those skills
-  if (enabledSkillIds && enabledSkillIds.length > 0) {
+  const effectiveMode = mode || skillOrchestrator.getMode();
+
+  // If manual mode is active, pass the enabled skill IDs
+  if (effectiveMode === "manual") {
+    const ids = enabledSkillIds && enabledSkillIds.length > 0
+      ? enabledSkillIds
+      : skillRegistry.getEnabledSkillIds();
     const { result } = skillOrchestrator.orchestrate(text, {
       mode: "manual",
-      skillIds: enabledSkillIds,
+      skillIds: ids,
     });
     return result;
   }
 
-  // Otherwise delegate to skillOrchestrator with requested mode
-  const { result } = skillOrchestrator.orchestrate(text, { mode });
+  // If ALL ON mode is active, orchestrate all 12 skills
+  if (effectiveMode === "all_on") {
+    const { result } = skillOrchestrator.orchestrate(text, {
+      mode: "all_on",
+    });
+    return result;
+  }
+
+  // Default: AUTO DETECT mode
+  const { result } = skillOrchestrator.orchestrate(text, {
+    mode: "auto",
+  });
   return result;
 }
 
@@ -44,7 +59,9 @@ export function getCombinedSkillPromptInstructions(
   mode?: SkillMode,
   text?: string
 ): string {
-  if (enabledSkillIds && enabledSkillIds.length > 0) {
+  const effectiveMode = mode || skillOrchestrator.getMode();
+
+  if (effectiveMode === "manual" && enabledSkillIds && enabledSkillIds.length > 0) {
     const allEnabled = skillRegistry
       .getAllSkills()
       .filter((s) => enabledSkillIds.includes(s.id));
@@ -56,7 +73,7 @@ export function getCombinedSkillPromptInstructions(
     return sections.join("\n\n");
   }
 
-  return skillOrchestrator.getCombinedSystemPrompt(mode, text);
+  return skillOrchestrator.getCombinedSystemPrompt(effectiveMode, text, enabledSkillIds);
 }
 
 /**

@@ -182,37 +182,84 @@ export class GeminiAdapter implements AIProviderAdapter {
       selectedModel = "gemini-3.8-flash";
     }
 
-    let response: any;
-    try {
-      response = await ai.models.generateContent({
-        model: selectedModel,
-        contents: request.prompt,
-        config,
-      });
-    } catch (err: any) {
-      // If the selected model returns a 404/not available error, fallback to gemini-flash-latest or gemini-3.8-flash
-      if (
-        (err?.status === 404 || String(err?.message || "").includes("no longer available") || String(err?.message || "").includes("NOT_FOUND")) &&
-        selectedModel !== "gemini-flash-latest"
-      ) {
+    // Build ordered candidate models list for maximum resilience against demand spikes & 503 errors
+    const candidateModels: string[] = [selectedModel];
+    const fallbackOptions = ["gemini-3.8-flash", "gemini-3.1-flash-lite", "gemini-flash-latest"];
+    for (const opt of fallbackOptions) {
+      if (!candidateModels.includes(opt)) {
+        candidateModels.push(opt);
+      }
+    }
+
+    let response: any = null;
+    let lastError: any = null;
+    let successfulModel = selectedModel;
+
+    for (let i = 0; i < candidateModels.length; i++) {
+      const currentModel = candidateModels[i];
+      try {
         response = await ai.models.generateContent({
-          model: "gemini-flash-latest",
+          model: currentModel,
           contents: request.prompt,
           config,
         });
-      } else {
+        successfulModel = currentModel;
+        lastError = null;
+        break;
+      } catch (err: any) {
+        lastError = err;
+        const msg = String(err?.message || "");
+        const isAuthError =
+          err?.status === 401 ||
+          err?.status === 403 ||
+          msg.includes("API_KEY_INVALID") ||
+          msg.includes("unauthenticated") ||
+          msg.includes("permission_denied");
+
+        // Auth errors are not model-specific; don't cycle through models with bad credentials
+        if (isAuthError) {
+          throw err;
+        }
+
+        const isTransientOrModelError =
+          err?.status === 503 ||
+          err?.status === 429 ||
+          err?.status === 500 ||
+          err?.status === 404 ||
+          msg.includes("high demand") ||
+          msg.includes("Spikes in demand") ||
+          msg.includes("UNAVAILABLE") ||
+          msg.includes("RESOURCE_EXHAUSTED") ||
+          msg.includes("quota") ||
+          msg.includes("rate limit") ||
+          msg.includes("no longer available") ||
+          msg.includes("NOT_FOUND") ||
+          msg.includes("Overloaded");
+
+        // If there are more models to try and this is a transient model error, proceed to next model
+        if (isTransientOrModelError && i < candidateModels.length - 1) {
+          console.warn(
+            `[GeminiAdapter] Model '${currentModel}' returned status ${err?.status || "error"} (${err?.message?.slice(0, 80)}...). Cascading to '${candidateModels[i + 1]}' for resilience...`
+          );
+          continue;
+        }
+
         throw err;
       }
+    }
+
+    if (!response && lastError) {
+      throw lastError;
     }
 
     const inPrompt = request.systemPrompt
       ? `${request.systemPrompt}\n\n${request.prompt}`
       : request.prompt;
-    const text = response.text || "";
+    const text = response?.text || "";
     const inTokens = estimateTokenCount(inPrompt);
     const outTokens = estimateTokenCount(text);
 
-    return { text, inputTokens: inTokens, outputTokens: outTokens };
+    return { text, inputTokens: inTokens, outputTokens: outTokens, modelUsed: successfulModel } as any;
   }
 
   async testConnection(
@@ -246,7 +293,7 @@ export class GeminiAdapter implements AIProviderAdapter {
           success: true,
           providerId: this.id,
           providerName: this.name,
-          model: targetModel,
+          model: (res as any).modelUsed || targetModel,
           latencyMs: latency,
         };
       }

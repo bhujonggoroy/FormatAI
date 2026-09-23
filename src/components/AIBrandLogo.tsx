@@ -18,6 +18,38 @@ export interface AIProviderTheme {
 }
 
 export const AI_PROVIDER_THEMES: Record<string, AIProviderTheme> = {
+  formatai: {
+    id: "formatai",
+    name: "FormatAI (No AI / Local)",
+    badgeLabel: "Instant • No AI",
+    topBarGradient: "bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500",
+    headerBg: "bg-gradient-to-b from-blue-50/90 via-indigo-50/40 to-white",
+    cardBorder: "border-blue-400 hover:border-blue-600",
+    activeRing: "ring-2 ring-blue-500/50 shadow-md shadow-blue-100/50",
+    activeBorder: "border-blue-600",
+    switchActiveBg: "bg-blue-600",
+    badgeStyle: "bg-blue-100 text-blue-900 border-blue-200",
+    titleColor: "text-blue-950",
+    accentText: "text-blue-600",
+    keyBadgeBg: "bg-blue-50 text-blue-800 border-blue-200",
+    brandTag: "FormatAI",
+  },
+  local: {
+    id: "local",
+    name: "FormatAI Engine",
+    badgeLabel: "Deterministic",
+    topBarGradient: "bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500",
+    headerBg: "bg-gradient-to-b from-blue-50/90 via-indigo-50/40 to-white",
+    cardBorder: "border-blue-400 hover:border-blue-600",
+    activeRing: "ring-2 ring-blue-500/50 shadow-md shadow-blue-100/50",
+    activeBorder: "border-blue-600",
+    switchActiveBg: "bg-blue-600",
+    badgeStyle: "bg-blue-100 text-blue-900 border-blue-200",
+    titleColor: "text-blue-950",
+    accentText: "text-blue-600",
+    keyBadgeBg: "bg-blue-50 text-blue-800 border-blue-200",
+    brandTag: "FormatAI",
+  },
   gemini: {
     id: "gemini",
     name: "Google Gemini",
@@ -145,38 +177,6 @@ export const AI_PROVIDER_THEMES: Record<string, AIProviderTheme> = {
     accentText: "text-slate-700",
     keyBadgeBg: "bg-slate-100 text-slate-700 border-slate-200",
     brandTag: "Custom",
-  },
-  formatai: {
-    id: "formatai",
-    name: "FormatAI (No AI / Local)",
-    badgeLabel: "Instant • No AI",
-    topBarGradient: "bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500",
-    headerBg: "bg-gradient-to-b from-blue-50/90 via-indigo-50/40 to-white",
-    cardBorder: "border-blue-400 hover:border-blue-600",
-    activeRing: "ring-2 ring-blue-500/50 shadow-md shadow-blue-100/50",
-    activeBorder: "border-blue-600",
-    switchActiveBg: "bg-blue-600",
-    badgeStyle: "bg-blue-100 text-blue-900 border-blue-200",
-    titleColor: "text-blue-950",
-    accentText: "text-blue-600",
-    keyBadgeBg: "bg-blue-50 text-blue-800 border-blue-200",
-    brandTag: "FormatAI",
-  },
-  local: {
-    id: "local",
-    name: "FormatAI Engine",
-    badgeLabel: "Deterministic",
-    topBarGradient: "bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500",
-    headerBg: "bg-gradient-to-b from-blue-50/90 via-indigo-50/40 to-white",
-    cardBorder: "border-blue-400 hover:border-blue-600",
-    activeRing: "ring-2 ring-blue-500/50 shadow-md shadow-blue-100/50",
-    activeBorder: "border-blue-600",
-    switchActiveBg: "bg-blue-600",
-    badgeStyle: "bg-blue-100 text-blue-900 border-blue-200",
-    titleColor: "text-blue-950",
-    accentText: "text-blue-600",
-    keyBadgeBg: "bg-blue-50 text-blue-800 border-blue-200",
-    brandTag: "FormatAI",
   },
 };
 
@@ -381,6 +381,34 @@ export const AIBrandLogo: React.FC<AIBrandLogoProps> = ({
             d="M17.5 15.5C18.88 15.5 20 14.38 20 13C20 11.66 18.96 10.56 17.65 10.51C17.23 8.52 15.48 7 13.35 7C11.61 7 10.12 7.99 9.4 9.45C9.02 9.32 8.62 9.25 8.2 9.25C6.43 9.25 5 10.68 5 12.45C5 12.57 5.01 12.69 5.03 12.81C4.42 13.26 4 14 4 14.85C4 16.04 4.96 17 6.15 17H17.5"
             fill="white"
           />
+        </svg>
+      );
+
+    case "formatai":
+    case "local":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          className={`${sizeClasses} ${className} shrink-0`}
+          aria-label="FormatAI Native Logo"
+        >
+          <defs>
+            <linearGradient id={`formatai-grad-${size}`} x1="0%" y1="0%" x2="100%" y2="100%">
+              <stop offset="0%" stopColor="#059669" />
+              <stop offset="50%" stopColor="#0D9488" />
+              <stop offset="100%" stopColor="#0284C7" />
+            </linearGradient>
+          </defs>
+          <rect width="24" height="24" rx="6" fill={`url(#formatai-grad-${size})`} />
+          <path
+            d="M7 6.5H17M7 11.5H14M7 6.5V17.5"
+            stroke="white"
+            strokeWidth="2.2"
+            strokeLinecap="round"
+            strokeLinejoin="round"
+          />
+          <circle cx="16.5" cy="15.5" r="2" fill="#FDE047" />
         </svg>
       );
 

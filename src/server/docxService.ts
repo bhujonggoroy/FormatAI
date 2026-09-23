@@ -76,14 +76,17 @@ export function cleanNotebookLMTreeArtifacts(text: string): string {
   let s = text;
 
   // 1. Normalize display equations: \[ ... \] or \\[ ... \\] (single- or multi-line)
-  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]/g, (_, math) => {
-    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\]/g, (match, math) => {
+    if (/(?:^|\n)#{1,6}\s+|(?:^|\n)(?:\*{3,}|-{3,}|_{3,})(?:\n|$)/.test(math)) {
+      return match;
+    }
+    const cleaned = math.trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
     return `\n\n$$\n${cleaned}\n$$\n\n`;
   });
 
   // 2. Normalize inline equations: \( ... \) or \\( ... \\)
-  s = s.replace(/(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
-    const cleaned = math.replace(/\r?\n\s*/g, " ").trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+  s = s.replace(/(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.replace(/\r?\n\s*/g, " ").trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
     return `\\(${cleaned}\\)`;
   });
 
@@ -179,8 +182,8 @@ function wrapAllUnwrappedMathSafely(text: string): string {
     return `__MATH_PH_${mathPlaceholders.length - 1}__`;
   };
 
-  // 1. Protect existing math blocks ($$...$$, $...$, `...`)
-  let s = text.replace(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
+  // 1. Protect existing math blocks ($$...$$, \[...\], \(...\), $...$, `...`)
+  let s = text.replace(/(\$\$[\s\S]+?\$\$|(?:\\)+\[[\s\S]*?(?:\\)+\]|(?:\\)+\([\s\S]*?(?:\\)+\)|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
 
   // 2. Normal distributions e.g. Z ~ N(0,1) or \bar{X} \sim N(\mu, \sigma^2/n)
   s = s.replace(/\b([A-Za-z\\]+(?:_[a-zA-Z0-9{}]+)?)\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, (_, v, p) => putPh(`$${v} \\sim N(${p})$`));
@@ -276,14 +279,17 @@ export function standardizeMathToLatex(text: string): string {
   s = s.replace(/\[[০-৯0-9,\s–-]+\]/g, '');
 
   // 1. Normalize bracketed display math: \[ ... \] or \\[ ... \\]
-  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]/g, (_, math) => {
-    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+  s = s.replace(/(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\]/g, (match, math) => {
+    if (/(?:^|\n)#{1,6}\s+|(?:^|\n)(?:\*{3,}|-{3,}|_{3,})(?:\n|$)/.test(math)) {
+      return match;
+    }
+    const cleaned = math.trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
     return `\n\n$$\n${cleaned}\n$$\n\n`;
   });
 
   // 2. Normalize bracketed inline math: \( ... \) or \\( ... \\)
-  s = s.replace(/(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
-    const cleaned = math.replace(/\r?\n\s*/g, " ").trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+  s = s.replace(/(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.replace(/\r?\n\s*/g, " ").trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
     return `\\(${cleaned}\\)`;
   });
 
