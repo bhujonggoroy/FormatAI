@@ -38,7 +38,7 @@ export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
 });
 
 export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze({
-  docTitle: "STT251: Statistics",
+  docTitle: "FormatAI Document",
   fontFamily: "Times New Roman",
   accentColor: "#1A365D",
   equationFormat: "native",

@@ -68,7 +68,9 @@ export async function downloadPreviewAsPdf(options: GeneratePdfOptions): Promise
   onProgress?.("1/3: Preparing document typography & equations...");
   await waitForAssetsAndFonts();
 
-  const filename = generateFilenameFromContent(markdown, title, "pdf");
+  // Generate filename strictly from current document markdown content
+  const baseFilename = generateFilenameFromContent(markdown);
+  const filename = `${baseFilename}.pdf`;
 
   // Try dynamically loading html2pdf / jspdf+html2canvas if needed or use high-quality iframe capture
   try {

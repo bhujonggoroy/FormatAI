@@ -607,7 +607,8 @@ ${preCleaned}`;
       }
 
       // Dynamically generate filename independently for every generation directly from user content
-      const exportFilename = generateFilenameFromContent(markdownToBuild || text, title, targetFormat);
+      const baseFilename = generateFilenameFromContent(text || markdownToBuild);
+      const exportFilename = `${baseFilename}.${targetFormat}`;
       const encodedFilename = encodeURIComponent(exportFilename);
       const asciiFallback = exportFilename.replace(/[^a-zA-Z0-9._-]/g, "_");
       const contentDispositionHeader = `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;

@@ -10,7 +10,7 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SplashScreen } from "./components/SplashScreen";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
-import { generateFilenameFromContent } from "./utils/filename";
+import { generateFilenameFromContent, getDisplayTitleFromContent } from "./utils/filename";
 import { downloadPreviewAsPdf } from "./utils/pdfExport";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
@@ -37,7 +37,7 @@ import {
 
 export default function App() {
   const [inputText, setInputText] = useState<string>(SAMPLE_NOTES[0].text);
-  const [docTitle, setDocTitle] = useState<string>("STT251: Statistics");
+  const [docTitle, setDocTitle] = useState<string>(() => getDisplayTitleFromContent(SAMPLE_NOTES[0].text));
   const [fontFamily, setFontFamily] = useState<string>("Times New Roman");
   const [accentColor, setAccentColor] = useState<string>("#1A365D");
   const [equationFormat, setEquationFormat] = useState<"native" | "latex" | "unicode">("native");
@@ -115,7 +115,7 @@ export default function App() {
   // Load a sample note
   const handleLoadSample = (sample: SampleNote) => {
     setInputText(sample.text);
-    setDocTitle(sample.title);
+    setDocTitle(getDisplayTitleFromContent(sample.text));
     setCleanedMarkdown(null);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -127,6 +127,7 @@ export default function App() {
       const text = await navigator.clipboard.readText();
       if (text) {
         setInputText(text);
+        setDocTitle(getDisplayTitleFromContent(text));
         setCleanedMarkdown(null);
         setErrorMessage(null);
       }
@@ -255,10 +256,10 @@ export default function App() {
     };
 
     try {
-      // Generate safe filename from content for EVERY generation, strictly avoiding any sample or reference naming conventions
-      const activeContent = effectiveMarkdown || inputText;
+      // Generate safe filename from CURRENT content for EVERY generation
+      const activeContent = inputText.trim() || effectiveMarkdown || "";
       const safeBaseName = generateFilenameFromContent(activeContent);
-      const safeFilename = `${safeBaseName}.${format}`;
+      const safeFilename = `${safeBaseName}.${format === "pdf" ? "pdf" : format === "docx" ? "docx" : format}`;
 
       // If exporting as PDF: the document preview is the single source of truth.
       // Generate the PDF directly from the rendered document representation.
@@ -549,6 +550,7 @@ export default function App() {
                   <button
                     onClick={() => {
                       setInputText("");
+                      setDocTitle("FormatAI Document");
                       setCleanedMarkdown(null);
                       setErrorMessage(null);
                       setSuccessMessage(null);
@@ -566,7 +568,9 @@ export default function App() {
               <textarea
                 value={inputText}
                 onChange={(e) => {
-                  setInputText(e.target.value);
+                  const val = e.target.value;
+                  setInputText(val);
+                  setDocTitle(getDisplayTitleFromContent(val));
                   if (cleanedMarkdown) setCleanedMarkdown(null);
                 }}
                 placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
@@ -622,6 +626,7 @@ export default function App() {
                 <button
                   onClick={() => {
                     setInputText("");
+                    setDocTitle("FormatAI Document");
                     setCleanedMarkdown(null);
                   }}
                   className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
@@ -635,7 +640,9 @@ export default function App() {
             <textarea
               value={inputText}
               onChange={(e) => {
-                setInputText(e.target.value);
+                const val = e.target.value;
+                setInputText(val);
+                setDocTitle(getDisplayTitleFromContent(val));
                 if (cleanedMarkdown) setCleanedMarkdown(null);
               }}
               placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, or any notes/equations)..."
@@ -816,6 +823,7 @@ export default function App() {
         onPasteClipboard={handlePasteClipboard}
         onClearText={() => {
           setInputText("");
+          setDocTitle("FormatAI Document");
           setCleanedMarkdown(null);
         }}
         charCount={charCount}
@@ -863,6 +871,7 @@ export default function App() {
             }}
             onApplyText={(text) => {
               setInputText(text);
+              setDocTitle(getDisplayTitleFromContent(text));
               setCleanedMarkdown(null);
             }}
           />
