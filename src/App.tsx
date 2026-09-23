@@ -16,6 +16,14 @@ import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
 import { validateAIPolishOutput } from "./utils/aiValidation";
+import { AIStatusBanner } from "./components/AIStatusBanner";
+import { AIStatusNotification } from "./types/ai";
+import {
+  createLocalFormatNotification,
+  classifyAiPolishSuccess,
+  classifyErrorDetails,
+  createQualityGateWarningNotification,
+} from "./utils/aiStatusClassifier";
 import {
   getUserSettings,
   getUserProviders,
@@ -51,6 +59,8 @@ export default function App() {
   const [conversionStage, setConversionStage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [aiStatus, setAiStatus] = useState<AIStatusNotification | null>(null);
+  const [aiSettingsInitialTab, setAiSettingsInitialTab] = useState<"control" | "fallback" | "stats" | "logs">("control");
   const [validationAlert, setValidationAlert] = useState<{
     failed: boolean;
     reason: string;
@@ -186,7 +196,9 @@ export default function App() {
 
     setIsConverting(true);
     setErrorMessage(null);
+    setSuccessMessage(null);
     setValidationAlert(null);
+    setAiStatus(null);
     setConversionStage("Normalizing with FormatAI Academic Engine (No AI)...");
 
     try {
@@ -198,7 +210,10 @@ export default function App() {
       );
       const latencyMs = Math.max(1, Date.now() - startMs);
       setCleanedMarkdown(cleaned);
-      setSuccessMessage("Normalized successfully with FormatAI (Deterministic Academic Engine — No AI).");
+
+      // Rule 2: Strictly truthful status - never claim AI was used
+      const notif = createLocalFormatNotification(latencyMs);
+      setAiStatus(notif);
 
       // Record Telemetry Metric & Audit Log
       recordProviderMetric(
@@ -253,6 +268,8 @@ export default function App() {
     setIsConverting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
+    setValidationAlert(null);
+    setAiStatus(null);
     setConversionStage("AI Engine is polishing notes & equations...");
 
     // Capture the current verified FormatAI Result before firing AI Polish
@@ -336,7 +353,28 @@ export default function App() {
           });
           if (changed) saveUserProviders(currentProvs);
         }
-        throw new Error(data.error || "Failed to polish notes with AI.");
+
+        // Set User-Friendly Status Notification
+        const classified = classifyErrorDetails(data.error || "Failed to polish notes with AI.", res.status);
+        setAiStatus({
+          ...classified,
+          providerName: userConfig.activeProviderId || "AI Provider",
+          modelName: userConfig.activeModel,
+          latencyMs,
+          timestamp: Date.now(),
+          technicalDetails: {
+            provider: userConfig.activeProviderId || "AI Provider",
+            model: userConfig.activeModel || "default",
+            requestStatus: `${res.status}`,
+            errorCategory: classified.badgeLabel,
+            executionTime: `${latencyMs}ms`,
+            technicalErrorMessage: data.error || "Request failed",
+            rawChain: data.fallback_chain,
+          },
+        });
+
+        setCleanedMarkdown(null);
+        return;
       }
 
       // ── STRICT QUALITY-GATE VALIDATION ─────────────────────────────────────────
@@ -354,8 +392,6 @@ export default function App() {
         !clientValidation.isValid;
 
       if (isValidationFailed) {
-        console.warn("AI Polish output failed validation! Discarding AI Output and keeping FormatAI Result.");
-
         // 1. Discard AI Output: DO NOT apply data.cleaned_markdown
         // 2. Restore/Keep FormatAI Result: Setting cleanedMarkdown to null ensures
         //    effectiveMarkdown immediately falls back to / retains the deterministic
@@ -414,9 +450,12 @@ export default function App() {
               ],
         });
 
-        setErrorMessage(
-          `AI Output ❌ Validation FAILED (${reason}). Discarded AI Output. FormatAI Result restored — preview remains unchanged.`
-        );
+        const notif = createQualityGateWarningNotification({
+          reason,
+          providerName: data.provider_name || userConfig.activeProviderId,
+          latencyMs,
+        });
+        setAiStatus(notif);
         return;
       }
 
@@ -480,20 +519,30 @@ export default function App() {
         if (changed) saveUserProviders(currentProvs);
       }
 
-      if (data.provider_name) {
-        const fallbackNote =
-          data.fallback_count > 0
-            ? ` (recovered via ${data.fallback_count} failover)`
-            : "";
-        setSuccessMessage(`Polished by ${data.provider_name} (${data.model})${fallbackNote}`);
-      } else {
-        setSuccessMessage("Notes normalized successfully with standard academic equations.");
-      }
+      // User-friendly AI Status Notification
+      const notif = classifyAiPolishSuccess({
+        providerName: data.provider_name || userConfig.activeProviderId || "Gemini",
+        modelName: data.model || userConfig.activeModel || "default",
+        fallbackCount: data.fallback_count || 0,
+        fallbackChain: data.fallback_chain || [],
+        latencyMs,
+      });
+      setAiStatus(notif);
       fetchAIHealth();
     } catch (err: any) {
       // Rule 21 & Rule 24: If AI API fails, preserve existing FormatAI result intact. Preview remains unchanged.
       setCleanedMarkdown(null);
-      setErrorMessage(`${err.message || "AI polish failed."} (FormatAI baseline result preserved intact)`);
+      const classified = classifyErrorDetails(err.message || "Network request failed");
+      setAiStatus({
+        ...classified,
+        latencyMs: Math.max(1, Date.now() - reqStartTime),
+        timestamp: Date.now(),
+        technicalDetails: {
+          requestStatus: "Client Network / Exception",
+          errorCategory: classified.badgeLabel,
+          technicalErrorMessage: err.message,
+        },
+      });
     } finally {
       setIsConverting(false);
       setConversionStage("");
@@ -752,7 +801,7 @@ export default function App() {
       </div>
 
       {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 pb-6 flex flex-col gap-3 sm:gap-4">
+      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 pb-24 sm:pb-6 mb-4 sm:mb-0 flex flex-col gap-3 sm:gap-4">
         {/* Progress feedback bar */}
         {isConverting && (
           <div className="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn shadow-2xs">
@@ -764,8 +813,25 @@ export default function App() {
           </div>
         )}
 
-        {/* Error notification */}
-        {errorMessage && (
+        {/* User-Friendly AI Status & Warning Notification System */}
+        {aiStatus && (
+          <AIStatusBanner
+            notification={aiStatus}
+            onDismiss={() => setAiStatus(null)}
+            onOpenSettings={() => {
+              setAiSettingsInitialTab("control");
+              setIsAISettingsModalOpen(true);
+            }}
+            onRetry={handlePreviewClean}
+            onOpenAuditLogs={() => {
+              setAiSettingsInitialTab("logs");
+              setIsAISettingsModalOpen(true);
+            }}
+          />
+        )}
+
+        {/* General Error notification (fallback when aiStatus is not set) */}
+        {!aiStatus && errorMessage && (
           <div className="bg-rose-50 border border-rose-200 text-rose-900 px-4 py-3 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
             <div className="flex items-center gap-2">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
@@ -814,8 +880,8 @@ export default function App() {
           </div>
         )}
 
-        {/* Success notification */}
-        {successMessage && (
+        {/* General Success notification (fallback when aiStatus is not set) */}
+        {!aiStatus && successMessage && (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
             <div className="flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
@@ -994,80 +1060,91 @@ export default function App() {
       </main>
 
       {/* Mobile Sticky Bottom Floating Action Dock (Mobile Users only, hidden on sm+) */}
-      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t-2 border-slate-300 px-2.5 py-2 flex items-center justify-between gap-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.12)]">
-        {/* View Switcher Toggle (Edit & Preview: at least 48x48px touch hit-box) */}
-        <div className="flex bg-slate-200 p-0.5 rounded-xl border border-slate-300 shrink-0 gap-0.5">
+      <div
+        id="mobile-sticky-dock"
+        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t-2 border-slate-300 px-2.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-[1fr_2fr_1fr] items-center gap-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.12)]"
+      >
+        {/* View Switcher Toggle (Column 1: 1fr - Edit & Preview guaranteed >= 48x48px touch hit-box) */}
+        <div className="flex bg-slate-200/90 p-0.5 rounded-2xl border border-slate-300 gap-0.5 shadow-2xs min-h-[48px] items-stretch">
           <button
             type="button"
+            id="mobile-btn-edit"
             onClick={() => setViewLayout("editor")}
-            className={`min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-              viewLayout === "editor" ? "bg-white text-slate-900 shadow-xs border border-slate-300" : "text-slate-700 hover:text-slate-900"
+            className={`flex-1 min-h-[48px] px-1 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
+              viewLayout === "editor"
+                ? "bg-white text-slate-900 shadow-sm border border-slate-300"
+                : "text-slate-700 hover:text-slate-900 hover:bg-slate-300/40"
             }`}
             title="Switch to Editor"
-            aria-label="Edit"
+            aria-label="Edit view"
           >
             <FileText
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "editor" ? currentTheme.hex : undefined }}
             />
-            <span>Edit</span>
+            <span className="font-extrabold text-[11px] hidden min-[360px]:inline">Edit</span>
           </button>
           <button
             type="button"
+            id="mobile-btn-preview"
             onClick={() => setViewLayout("preview")}
-            className={`min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
-              viewLayout === "preview" ? "bg-white text-slate-900 shadow-xs border border-slate-300" : "text-slate-700 hover:text-slate-900"
+            className={`flex-1 min-h-[48px] px-1 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
+              viewLayout === "preview"
+                ? "bg-white text-slate-900 shadow-sm border border-slate-300"
+                : "text-slate-700 hover:text-slate-900 hover:bg-slate-300/40"
             }`}
             title="Switch to Preview"
-            aria-label="Preview"
+            aria-label="Preview view"
           >
             <Eye
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "preview" ? currentTheme.hex : undefined }}
             />
-            <span>Preview</span>
+            <span className="font-extrabold text-[11px] hidden min-[360px]:inline">Prev</span>
           </button>
         </div>
 
-        {/* FormatAI / AI Polish Button (at least 48x48px touch hit-box) */}
+        {/* FormatAI / AI Polish Button (Column 2: 2fr - expanded horizontal space, guaranteed >= 48x48px touch hit-box) */}
         <button
           type="button"
+          id="mobile-btn-ai-polish"
           onClick={isNoAI ? handleRunFormatAI : handlePreviewClean}
           disabled={isConverting}
-          className="flex-1 min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-xl text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+          className="w-full min-h-[48px] min-w-[48px] px-2.5 py-2.5 rounded-2xl text-white font-black text-xs sm:text-sm flex items-center justify-center gap-1.5 sm:gap-2 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer border border-black/10"
           style={{ backgroundColor: currentTheme.btnPrimary }}
           title={isNoAI ? "Run FormatAI (No AI)" : "Run AI Polish"}
-          aria-label={isNoAI ? "FormatAI" : "AI Polish"}
+          aria-label={isNoAI ? "Run FormatAI" : "Run AI Polish"}
         >
           {isConverting ? (
             <Loader2 className="w-4 h-4 animate-spin shrink-0 text-white" />
           ) : (
             <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
           )}
-          <span className="whitespace-nowrap">
+          <span className="whitespace-nowrap font-extrabold truncate">
             {isConverting ? "Normalizing..." : isNoAI ? "FormatAI" : "AI Polish"}
           </span>
         </button>
 
-        {/* Export DOCX Button (at least 48x48px touch hit-box) */}
+        {/* Export DOCX Button (Column 3: 1fr - guaranteed >= 48x48px touch hit-box) */}
         <button
           type="button"
+          id="mobile-btn-export"
           onClick={() => downloadFile("docx")}
           disabled={!inputText.trim() || isConverting}
-          className="flex-1 min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-black active:scale-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
-          title="Download Word Document"
-          aria-label="Export"
+          className="w-full min-h-[48px] min-w-[48px] px-2 py-2.5 rounded-2xl bg-slate-900 hover:bg-slate-800 active:bg-black active:scale-95 text-white font-black text-xs flex items-center justify-center gap-1 shadow-sm transition-all disabled:opacity-50 cursor-pointer border border-slate-700"
+          title="Download Word Document (.docx)"
+          aria-label="Export Word Document"
         >
           <FileDown className="w-4 h-4 shrink-0 text-blue-300" />
-          <span className="whitespace-nowrap">
+          <span className="whitespace-nowrap font-extrabold">
             <span>Export</span>
-            <span className="hidden min-[370px]:inline"> DOCX</span>
+            <span className="hidden min-[380px]:inline"> DOCX</span>
           </span>
         </button>
       </div>
 
       {/* Educational Dedication & Open Source Footer */}
-      <footer className="border-t-2 border-slate-300 bg-white py-4 px-4 sm:px-6 mt-8 pb-24 sm:pb-4">
+      <footer className="border-t-2 border-slate-300 bg-white py-4 px-4 sm:px-6 mt-8 pb-28 sm:pb-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <div className="flex items-center gap-2 text-center sm:text-left flex-wrap justify-center sm:justify-start">
             <span className="font-semibold text-slate-700">FormatAI</span>
@@ -1149,6 +1226,7 @@ export default function App() {
       {/* Multi-Provider AI Settings Modal */}
       <AISettingsModal
         isOpen={isAISettingsModalOpen}
+        initialTab={aiSettingsInitialTab}
         onClose={() => {
           setIsAISettingsModalOpen(false);
           fetchAIHealth();

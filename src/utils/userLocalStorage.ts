@@ -568,6 +568,7 @@ export function recordAuditLogEntry(entry: {
   totalLatencyMs: number;
   success: boolean;
   chain: FallbackStep[];
+  isSimulation?: boolean;
 }): FallbackLogEntry {
   const safeChain: FallbackStep[] = entry.chain && entry.chain.length > 0 ? entry.chain : [
     {
@@ -591,6 +592,7 @@ export function recordAuditLogEntry(entry: {
     totalLatencyMs: entry.totalLatencyMs || 0,
     success: Boolean(entry.success),
     chain: safeChain,
+    isSimulation: Boolean(entry.isSimulation || entry.requestSummary?.toLowerCase().includes("simulation")),
   };
 
   addUserLog(newLog);

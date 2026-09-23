@@ -158,6 +158,46 @@ export interface FallbackLogEntry {
   totalLatencyMs: number;
   success: boolean;
   chain: FallbackStep[];
+  isSimulation?: boolean;
+}
+
+export type AIStatusType =
+  | "ai_working"
+  | "local_format"
+  | "ai_fallback"
+  | "warning"
+  | "ai_failed"
+  | "api_error"
+  | "quota"
+  | "ai_off"
+  | "simulation";
+
+export interface AIStatusNotification {
+  type: AIStatusType;
+  badgeLabel: string;
+  badgeIcon: string;
+  badgeColor: "emerald" | "amber" | "rose" | "slate" | "blue";
+  title: string;
+  secondaryText: string;
+  primaryProvider?: string;
+  fallbackProvider?: string;
+  providerName?: string;
+  modelName?: string;
+  latencyMs?: number;
+  timestamp: number;
+  actionType?: "settings" | "retry" | "another_provider" | "audit";
+  actionLabel?: string;
+  secondaryActionLabel?: string;
+  technicalDetails?: {
+    provider?: string;
+    model?: string;
+    requestStatus?: string;
+    errorCategory?: string;
+    fallbackAttempt?: string;
+    executionTime?: string;
+    technicalErrorMessage?: string;
+    rawChain?: FallbackStep[];
+  };
 }
 
 export interface TestResult {

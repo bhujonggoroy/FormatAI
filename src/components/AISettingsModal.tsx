@@ -61,19 +61,29 @@ import {
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
 import { GetFreeApiKeyModal } from "./GetFreeApiKeyModal";
 import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
+import { StatusSignalGuide } from "./StatusSignalGuide";
+import { classifyAuditLogEntry } from "../utils/aiStatusClassifier";
 
 interface AISettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfigChanged?: () => void;
+  initialTab?: "control" | "fallback" | "stats" | "logs";
 }
 
 export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   isOpen,
   onClose,
   onConfigChanged,
+  initialTab,
 }) => {
   const [activeTab, setActiveTab] = useState<"control" | "fallback" | "stats" | "logs">("control");
+
+  useEffect(() => {
+    if (isOpen && initialTab) {
+      setActiveTab(initialTab);
+    }
+  }, [isOpen, initialTab]);
 
   // Tab Slide Bar & Scroll Controls
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -526,6 +536,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       hopsCount: 2,
       totalLatencyMs: 284,
       success: true,
+      isSimulation: true,
       chain: [
         {
           providerId: "gemini",
@@ -567,7 +578,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
     setStats(getUserStats());
     setLogs(getUserLogs());
-    showStatus("Generated diagnostic multi-hop failover audit trace!");
+    showStatus("🔵 SIMULATION: Fallback test completed. No real document processing was performed.");
   };
 
   if (!isOpen) return null;
@@ -1726,6 +1737,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* Status Signal Guide compact legend beside / above logs */}
+              <StatusSignalGuide className="mb-3" />
+
               {logs.length === 0 ? (
                 <div className="text-center py-12 text-xs text-slate-400 border-2 border-dashed border-slate-200 rounded-xl space-y-3">
                   <ScrollText className="w-8 h-8 text-slate-300 mx-auto" />
@@ -1752,12 +1766,47 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     const timeStr = log.timestamp
                       ? new Date(log.timestamp).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" })
                       : "Just now";
+                    const summary = classifyAuditLogEntry(log);
 
                     return (
                       <div
                         key={log.id}
-                        className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 transition-colors text-xs space-y-2.5 shadow-2xs"
+                        className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 transition-colors text-xs space-y-3 shadow-2xs"
                       >
+                        {/* 1. User-Friendly Summary at the top of every log entry */}
+                        <div
+                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 flex-wrap ${
+                            summary.badgeColor === "emerald"
+                              ? "bg-emerald-50/90 border-emerald-300 text-emerald-950"
+                              : summary.badgeColor === "amber"
+                              ? "bg-amber-50/90 border-amber-300 text-amber-950"
+                              : summary.badgeColor === "blue"
+                              ? "bg-blue-50/90 border-blue-300 text-blue-950"
+                              : "bg-rose-50/90 border-rose-300 text-rose-950"
+                          }`}
+                        >
+                          <div className="flex items-center gap-2 min-w-0">
+                            <span className="text-base shrink-0 leading-none">{summary.badgeIcon}</span>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5 flex-wrap">
+                                <span className="font-black text-xs uppercase tracking-wider">
+                                  {summary.badgeLabel}
+                                </span>
+                                <span className="font-bold text-xs">
+                                  — {summary.headline}
+                                </span>
+                              </div>
+                              <p className="text-[11px] opacity-90 font-medium truncate mt-0.5">
+                                {summary.detailLine}
+                              </p>
+                            </div>
+                          </div>
+                          <div className="text-[10px] font-mono opacity-80 bg-white/80 px-2 py-0.5 rounded border border-black/10 shrink-0">
+                            {timeStr}
+                          </div>
+                        </div>
+
+                        {/* 2. Technical Header Row */}
                         <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-2">
                           <div className="flex items-center gap-2 min-w-0">
                             <AIBrandLogo providerId={finalProviderId} size="sm" />
@@ -1778,12 +1827,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                             )}
                             <span
                               className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold tracking-wide uppercase ${
-                                log.success
+                                summary.badgeColor === "blue"
+                                  ? "bg-blue-100 text-blue-900 border border-blue-300"
+                                  : log.success
                                   ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
                                   : "bg-rose-100 text-rose-900 border border-rose-300"
                               }`}
                             >
-                              {log.success ? "SUCCESS" : "FAILED"}
+                              {summary.badgeColor === "blue" ? "SIMULATION" : log.success ? "SUCCESS" : "FAILED"}
                             </span>
                             <span className="text-slate-600 font-mono font-bold text-[11px] bg-white px-2 py-0.5 rounded border border-slate-200">
                               {log.totalLatencyMs || 0}ms
