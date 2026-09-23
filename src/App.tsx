@@ -15,6 +15,7 @@ import { downloadPreviewAsPdf } from "./utils/pdfExport";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
+import { validateAIPolishOutput } from "./utils/aiValidation";
 import {
   getUserSettings,
   getUserProviders,
@@ -33,6 +34,7 @@ import {
   Columns,
   X,
   FileDown,
+  ShieldAlert,
 } from "lucide-react";
 
 export default function App() {
@@ -47,6 +49,11 @@ export default function App() {
   const [conversionStage, setConversionStage] = useState<string>("");
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
   const [successMessage, setSuccessMessage] = useState<string | null>(null);
+  const [validationAlert, setValidationAlert] = useState<{
+    failed: boolean;
+    reason: string;
+    errors: string[];
+  } | null>(null);
 
   const [cleanedMarkdown, setCleanedMarkdown] = useState<string | null>(null);
   const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">("editor");
@@ -136,8 +143,27 @@ export default function App() {
     }
   };
 
-  // Trigger preview AI polish
-  const handlePreviewClean = async () => {
+  // Determine if running in "No AI" state (offline mode, no configured AI keys, or FormatAI selected)
+  const isNoAI = useMemo(() => {
+    const userConfig = getUserSettings();
+    if (
+      userConfig.activeProviderId === "formatai" ||
+      userConfig.activeProviderId === "local" ||
+      (userConfig as any).mode === "no_ai" ||
+      (userConfig as any).mode === "formatai"
+    ) {
+      return true;
+    }
+    const userProvs = getUserProviders();
+    const hasActiveKey = userProvs.some(
+      (p) => p.enabled && (p.apiKeys || []).some((k) => k.enabled && k.key.trim().length > 0)
+    );
+    const hasServerAI = (aiHealthInfo?.readyCount ?? 0) > 0;
+    return !hasActiveKey && !hasServerAI;
+  }, [aiHealthInfo]);
+
+  // Trigger deterministic FormatAI normalization directly (Zero AI / No API key needed)
+  const handleRunFormatAI = () => {
     if (!inputText.trim()) {
       setErrorMessage("Please paste your content first.");
       return;
@@ -145,8 +171,45 @@ export default function App() {
 
     setIsConverting(true);
     setErrorMessage(null);
+    setValidationAlert(null);
+    setConversionStage("Normalizing with FormatAI Academic Engine (No AI)...");
+
+    try {
+      const cleaned = cleanClientSideNotebookLM(
+        inputText,
+        formatMode,
+        skillRegistry.getEnabledSkillIds()
+      );
+      setCleanedMarkdown(cleaned);
+      setSuccessMessage("Normalized successfully with FormatAI (Deterministic Academic Engine — No AI).");
+    } catch (err: any) {
+      setErrorMessage(err.message || "FormatAI normalization failed.");
+    } finally {
+      setIsConverting(false);
+      setConversionStage("");
+    }
+  };
+
+  // Trigger preview AI polish (or FormatAI if in No AI mode)
+  const handlePreviewClean = async () => {
+    if (!inputText.trim()) {
+      setErrorMessage("Please paste your content first.");
+      return;
+    }
+
+    // When No AI is available/active, route directly to FormatAI without making external AI calls
+    if (isNoAI) {
+      handleRunFormatAI();
+      return;
+    }
+
+    setIsConverting(true);
+    setErrorMessage(null);
     setSuccessMessage(null);
     setConversionStage("AI Engine is polishing notes & equations...");
+
+    // Capture the current verified FormatAI Result before firing AI Polish
+    const prePolishFormatAiResult = effectiveMarkdown;
 
     try {
       const userConfig = getUserSettings();
@@ -192,6 +255,55 @@ export default function App() {
         throw new Error(data.error || "Failed to polish notes with AI.");
       }
 
+      // ── STRICT QUALITY-GATE VALIDATION ─────────────────────────────────────────
+      // FormatAI Result -> AI Polish -> AI Output ❌ -> Validation FAILED ->
+      // Discard AI Output -> Restore/Keep FormatAI Result -> Preview remains unchanged
+      const clientValidation = validateAIPolishOutput(
+        data.cleaned_markdown,
+        inputText,
+        prePolishFormatAiResult
+      );
+
+      const isValidationFailed =
+        Boolean(data.validation_failed) ||
+        Boolean(data.discarded_ai_output) ||
+        !clientValidation.isValid;
+
+      if (isValidationFailed) {
+        console.warn("AI Polish output failed validation! Discarding AI Output and keeping FormatAI Result.");
+
+        // 1. Discard AI Output: DO NOT apply data.cleaned_markdown
+        // 2. Restore/Keep FormatAI Result: Setting cleanedMarkdown to null ensures
+        //    effectiveMarkdown immediately falls back to / retains the deterministic
+        //    rule-based FormatAI result cleanClientSideNotebookLM(...)
+        setCleanedMarkdown(null);
+
+        // 3. Preview remains unchanged!
+        const reason =
+          data.discard_reason ||
+          clientValidation.discardReason ||
+          clientValidation.errors[0] ||
+          "Formula syntax, delimiter balance, or content preservation checks failed.";
+
+        const errorsList =
+          data.validation_errors && data.validation_errors.length > 0
+            ? data.validation_errors
+            : clientValidation.errors;
+
+        setValidationAlert({
+          failed: true,
+          reason,
+          errors: errorsList,
+        });
+
+        setErrorMessage(
+          `AI Output ❌ Validation FAILED (${reason}). Discarded AI Output. FormatAI Result restored — preview remains unchanged.`
+        );
+        return;
+      }
+
+      // ── VALIDATION PASSED ───────────────────────────────────────────────────────
+      setValidationAlert(null);
       setCleanedMarkdown(data.cleaned_markdown);
 
       // Update provider statuses from fallback chain if present
@@ -264,7 +376,10 @@ export default function App() {
       // If exporting as PDF: the document preview is the single source of truth.
       // Generate the PDF directly from the rendered document representation.
       if (format === "pdf") {
-        const previewSheet = document.getElementById("preview-document-sheet");
+        const previewSheet =
+          document.getElementById("academic-document-sheet") ||
+          document.getElementById("preview-document-sheet") ||
+          document.querySelector(".academic-paper-sheet");
         if (previewSheet) {
           setConversionStage("1/2: Preparing preview sheet for PDF generation...");
           await downloadPreviewAsPdf({
@@ -394,7 +509,9 @@ export default function App() {
           }}
           isAiPolishing={isConverting}
           onTriggerAiPolish={handlePreviewClean}
-          aiProviderName={aiHealthInfo?.providersSummary?.[0]}
+          onTriggerFormatAI={handleRunFormatAI}
+          isNoAI={isNoAI}
+          aiProviderName={isNoAI ? "FormatAI" : aiHealthInfo?.providersSummary?.[0]}
           onDownloadDocx={handleConvertToDocx}
           onExportFormat={downloadFile}
           canDownload={Boolean(inputText.trim())}
@@ -510,6 +627,40 @@ export default function App() {
           </div>
         )}
 
+        {/* Validation Failure Banner (FormatAI Result Restored & Preview Unchanged) */}
+        {validationAlert?.failed && (
+          <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 px-4 py-3 rounded-xl text-xs flex items-start justify-between gap-3 animate-fadeIn shadow-2xs">
+            <div className="flex items-start gap-2.5">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+              <div>
+                <div className="flex items-center gap-2 flex-wrap">
+                  <span className="font-extrabold text-amber-950">AI Output ❌ Validation FAILED</span>
+                  <span className="text-[10px] bg-rose-100 text-rose-800 font-extrabold px-1.5 py-0.2 rounded border border-rose-300 uppercase">
+                    Discarded AI Output
+                  </span>
+                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded border border-emerald-300">
+                    FormatAI Result Restored
+                  </span>
+                  <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-1.5 py-0.2 rounded">
+                    Preview Unchanged
+                  </span>
+                </div>
+                <p className="mt-1 text-slate-700 text-[11px] leading-relaxed">
+                  Reason: <span className="font-semibold text-amber-900">{validationAlert.reason}</span>.
+                  The AI Polish output was automatically discarded to protect equation syntax. The FormatAI Result is kept and the preview remains unchanged.
+                </p>
+              </div>
+            </div>
+            <button
+              onClick={() => setValidationAlert(null)}
+              className="text-amber-600 hover:text-amber-800 p-1 cursor-pointer shrink-0"
+              title="Dismiss"
+            >
+              <X className="w-3.5 h-3.5" />
+            </button>
+          </div>
+        )}
+
         {/* Success notification */}
         {successMessage && (
           <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
@@ -572,6 +723,7 @@ export default function App() {
                   setInputText(val);
                   setDocTitle(getDisplayTitleFromContent(val));
                   if (cleanedMarkdown) setCleanedMarkdown(null);
+                  if (validationAlert) setValidationAlert(null);
                 }}
                 placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
                 className="w-full flex-1 p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400"
@@ -598,6 +750,8 @@ export default function App() {
                 accentColor={accentColor}
                 equationFormat={equationFormat}
                 isAiPolished={Boolean(cleanedMarkdown)}
+                validationAlert={validationAlert}
+                onDismissValidationAlert={() => setValidationAlert(null)}
                 onTriggerAiPolish={handlePreviewClean}
                 isAiPolishing={isConverting}
                 onDownloadDocx={handleConvertToDocx}
@@ -628,6 +782,7 @@ export default function App() {
                     setInputText("");
                     setDocTitle("FormatAI Document");
                     setCleanedMarkdown(null);
+                    setValidationAlert(null);
                   }}
                   className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                 >
@@ -644,6 +799,7 @@ export default function App() {
                 setInputText(val);
                 setDocTitle(getDisplayTitleFromContent(val));
                 if (cleanedMarkdown) setCleanedMarkdown(null);
+                if (validationAlert) setValidationAlert(null);
               }}
               placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, or any notes/equations)..."
               rows={22}
@@ -672,6 +828,8 @@ export default function App() {
               accentColor={accentColor}
               equationFormat={equationFormat}
               isAiPolished={Boolean(cleanedMarkdown)}
+              validationAlert={validationAlert}
+              onDismissValidationAlert={() => setValidationAlert(null)}
               onTriggerAiPolish={handlePreviewClean}
               isAiPolishing={isConverting}
               onDownloadDocx={handleConvertToDocx}
@@ -718,22 +876,24 @@ export default function App() {
           </button>
         </div>
 
-        {/* AI Polish Button (at least 48x48px touch hit-box) */}
+        {/* FormatAI / AI Polish Button (at least 48x48px touch hit-box) */}
         <button
           type="button"
-          onClick={handlePreviewClean}
+          onClick={isNoAI ? handleRunFormatAI : handlePreviewClean}
           disabled={isConverting}
           className="flex-1 min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-xl text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
           style={{ backgroundColor: currentTheme.btnPrimary }}
-          title="Run AI Polish"
-          aria-label="AI Polish"
+          title={isNoAI ? "Run FormatAI (No AI)" : "Run AI Polish"}
+          aria-label={isNoAI ? "FormatAI" : "AI Polish"}
         >
           {isConverting ? (
             <Loader2 className="w-4 h-4 animate-spin shrink-0 text-white" />
           ) : (
             <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
           )}
-          <span className="whitespace-nowrap">{isConverting ? "Polishing..." : "AI Polish"}</span>
+          <span className="whitespace-nowrap">
+            {isConverting ? "Normalizing..." : isNoAI ? "FormatAI" : "AI Polish"}
+          </span>
         </button>
 
         {/* Export DOCX Button (at least 48x48px touch hit-box) */}

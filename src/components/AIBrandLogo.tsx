@@ -146,6 +146,38 @@ export const AI_PROVIDER_THEMES: Record<string, AIProviderTheme> = {
     keyBadgeBg: "bg-slate-100 text-slate-700 border-slate-200",
     brandTag: "Custom",
   },
+  formatai: {
+    id: "formatai",
+    name: "FormatAI (No AI / Local)",
+    badgeLabel: "Instant • No AI",
+    topBarGradient: "bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500",
+    headerBg: "bg-gradient-to-b from-blue-50/90 via-indigo-50/40 to-white",
+    cardBorder: "border-blue-400 hover:border-blue-600",
+    activeRing: "ring-2 ring-blue-500/50 shadow-md shadow-blue-100/50",
+    activeBorder: "border-blue-600",
+    switchActiveBg: "bg-blue-600",
+    badgeStyle: "bg-blue-100 text-blue-900 border-blue-200",
+    titleColor: "text-blue-950",
+    accentText: "text-blue-600",
+    keyBadgeBg: "bg-blue-50 text-blue-800 border-blue-200",
+    brandTag: "FormatAI",
+  },
+  local: {
+    id: "local",
+    name: "FormatAI Engine",
+    badgeLabel: "Deterministic",
+    topBarGradient: "bg-gradient-to-r from-blue-600 via-indigo-600 to-sky-500",
+    headerBg: "bg-gradient-to-b from-blue-50/90 via-indigo-50/40 to-white",
+    cardBorder: "border-blue-400 hover:border-blue-600",
+    activeRing: "ring-2 ring-blue-500/50 shadow-md shadow-blue-100/50",
+    activeBorder: "border-blue-600",
+    switchActiveBg: "bg-blue-600",
+    badgeStyle: "bg-blue-100 text-blue-900 border-blue-200",
+    titleColor: "text-blue-950",
+    accentText: "text-blue-600",
+    keyBadgeBg: "bg-blue-50 text-blue-800 border-blue-200",
+    brandTag: "FormatAI",
+  },
 };
 
 export function getAIProviderTheme(providerId: string): AIProviderTheme {
@@ -367,6 +399,31 @@ export const AIBrandLogo: React.FC<AIBrandLogoProps> = ({
             strokeWidth="2"
             strokeLinecap="round"
             strokeLinejoin="round"
+          />
+        </svg>
+      );
+
+    case "formatai":
+    case "local":
+      return (
+        <svg
+          viewBox="0 0 24 24"
+          fill="none"
+          className={`${sizeClasses} ${className} shrink-0`}
+          aria-label="FormatAI Logo"
+        >
+          <rect width="24" height="24" rx="6" fill="#2563EB" />
+          <path
+            d="M12 4L13.8 8.6L18.5 10.4L13.8 12.2L12 16.8L10.2 12.2L5.5 10.4L10.2 8.6L12 4Z"
+            fill="#FDE047"
+          />
+          <path
+            d="M17.5 15.5L18.2 17.3L20 18L18.2 18.7L17.5 20.5L16.8 18.7L15 18L16.8 17.3L17.5 15.5Z"
+            fill="white"
+          />
+          <path
+            d="M7 16L7.4 17L8.5 17.4L7.4 17.8L7 18.9L6.6 17.8L5.5 17.4L6.6 17L7 16Z"
+            fill="white"
           />
         </svg>
       );

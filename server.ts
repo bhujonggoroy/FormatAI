@@ -23,6 +23,7 @@ import {
   type ExportFormat
 } from "./src/server/exportService.ts";
 import { cleanClientSideNotebookLM } from "./src/utils/cleaner.ts";
+import { validateAIPolishOutput } from "./src/utils/aiValidation.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";
 import {
   skillRegistry,
@@ -233,6 +234,11 @@ export function createServerApp(): express.Express {
     model: string;
     fallbackCount: number;
     fallbackChain: any[];
+    validationFailed?: boolean;
+    validationErrors?: string[];
+    validationScore?: number;
+    discardedAiOutput?: boolean;
+    discardReason?: string;
   }
 
   const ACADEMIC_MATH_SYSTEM_INSTRUCTION = `You are an expert academic mathematical editor, LaTeX typesetter, and technical document formatter.
@@ -462,6 +468,28 @@ CRITICAL FORMATTING & DOCUMENT STANDARDS:
 RAW NOTES:
 ${preCleaned}`;
 
+    // Direct No AI / FormatAI request — instant deterministic formatting without external AI calls
+    if (
+      aiConfig?.activeProviderId === "formatai" ||
+      aiConfig?.activeProviderId === "local" ||
+      (aiConfig as any)?.mode === "no_ai" ||
+      (aiConfig as any)?.mode === "formatai"
+    ) {
+      const formatAiResult = cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
+      return {
+        cleanedMarkdown: formatAiResult,
+        providerId: "formatai",
+        providerName: "FormatAI (Deterministic Academic Typesetter)",
+        model: "standard-academic-engine",
+        validationFailed: false,
+        validationErrors: [],
+        validationScore: 100,
+        discardedAiOutput: false,
+        fallbackCount: 0,
+        fallbackChain: [],
+      };
+    }
+
     try {
       const aiResponse = await aiRequestManager.executeRequestScoped(
         {
@@ -487,11 +515,37 @@ ${preCleaned}`;
       // Post-process to guarantee zero tree pipe characters and valid math
       const finalized = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(cleaned));
 
+      // Quality-Gate Validation: Verify AI Polish output
+      const validation = validateAIPolishOutput(finalized, rawText);
+
+      if (!validation.isValid) {
+        console.warn("AI Polish output FAILED validation. Discarding AI output and restoring FormatAI Result:", validation.errors);
+        // Discard AI Output & Restore FormatAI Result
+        const formatAiResult = cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
+        return {
+          cleanedMarkdown: formatAiResult,
+          providerId: aiResponse.providerId,
+          providerName: aiResponse.providerName,
+          model: aiResponse.model,
+          validationFailed: true,
+          validationErrors: validation.errors,
+          validationScore: validation.score,
+          discardedAiOutput: true,
+          discardReason: validation.discardReason || "AI output failed quality-gate validation.",
+          fallbackCount: Math.max(0, aiResponse.fallbackChain.length - 1),
+          fallbackChain: aiResponse.fallbackChain,
+        };
+      }
+
       return {
         cleanedMarkdown: finalized,
         providerId: aiResponse.providerId,
         providerName: aiResponse.providerName,
         model: aiResponse.model,
+        validationFailed: false,
+        validationErrors: [],
+        validationScore: validation.score,
+        discardedAiOutput: false,
         fallbackCount: Math.max(0, aiResponse.fallbackChain.length - 1),
         fallbackChain: aiResponse.fallbackChain,
       };
@@ -504,6 +558,10 @@ ${preCleaned}`;
         providerId: "local",
         providerName: "Algorithmic Cleaner (Offline Fallback)",
         model: "rule-based-v2",
+        validationFailed: false,
+        validationErrors: [],
+        validationScore: 100,
+        discardedAiOutput: false,
         fallbackCount: 0,
         fallbackChain: (err as any)?.fallbackChain || [],
       };
@@ -540,6 +598,11 @@ ${preCleaned}`;
         provider_id: result.providerId,
         provider_name: result.providerName,
         model: result.model,
+        validation_failed: Boolean(result.validationFailed),
+        validation_errors: result.validationErrors || [],
+        validation_score: result.validationScore ?? 100,
+        discarded_ai_output: Boolean(result.discardedAiOutput),
+        discard_reason: result.discardReason || null,
         fallback_count: result.fallbackCount,
         fallback_chain: result.fallbackChain,
       });

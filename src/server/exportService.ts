@@ -1,5 +1,8 @@
 import PDFDocument from "pdfkit";
 import { sanitizeMathToUnicode } from "./docxService.ts";
+import { generateFilenameFromContent } from "../utils/filename.ts";
+
+export { generateFilenameFromContent };
 
 export type ExportFormat = "docx" | "pdf" | "tex" | "md" | "txt";
 

@@ -36,6 +36,8 @@ interface ToolbarGridProps {
   // AI Polish & Export Word
   isAiPolishing: boolean;
   onTriggerAiPolish: () => void;
+  onTriggerFormatAI?: () => void;
+  isNoAI?: boolean;
   aiProviderName?: string;
   onDownloadDocx: () => void;
   onExportFormat?: (format: "docx" | "pdf" | "tex" | "md" | "txt") => void;
@@ -63,6 +65,8 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   onInsertSymbol,
   isAiPolishing,
   onTriggerAiPolish,
+  onTriggerFormatAI,
+  isNoAI = false,
   aiProviderName,
   onDownloadDocx,
   onExportFormat,
@@ -154,21 +158,23 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
       >
         {/* Mobile-Friendly Quick Header (Visible on small screens) */}
         <div className="sm:hidden mb-2.5 pb-2.5 border-b-2 border-slate-200 flex items-center justify-between gap-2">
-          {/* Quick AI Polish on Mobile */}
+          {/* Quick FormatAI or AI Polish on Mobile */}
           <button
             type="button"
-            onClick={onTriggerAiPolish}
+            onClick={isNoAI ? (onTriggerFormatAI || onTriggerAiPolish) : onTriggerAiPolish}
             disabled={isAiPolishing}
             className="flex-1 min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-xl text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
             style={{ backgroundColor: currentTheme.btnPrimary }}
-            title="Run AI Polish"
+            title={isNoAI ? "Run FormatAI (No AI)" : "Run AI Polish"}
           >
             {isAiPolishing ? (
               <Loader2 className="w-4 h-4 animate-spin shrink-0" />
             ) : (
               <Sparkles className="w-4 h-4 text-amber-300 shrink-0" />
             )}
-            <span>{isAiPolishing ? "Polishing..." : "AI Polish"}</span>
+            <span>
+              {isAiPolishing ? "Normalizing..." : isNoAI ? "FormatAI" : "AI Polish"}
+            </span>
           </button>
 
           {/* Quick Export on Mobile */}
@@ -549,15 +555,24 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                   </div>
                   <div>
                     <span className="font-extrabold text-blue-950 text-xs sm:text-sm block leading-tight">
-                      AI Polish
+                      {isNoAI ? "FormatAI" : "AI Polish"}
                     </span>
                     <span className="text-[10px] font-bold text-blue-800 block">
-                      {isAiPolishing ? "Normalizing..." : "Select AI & Clean"}
+                      {isAiPolishing
+                        ? "Normalizing..."
+                        : isNoAI
+                        ? "Instant Academic Formatter"
+                        : "Select AI & Clean"}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1">
+                  {isNoAI && (
+                    <span className="text-[9px] font-extrabold bg-blue-100 text-blue-800 px-1.5 py-0.5 rounded border border-blue-200 uppercase tracking-wider hidden min-[420px]:inline">
+                      No AI
+                    </span>
+                  )}
                   <ChevronDown
                     className={`w-4 h-4 text-blue-700 group-hover:text-blue-900 transition-transform ${
                       openCard === "ai-polish" ? "rotate-180 text-blue-900 font-bold" : ""
@@ -566,7 +581,11 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 </div>
               </div>
               <p className="text-[10px] sm:text-[11px] text-blue-900/80 mt-1 font-semibold line-clamp-1">
-                {isAiPolishing ? "Normalizing equations..." : "Select provider & run polish"}
+                {isAiPolishing
+                  ? "Normalizing equations..."
+                  : isNoAI
+                  ? "Deterministic offline rules • No AI needed"
+                  : "Select provider & run polish"}
               </p>
             </button>
 
@@ -575,6 +594,8 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               <AIPolishDropdown
                 isAiPolishing={isAiPolishing}
                 onTriggerAiPolish={onTriggerAiPolish}
+                onTriggerFormatAI={onTriggerFormatAI}
+                isNoAI={isNoAI}
                 onClose={() => setOpenCard(null)}
                 onOpenAISettings={onOpenAISettings}
               />

@@ -35,6 +35,8 @@ export type AISignalType =
 interface AIPolishDropdownProps {
   isAiPolishing: boolean;
   onTriggerAiPolish: () => void;
+  onTriggerFormatAI?: () => void;
+  isNoAI?: boolean;
   onClose: () => void;
   onOpenAISettings?: () => void;
   onOpenFreeKeyModal?: (helpConfig: ProviderHelpConfig) => void;
@@ -43,6 +45,8 @@ interface AIPolishDropdownProps {
 export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
   isAiPolishing,
   onTriggerAiPolish,
+  onTriggerFormatAI,
+  isNoAI = false,
   onClose,
   onOpenAISettings,
   onOpenFreeKeyModal,
@@ -64,7 +68,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
       setProviders(provs);
       setStats(st);
 
-      const activeId = cfg.activeProviderId || "gemini";
+      const activeId = cfg.activeProviderId || (isNoAI ? "formatai" : "gemini");
       setSelectedProviderId(activeId);
 
       const currentP = provs.find((p) => p.id === activeId);
@@ -237,8 +241,25 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     }
   };
 
-  // Execute polish
+  // Execute polish or FormatAI
   const handleRunPolish = () => {
+    if (selectedProviderId === "formatai" || selectedProviderId === "local") {
+      const updatedCfg: ManagerConfig = {
+        ...(managerConfig || getUserSettings()),
+        activeProviderId: "formatai",
+        activeModel: "standard-academic",
+        mode: "manual",
+      };
+      saveUserSettings(updatedCfg);
+      onClose();
+      if (onTriggerFormatAI) {
+        onTriggerFormatAI();
+      } else {
+        onTriggerAiPolish();
+      }
+      return;
+    }
+
     // Ensure the selected provider is saved
     if (selectedProvider) {
       const updatedCfg: ManagerConfig = {
@@ -254,21 +275,27 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     onTriggerAiPolish();
   };
 
+  const isFormatAiActive = selectedProviderId === "formatai" || selectedProviderId === "local" || isNoAI;
+
   return (
     <div className="absolute right-0 top-full mt-2 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-white rounded-2xl shadow-2xl border-2 border-slate-300 p-3.5 sm:p-4 z-40 animate-in fade-in zoom-in-95 space-y-3.5">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5">
         <div>
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-            Multi-Provider AI Polishing
+            {isNoAI ? "Academic Normalizer" : "Multi-Provider Engine & FormatAI"}
           </div>
           <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
-            <span>Select AI Engine</span>
-            {selectedProvider && (
+            <span>{isNoAI ? "FormatAI Engine" : "Select Engine"}</span>
+            {isFormatAiActive ? (
+              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
+                Active: FormatAI (No AI)
+              </span>
+            ) : selectedProvider ? (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
                 Active: {selectedProvider.name.replace("Google ", "")}
               </span>
-            )}
+            ) : null}
           </h3>
         </div>
 
@@ -288,10 +315,80 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
         )}
       </div>
 
-      {/* AI Provider Selection List */}
-      <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+      {/* When running with No AI, display informative banner */}
+      {isNoAI && (
+        <div className="p-2.5 rounded-xl bg-blue-50/90 border border-blue-200 text-blue-950 text-xs flex items-start gap-2 shadow-2xs">
+          <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
+          <div className="min-w-0 text-[11px] leading-snug">
+            <span className="font-extrabold block">No AI Mode Active</span>
+            <p className="text-[10px] text-blue-800 font-medium">
+              FormatAI cleans and normalizes your notes & equations instantly using local deterministic academic rules without needing API keys.
+            </p>
+          </div>
+        </div>
+      )}
+
+      {/* FormatAI Featured Option (Zero AI Required / Deterministic) */}
+      <div>
         <div className="text-[10px] font-bold text-slate-600 mb-1 flex items-center justify-between">
-          <span>Choose AI to Polish Note:</span>
+          <span>Standard Formatter (Offline / No AI):</span>
+          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
+            Free Forever
+          </span>
+        </div>
+        <div
+          onClick={() => {
+            setSelectedProviderId("formatai");
+            setSelectedModelId("standard-academic");
+            const updatedCfg: ManagerConfig = {
+              ...(managerConfig || getUserSettings()),
+              activeProviderId: "formatai",
+              activeModel: "standard-academic",
+              mode: "manual",
+            };
+            setManagerConfig(updatedCfg);
+            saveUserSettings(updatedCfg);
+          }}
+          className={`p-2.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-2 text-left ${
+            isFormatAiActive
+              ? "border-blue-600 ring-2 ring-blue-300/50 bg-blue-50/90 shadow-2xs"
+              : "border-slate-200 hover:border-blue-400 bg-white hover:bg-slate-50/60"
+          }`}
+        >
+          <div className="flex items-center gap-2 min-w-0">
+            <div className="p-1 rounded-lg bg-blue-600 text-white shadow-2xs shrink-0">
+              <Sparkles className="w-4 h-4 text-amber-300" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5">
+                <span className="text-xs font-black text-slate-900">FormatAI</span>
+                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 border border-blue-200">
+                  No AI • Instant
+                </span>
+                {isFormatAiActive && (
+                  <span className="p-0.5 rounded-full bg-blue-600 text-white shrink-0">
+                    <Check className="w-2.5 h-2.5" />
+                  </span>
+                )}
+              </div>
+              <p className="text-[10px] text-slate-600 font-medium truncate">
+                Deterministic Academic LaTeX & Notes Typesetter
+              </p>
+            </div>
+          </div>
+          <div className="shrink-0">
+            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border bg-emerald-50 text-emerald-800 border-emerald-200">
+              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
+              <span>Ready</span>
+            </span>
+          </div>
+        </div>
+      </div>
+
+      {/* AI Provider Selection List */}
+      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 border-t border-slate-200/80 pt-2">
+        <div className="text-[10px] font-bold text-slate-600 mb-1 flex items-center justify-between">
+          <span>Multi-Provider AI Engines (Optional Polish):</span>
           <span className="text-[9px] text-slate-500">
             {providers.filter((p) => p.enabled).length} Enabled
           </span>
@@ -453,29 +550,68 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
         </div>
       )}
 
-      {/* Action Button: Run AI Polish Now */}
-      <button
-        type="button"
-        onClick={handleRunPolish}
-        disabled={isAiPolishing}
-        className={`w-full text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer active:scale-98 disabled:opacity-50 ${
-          selectedTheme?.switchActiveBg || "bg-blue-600 hover:bg-blue-700"
-        }`}
-      >
-        {isAiPolishing ? (
-          <>
-            <Loader2 className="w-4 h-4 animate-spin text-white" />
-            <span>Polishing Academic Notes...</span>
-          </>
+      {/* Action Buttons: FormatAI vs AI Polish */}
+      <div className="space-y-2 pt-1">
+        {isFormatAiActive ? (
+          <button
+            type="button"
+            onClick={handleRunPolish}
+            disabled={isAiPolishing}
+            className="w-full text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer active:scale-98 disabled:opacity-50 bg-blue-600 hover:bg-blue-700"
+          >
+            {isAiPolishing ? (
+              <>
+                <Loader2 className="w-4 h-4 animate-spin text-white" />
+                <span>Normalizing with FormatAI...</span>
+              </>
+            ) : (
+              <>
+                <Sparkles className="w-4 h-4 text-amber-300" />
+                <span>Run FormatAI Now (No AI Needed)</span>
+              </>
+            )}
+          </button>
         ) : (
           <>
-            <Sparkles className="w-4 h-4 text-amber-300" />
-            <span>
-              Run AI Polish Now ({selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"})
-            </span>
+            <button
+              type="button"
+              onClick={handleRunPolish}
+              disabled={isAiPolishing}
+              className={`w-full text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer active:scale-98 disabled:opacity-50 ${
+                selectedTheme?.switchActiveBg || "bg-blue-600 hover:bg-blue-700"
+              }`}
+            >
+              {isAiPolishing ? (
+                <>
+                  <Loader2 className="w-4 h-4 animate-spin text-white" />
+                  <span>Polishing Academic Notes...</span>
+                </>
+              ) : (
+                <>
+                  <Sparkles className="w-4 h-4 text-amber-300" />
+                  <span>
+                    Run AI Polish Now ({selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"})
+                  </span>
+                </>
+              )}
+            </button>
+
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                if (onTriggerFormatAI) onTriggerFormatAI();
+                else onTriggerAiPolish();
+              }}
+              disabled={isAiPolishing}
+              className="w-full text-slate-700 hover:text-slate-950 text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all border border-slate-300 hover:bg-slate-100/80 cursor-pointer active:scale-98 disabled:opacity-50"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
+              <span>Or Run Instant FormatAI (No AI)</span>
+            </button>
           </>
         )}
-      </button>
+      </div>
     </div>
   );
 };
