@@ -550,39 +550,51 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
             )}
           </div>
 
-          {/* ===================== CARD 4: AI POLISH / FORMATAI ===================== */}
-          <div className={`relative ${openCard === "ai-polish" ? "z-50" : "z-10"}`}>
-            <button
-              id="card-toolbar-ai-polish"
-              type="button"
-              onClick={() => toggleCard("ai-polish")}
-              disabled={isAiPolishing}
-              aria-expanded={openCard === "ai-polish"}
-              className={`w-full min-h-[76px] sm:min-h-[82px] bg-white hover:bg-slate-50 border-2 ${
+          {/* ===================== CARD 4: SPLIT BUTTON AI POLISH / FORMATAI ===================== */}
+          <div className={`relative h-full ${openCard === "ai-polish" ? "z-50" : "z-10"}`}>
+            <div
+              className={`w-full min-h-[76px] sm:min-h-[82px] bg-white border-2 ${
                 isAiPolishing
-                  ? "bg-blue-50 border-blue-500 ring-2 ring-blue-200 shadow-xs"
+                  ? "bg-blue-50/80 border-blue-500 ring-2 ring-blue-200 shadow-xs"
                   : openCard === "ai-polish"
-                  ? "border-blue-600 bg-blue-50/50 ring-2 ring-blue-100 shadow-xs"
+                  ? "border-blue-600 ring-2 ring-blue-100 shadow-xs"
                   : "border-slate-300 hover:border-blue-500 hover:shadow-xs"
-              } rounded-2xl p-2.5 sm:p-3 transition-all text-left flex flex-col justify-between cursor-pointer group disabled:opacity-60`}
+              } rounded-2xl transition-all flex items-stretch`}
             >
-              <div className="flex items-center justify-between w-full">
+              {/* Main Left Button: Click to immediately run FormatAI / AI Polish */}
+              <button
+                id="btn-ai-polish-main"
+                type="button"
+                onClick={() => {
+                  if (isAiPolishing) return;
+                  if (isNoAI && onTriggerFormatAI) {
+                    onTriggerFormatAI();
+                  } else {
+                    onTriggerAiPolish();
+                  }
+                }}
+                disabled={isAiPolishing}
+                className="flex-1 p-2.5 sm:p-3 transition-all text-left flex flex-col justify-between cursor-pointer group hover:bg-slate-50/80 rounded-l-2xl disabled:cursor-not-allowed min-w-0"
+                title={
+                  isAiPolishing
+                    ? "Normalizing notes..."
+                    : isNoAI
+                    ? "Click to Run FormatAI immediately (Offline / No AI)"
+                    : `Click to Run AI Polish immediately (${aiProviderName || "Active AI"})`
+                }
+              >
                 <div className="flex items-center gap-1.5 sm:gap-2 min-w-0">
                   <div
                     className={`w-7 h-7 sm:w-8 sm:h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs transition-colors ${
-                      openCard === "ai-polish" || isAiPolishing
+                      isAiPolishing
                         ? "bg-blue-600 text-white"
-                        : "bg-blue-100 border border-blue-200 text-blue-700 group-hover:bg-blue-200/70"
+                        : "bg-blue-100 border border-blue-200 text-blue-700 group-hover:bg-blue-200/80"
                     }`}
                   >
                     {isAiPolishing ? (
                       <Loader2 className="w-4 h-4 animate-spin text-white" />
                     ) : (
-                      <Sparkles
-                        className={`w-4 h-4 ${
-                          openCard === "ai-polish" || isAiPolishing ? "text-amber-300" : "text-blue-700"
-                        }`}
-                      />
+                      <Sparkles className="w-4 h-4 text-blue-700 group-hover:text-blue-900" />
                     )}
                   </div>
                   <div className="min-w-0">
@@ -594,32 +606,54 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                         ? "Normalizing..."
                         : isNoAI
                         ? "Instant Academic Formatter"
-                        : "Select AI & Clean"}
+                        : aiProviderName
+                        ? `${aiProviderName.replace("Google ", "")} Engine`
+                        : "Click to Run Polish"}
                     </span>
                   </div>
                 </div>
 
-                <div className="flex items-center gap-1 shrink-0 ml-1">
-                  {isNoAI && (
-                    <span className="text-[9px] font-bold bg-slate-100 text-slate-600 px-1.5 py-0.5 rounded border border-slate-200 uppercase tracking-wider hidden min-[440px]:inline">
-                      No AI
-                    </span>
-                  )}
-                  <ChevronDown
-                    className={`w-4 h-4 text-slate-500 group-hover:text-blue-700 transition-transform ${
-                      openCard === "ai-polish" ? "rotate-180 text-blue-700 font-bold" : ""
-                    }`}
-                  />
-                </div>
-              </div>
-              <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium line-clamp-1">
-                {isAiPolishing
-                  ? "Normalizing equations..."
-                  : isNoAI
-                  ? "Deterministic offline rules • No AI needed"
-                  : "Select provider & run polish"}
-              </p>
-            </button>
+                <p className="text-[10px] sm:text-[11px] text-slate-500 mt-1 font-medium truncate">
+                  {isAiPolishing
+                    ? "Normalizing equations..."
+                    : isNoAI
+                    ? "Deterministic offline rules • Click to Run"
+                    : "Click to Run Polish • or ▼ for options"}
+                </p>
+              </button>
+
+              {/* Vertical divider between left action and right chevron dropdown */}
+              <div className="w-px bg-slate-200 my-2 shrink-0" />
+
+              {/* Right side: ▼ opens dropdown menu */}
+              <button
+                id="btn-ai-polish-dropdown-toggle"
+                type="button"
+                onClick={() => toggleCard("ai-polish")}
+                disabled={isAiPolishing}
+                aria-label="Open AI Polish options menu"
+                aria-expanded={openCard === "ai-polish"}
+                className={`px-2.5 sm:px-3 flex flex-col items-center justify-center gap-1 hover:bg-slate-100/90 rounded-r-2xl transition-all cursor-pointer group disabled:cursor-not-allowed ${
+                  openCard === "ai-polish" ? "bg-blue-50 text-blue-800" : "text-slate-500 hover:text-blue-700"
+                }`}
+                title="Select Engine, Providers, Models & Options"
+              >
+                {isNoAI ? (
+                  <span className="text-[9px] font-black bg-slate-100 text-slate-700 px-1 py-0.2 rounded border border-slate-200 uppercase tracking-tight">
+                    NO AI
+                  </span>
+                ) : (
+                  <span className="text-[9px] font-black bg-blue-100 text-blue-800 px-1 py-0.2 rounded border border-blue-200 uppercase tracking-tight">
+                    AI
+                  </span>
+                )}
+                <ChevronDown
+                  className={`w-4 h-4 text-slate-400 group-hover:text-blue-700 transition-transform duration-200 ${
+                    openCard === "ai-polish" ? "rotate-180 text-blue-700 font-bold" : ""
+                  }`}
+                />
+              </button>
+            </div>
 
             {/* AI Polish Sub-bar Dropdown with AI Selection, Health Signals & Run Button */}
             {openCard === "ai-polish" && (

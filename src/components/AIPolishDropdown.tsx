@@ -350,6 +350,41 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
         </div>
       </div>
 
+      {/* Top Quick-Run Bar for Instant 1-Click Execution (No Scrolling Needed on PC or Mobile) */}
+      <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 p-2.5 rounded-xl border border-blue-200 shadow-2xs space-y-1.5">
+        <div className="flex items-center justify-between text-[10px]">
+          <span className="font-extrabold uppercase tracking-wider text-blue-900 flex items-center gap-1">
+            <Sparkles className="w-3 h-3 text-amber-500" />
+            <span>{isFormatAiActive ? "FormatAI Engine" : `${selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"} Engine`}</span>
+          </span>
+          <span className="font-bold text-slate-500 truncate max-w-[150px]">
+            {isFormatAiActive ? "Deterministic / Offline" : selectedModelId || "Default Model"}
+          </span>
+        </div>
+        <button
+          type="button"
+          onClick={handleRunPolish}
+          disabled={isAiPolishing}
+          className="w-full text-white text-xs font-black py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-2xs cursor-pointer active:scale-98 disabled:opacity-50 bg-blue-600 hover:bg-blue-700"
+        >
+          {isAiPolishing ? (
+            <>
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
+              <span>Normalizing Academic Notes...</span>
+            </>
+          ) : (
+            <>
+              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+              <span>
+                {isFormatAiActive
+                  ? "Run FormatAI Now (No AI)"
+                  : `Run Polish Now with ${selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"}`}
+              </span>
+            </>
+          )}
+        </button>
+      </div>
+
       {/* When running with No AI, display informative banner */}
       {isNoAI && (
         <div className="p-2.5 rounded-xl bg-blue-50/90 border border-blue-200 text-blue-950 text-xs flex items-start gap-2 shadow-2xs">
