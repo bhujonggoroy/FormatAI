@@ -42,6 +42,8 @@ export interface AIPolishValidationResult {
     tablesWellFormed: boolean;
     codeFencesClosed: boolean;
     essentialMathPreserved: boolean;
+    headingsPreserved: boolean;
+    tablesPreserved: boolean;
   };
 }
 
@@ -50,7 +52,7 @@ export interface AIPolishValidationResult {
  *
  * @param aiOutput The raw text produced by the AI Polish engine
  * @param originalInput The user's original notes/input text
- * @param formatAiResult Optional current FormatAI Result for fidelity comparison
+ * @param formatAiResult Optional current FormatAI Result for baseline fidelity comparison
  */
 export function validateAIPolishOutput(
   aiOutput: string | null | undefined,
@@ -71,6 +73,8 @@ export function validateAIPolishOutput(
     tablesWellFormed: true,
     codeFencesClosed: true,
     essentialMathPreserved: true,
+    headingsPreserved: true,
+    tablesPreserved: true,
   };
 
   // 1. Non-empty check
@@ -89,13 +93,15 @@ export function validateAIPolishOutput(
 
   const outputText = aiOutput.trim();
   const inputText = (originalInput || "").trim();
+  const baselineText = (formatAiResult || "").trim();
 
   // 2. Severe truncation / content drop check
-  // If original input has substantial content (>80 chars), AI shouldn't drop >75% of content
-  if (inputText.length > 80 && outputText.length < Math.min(60, inputText.length * 0.25)) {
+  // Compare against original input and baseline FormatAI result
+  const referenceLength = Math.max(inputText.length, baselineText.length);
+  if (referenceLength > 80 && outputText.length < Math.min(60, referenceLength * 0.25)) {
     details.notSeverelyTruncated = false;
     errors.push(
-      `Severe truncation detected: AI output length (${outputText.length} chars) is drastically smaller than input (${inputText.length} chars).`
+      `Severe truncation detected: AI output length (${outputText.length} chars) is drastically smaller than baseline (${referenceLength} chars).`
     );
   }
 
@@ -158,7 +164,6 @@ export function validateAIPolishOutput(
   }
 
   // 5. LaTeX Formula Braces and Syntax Checks
-  // Extract all math expressions ($$...$$, \[...\], \(...\), $...$)
   const mathExpressions: string[] = [];
 
   // Display equations
@@ -210,7 +215,7 @@ export function validateAIPolishOutput(
       details.mathBracesBalanced = false;
       const snippet = math.length > 40 ? math.slice(0, 37) + "..." : math;
       errors.push(`Unbalanced curly braces '{' in math formula: "${snippet}"`);
-      break; // One broken formula is enough to fail KaTeX rendering
+      break;
     }
   }
 
@@ -252,7 +257,6 @@ export function validateAIPolishOutput(
   for (let i = 0; i < lines.length; i++) {
     const line = lines[i].trim();
     if (line.startsWith("|") && line.endsWith("|")) {
-      // If looks like header row, check if next line is a separator row
       if (i + 1 < lines.length) {
         const nextLine = lines[i + 1].trim();
         if (
@@ -261,8 +265,6 @@ export function validateAIPolishOutput(
           !nextLine.includes("---") &&
           !lines.slice(Math.max(0, i - 1), i).some((l) => l.trim().includes("---"))
         ) {
-          // Both lines are table rows but neither is a separator
-          // Non-fatal warning unless table is totally broken
           warnings.push(`Markdown table near line ${i + 1} may be missing a header separator row (|---|---|).`);
         }
       }
@@ -270,16 +272,35 @@ export function validateAIPolishOutput(
   }
 
   // 9. Essential Math / Statistical Symbols Preservation
-  // If the user's input explicitly has important statistical symbols, check they weren't all wiped out
   const keySymbols = ["\\sigma", "\\mu", "\\bar{X}", "\\hat{p}", "SE(", "Var(", "Z ="];
-  const presentInInput = keySymbols.filter((sym) => inputText.includes(sym));
+  const presentInInput = keySymbols.filter((sym) => inputText.includes(sym) || baselineText.includes(sym));
   if (presentInInput.length >= 2) {
     const retainedInOutput = presentInInput.filter(
       (sym) => outputText.includes(sym) || outputText.includes(sym.toLowerCase())
     );
     if (retainedInOutput.length === 0) {
       details.essentialMathPreserved = false;
-      errors.push("AI Polish dropped all key mathematical and statistical formulas present in the input notes.");
+      errors.push("AI Polish dropped all key mathematical and statistical formulas present in the baseline document.");
+    }
+  }
+
+  // 10. Headings Preservation Check (Rule 8: Headings hierarchy must be preserved)
+  if (baselineText) {
+    const baselineHeadingMatches = (baselineText.match(/^#{1,4}\s+.+$/gm) || []).length;
+    const outputHeadingMatches = (outputText.match(/^#{1,4}\s+.+$/gm) || []).length;
+    if (baselineHeadingMatches >= 3 && outputHeadingMatches === 0) {
+      details.headingsPreserved = false;
+      errors.push(`AI Polish dropped all section headings (baseline had ${baselineHeadingMatches} headings).`);
+    }
+  }
+
+  // 11. Tables Preservation Check (Rule 8: Tables must be preserved)
+  if (baselineText) {
+    const baselineHasTable = /\|[^\n]+\|\r?\n\|[\s-:]+\|\r?\n/.test(baselineText);
+    const outputHasTable = /\|[^\n]+\|\r?\n\|[\s-:]+\|\r?\n/.test(outputText);
+    if (baselineHasTable && !outputHasTable) {
+      details.tablesPreserved = false;
+      errors.push("AI Polish dropped Markdown tables present in the baseline document.");
     }
   }
 
@@ -304,4 +325,20 @@ export function validateAIPolishOutput(
     discardReason,
     details,
   };
+}
+
+/**
+ * Generates structured validation feedback for controlled AI repair re-prompting.
+ */
+export function formatValidationFeedback(validation: AIPolishValidationResult): string {
+  const issues = validation.errors.map((e) => `• ${e}`).join("\n");
+  return `Your previous output failed automated academic quality-gate validation because:
+${issues}
+
+Repair Instructions:
+1. Preserve the existing FormatAI baseline structure completely.
+2. Fix ONLY the formatting/validation problems identified above.
+3. Do NOT omit any sections, tables, lists, or formulas.
+4. Ensure all LaTeX math delimiters ($$, \\[, \\], \\(, \\), $) and braces { } are perfectly balanced.
+5. Return the full repaired Markdown directly with NO conversational filler.`;
 }

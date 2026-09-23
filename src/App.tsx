@@ -229,6 +229,7 @@ export default function App() {
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({
           text: inputText,
+          baselineMarkdown: prePolishFormatAiResult,
           equationFormat,
           formatMode,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
@@ -349,7 +350,9 @@ export default function App() {
       }
       fetchAIHealth();
     } catch (err: any) {
-      setErrorMessage(err.message || "AI polish failed.");
+      // Rule 21 & Rule 24: If AI API fails, preserve existing FormatAI result intact. Preview remains unchanged.
+      setCleanedMarkdown(null);
+      setErrorMessage(`${err.message || "AI polish failed."} (FormatAI baseline result preserved intact)`);
     } finally {
       setIsConverting(false);
       setConversionStage("");

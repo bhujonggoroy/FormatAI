@@ -23,7 +23,7 @@ import {
   type ExportFormat
 } from "./src/server/exportService.ts";
 import { cleanClientSideNotebookLM } from "./src/utils/cleaner.ts";
-import { validateAIPolishOutput } from "./src/utils/aiValidation.ts";
+import { validateAIPolishOutput, formatValidationFeedback } from "./src/utils/aiValidation.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";
 import {
   skillRegistry,
@@ -320,7 +320,8 @@ Follow these rules strictly:
     enabledSkillIds?: string[],
     customPrompt?: string,
     aiConfig?: any,
-    userProviders?: any[]
+    userProviders?: any[],
+    baselineMarkdown?: string
   ): Promise<CleanNotesResult> {
     // 1. Execute Modular Skills Pipeline in priority order:
     // (1. Math -> 2. Scientific -> 3. Academic Manuscript -> 4. General Text)
@@ -468,6 +469,13 @@ CRITICAL FORMATTING & DOCUMENT STANDARDS:
 RAW NOTES:
 ${preCleaned}`;
 
+    // 1. Establish the authoritative FormatAI Baseline Document.
+    // The existing FormatAI Result is the baseline for AI Polish.
+    // If not passed from client's current verified preview state, compute it natively.
+    const baselineDoc = baselineMarkdown && baselineMarkdown.trim()
+      ? baselineMarkdown.trim()
+      : cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
+
     // Direct No AI / FormatAI request — instant deterministic formatting without external AI calls
     if (
       aiConfig?.activeProviderId === "formatai" ||
@@ -475,9 +483,8 @@ ${preCleaned}`;
       (aiConfig as any)?.mode === "no_ai" ||
       (aiConfig as any)?.mode === "formatai"
     ) {
-      const formatAiResult = cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
       return {
-        cleanedMarkdown: formatAiResult,
+        cleanedMarkdown: baselineDoc,
         providerId: "formatai",
         providerName: "FormatAI (Deterministic Academic Typesetter)",
         model: "standard-academic-engine",
@@ -490,10 +497,45 @@ ${preCleaned}`;
       };
     }
 
+    // AI Polish prompt integrating FormatAI Baseline Document + Original Content + Skills Context
+    const aiPolishPrompt = `You are acting as the AI Polish & Quality-Enhancement Layer for FormatAI.
+FormatAI Native Skills have already performed the initial formatting pass and produced the authoritative BASELINE DOCUMENT below.
+
+YOUR CORE MANDATE:
+1. "PRESERVE FIRST. IMPROVE SECOND."
+2. TREAT THE FORMATAI BASELINE DOCUMENT AS YOUR FOUNDATIONAL SOURCE:
+   • What FormatAI handled correctly -> KEEP EXACTLY AS IS.
+   • What FormatAI could not handle -> IMPROVE with high-order academic precision.
+   • Obvious formatting errors -> FIX.
+   • Ambiguous structure -> RESOLVE cleanly.
+   • Already correct elements -> DO NOT unnecessarily reword, reformat, or alter.
+3. DO NOT REGENERATE THE DOCUMENT FROM SCRATCH:
+   • Preserve all existing Markdown headings (#, ##, ###), numbered sections, and document hierarchy.
+   • Preserve all existing Markdown tables, column alignments, and data rows.
+   • Preserve all mathematical expressions and formulas. Standardize to rigorous KaTeX syntax (\\(...\\) inline, $$...$$ or \\[...\\] display).
+   • Preserve citations, bibliography/references, bullet points, and data values.
+   • Do NOT hallucinate new facts, sources, statistics, or substantive claims.
+4. NO TREE ARTIFACTS:
+   • Strip any tree-drawing characters (|, │, ├──, └──, ├─, └─, +, \`---\`).
+5. OUTPUT FORMAT:
+   • Output ONLY the polished Markdown text directly.
+   • Do NOT include conversational introductions, polite remarks, or assistant commentary.
+   • Do NOT wrap the entire output in a top-level \`\`\`markdown fence. Return raw Markdown directly.
+
+SELECTED FORMATTING MODE: "${formatMode}"
+
+---
+## 1. FORMATAI BASELINE DOCUMENT (CURRENT AUTHORITATIVE STATE TO ENHANCE & PRESERVE):
+${baselineDoc}
+
+---
+## 2. ORIGINAL USER CONTENT (FOR REFERENCE & FACTUAL INTEGRITY):
+${preCleaned}`;
+
     try {
       const aiResponse = await aiRequestManager.executeRequestScoped(
         {
-          prompt,
+          prompt: aiPolishPrompt,
           systemPrompt: combinedSystemPrompt,
           temperature: 0.2,
           capabilities: ["text", "math", "long_context"],
@@ -512,18 +554,74 @@ ${preCleaned}`;
         cleaned = cleaned.slice(0, -3).trim();
       }
 
-      // Post-process to guarantee zero tree pipe characters and valid math
-      const finalized = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(cleaned));
+      // Post-process temporary candidate
+      const candidate = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(cleaned));
 
-      // Quality-Gate Validation: Verify AI Polish output
-      const validation = validateAIPolishOutput(finalized, rawText);
+      // Quality-Gate Validation on candidate against baseline
+      let validation = validateAIPolishOutput(candidate, rawText, baselineDoc);
 
+      // Section 19 & 20: Controlled AI Retry if validation failed (Max 1 retry)
       if (!validation.isValid) {
-        console.warn("AI Polish output FAILED validation. Discarding AI output and restoring FormatAI Result:", validation.errors);
-        // Discard AI Output & Restore FormatAI Result
-        const formatAiResult = cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
+        console.warn("AI Candidate failed validation on pass 1. Attempting 1 controlled repair retry:", validation.errors);
+
+        try {
+          const retryFeedback = formatValidationFeedback(validation);
+          const retryPrompt = `${aiPolishPrompt}
+
+---
+## CRITICAL REPAIR INSTRUCTION (RETRY 1 OF 1):
+${retryFeedback}`;
+
+          const retryResponse = await aiRequestManager.executeRequestScoped(
+            {
+              prompt: retryPrompt,
+              systemPrompt: combinedSystemPrompt,
+              temperature: 0.1,
+              capabilities: ["text", "math", "long_context"],
+            },
+            aiConfig,
+            userProviders
+          );
+
+          let retryCleaned = (retryResponse.text || "").trim();
+          if (retryCleaned.startsWith("```markdown")) {
+            retryCleaned = retryCleaned.slice(11).trim();
+          } else if (retryCleaned.startsWith("```")) {
+            retryCleaned = retryCleaned.slice(3).trim();
+          }
+          if (retryCleaned.endsWith("```")) {
+            retryCleaned = retryCleaned.slice(0, -3).trim();
+          }
+
+          const retryCandidate = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(retryCleaned));
+          const retryValidation = validateAIPolishOutput(retryCandidate, rawText, baselineDoc);
+
+          if (retryValidation.isValid) {
+            console.log("Controlled AI repair retry SUCCEEDED! Committing validated candidate.");
+            return {
+              cleanedMarkdown: retryCandidate,
+              providerId: retryResponse.providerId,
+              providerName: retryResponse.providerName,
+              model: retryResponse.model,
+              validationFailed: false,
+              validationErrors: [],
+              validationScore: retryValidation.score,
+              discardedAiOutput: false,
+              fallbackCount: Math.max(0, retryResponse.fallbackChain.length - 1),
+              fallbackChain: retryResponse.fallbackChain,
+            };
+          } else {
+            console.warn("Controlled AI repair retry STILL failed validation:", retryValidation.errors);
+            validation = retryValidation;
+          }
+        } catch (retryErr: any) {
+          console.warn("Error during controlled AI repair retry:", retryErr.message);
+        }
+
+        // Both attempts failed: Discard AI Output & Preserve FormatAI Baseline Result
+        console.warn("AI Polish output FAILED validation after retry. Preserving FormatAI Baseline Result:", validation.errors);
         return {
-          cleanedMarkdown: formatAiResult,
+          cleanedMarkdown: baselineDoc,
           providerId: aiResponse.providerId,
           providerName: aiResponse.providerName,
           model: aiResponse.model,
@@ -537,8 +635,9 @@ ${preCleaned}`;
         };
       }
 
+      // Candidate passed validation on first try -> Atomic Commit
       return {
-        cleanedMarkdown: finalized,
+        cleanedMarkdown: candidate,
         providerId: aiResponse.providerId,
         providerName: aiResponse.providerName,
         model: aiResponse.model,
@@ -550,14 +649,13 @@ ${preCleaned}`;
         fallbackChain: aiResponse.fallbackChain,
       };
     } catch (err: any) {
-      console.warn("AIRequestManager fallback to local normalizer:", err.message);
-      // Fallback gracefully to systematic algorithmic cleaner if all providers fail
-      const fallbackCleaned = cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
+      console.warn("AIRequestManager error, preserving FormatAI Baseline Result:", err.message);
+      // Fallback gracefully to baseline FormatAI result if all providers fail
       return {
-        cleanedMarkdown: fallbackCleaned,
+        cleanedMarkdown: baselineDoc,
         providerId: "local",
-        providerName: "Algorithmic Cleaner (Offline Fallback)",
-        model: "rule-based-v2",
+        providerName: "FormatAI Native Engine (Safe Fallback)",
+        model: "deterministic-v2",
         validationFailed: false,
         validationErrors: [],
         validationScore: 100,
@@ -573,6 +671,7 @@ ${preCleaned}`;
     try {
       const {
         text,
+        baselineMarkdown,
         equationFormat = "native",
         formatMode = "auto",
         enabledSkillIds,
@@ -591,7 +690,8 @@ ${preCleaned}`;
         enabledSkillIds,
         customPrompt,
         aiConfig,
-        userProviders
+        userProviders,
+        baselineMarkdown
       );
       res.json({
         cleaned_markdown: result.cleanedMarkdown,
