@@ -82,9 +82,9 @@ export function cleanNotebookLMTreeArtifacts(text: string): string {
   });
 
   // 2. Normalize inline equations: \( ... \) or \\( ... \\)
-  s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
-    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
-    return `$${cleaned}$`;
+  s = s.replace(/(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.replace(/\r?\n\s*/g, " ").trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `\\(${cleaned}\\)`;
   });
 
   // 3. Normalize unicode bullets and list items
@@ -282,9 +282,9 @@ export function standardizeMathToLatex(text: string): string {
   });
 
   // 2. Normalize bracketed inline math: \( ... \) or \\( ... \\)
-  s = s.replace(/(?:\\)+\(\s*([^\n]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
-    const cleaned = math.trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
-    return `$${cleaned}$`;
+  s = s.replace(/(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\)/g, (_, math) => {
+    const cleaned = math.replace(/\r?\n\s*/g, " ").trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+    return `\\(${cleaned}\\)`;
   });
 
   // 3. Normalize bullet styles
@@ -808,7 +808,7 @@ export function parseInlineRunsAndMath(
   const elements: (TextRun | DocxMath)[] = [];
 
   // Match inline math ($...$ or \(...\)), bold (**...**), italic (*...*), or code (`...`)
-  const regex = /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
+  const regex = /(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([\s\S]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g;
   const tokens = text.split(regex);
 
   for (const token of tokens) {
@@ -861,7 +861,7 @@ export function parseInlineRunsAndMath(
     // Bold: **...**
     if (token.startsWith('**') && token.endsWith('**') && token.length >= 4) {
       const inner = token.slice(2, -2);
-      if (inner.includes('$') || inner.includes('*') || inner.includes('`')) {
+      if (inner.includes('$') || inner.includes('*') || inner.includes('`') || inner.includes('\\(')) {
         const subElements = parseInlineRunsAndMath(
           inner,
           fontName,
@@ -889,7 +889,7 @@ export function parseInlineRunsAndMath(
     // Italic: *...*
     if (token.startsWith('*') && token.endsWith('*') && token.length >= 2) {
       const inner = token.slice(1, -1);
-      if (inner.includes('$') || inner.includes('**') || inner.includes('`')) {
+      if (inner.includes('$') || inner.includes('**') || inner.includes('`') || inner.includes('\\(')) {
         const subElements = parseInlineRunsAndMath(
           inner,
           fontName,

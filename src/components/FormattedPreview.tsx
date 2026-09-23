@@ -28,23 +28,24 @@ interface FormattedPreviewProps {
   onTriggerAiPolish?: () => void;
   isAiPolishing?: boolean;
   onDownloadDocx: () => void;
+  onDownloadPdf?: () => void;
   isDownloading: boolean;
 }
 
 function getCssFontFamily(font: string): string {
   switch (font) {
     case "Times New Roman":
-      return '"Times New Roman", Times, "Cambria Math", Georgia, serif';
+      return '"Times New Roman", Times, "Tinos", "Noto Serif Bengali", "Cambria Math", Georgia, serif';
     case "Calibri":
-      return 'Calibri, "Segoe UI", Arial, sans-serif';
+      return 'Calibri, "Segoe UI", "Noto Sans Bengali", Arial, sans-serif';
     case "Arial":
-      return 'Arial, "Helvetica Neue", Helvetica, sans-serif';
+      return 'Arial, "Helvetica Neue", Helvetica, "Noto Sans Bengali", sans-serif';
     case "Georgia":
-      return 'Georgia, "Times New Roman", serif';
+      return 'Georgia, "Times New Roman", "Noto Serif Bengali", serif';
     case "Aptos":
-      return 'Aptos, Calibri, "Segoe UI", sans-serif';
+      return 'Aptos, Calibri, "Segoe UI", "Noto Sans Bengali", sans-serif';
     default:
-      return font ? `"${font}", serif` : '"Times New Roman", Times, serif';
+      return font ? `"${font}", "Noto Serif Bengali", serif` : '"Times New Roman", "Noto Serif Bengali", Times, serif';
   }
 }
 
@@ -58,6 +59,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   onTriggerAiPolish,
   isAiPolishing = false,
   onDownloadDocx,
+  onDownloadPdf,
   isDownloading,
 }) => {
   const [copied, setCopied] = useState(false);
@@ -100,8 +102,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   };
 
   function renderInline(text: string) {
-    // Splits by display math ($$...$$), inline math ($...$ or \(...\)), bold (**...**), italic (*...*), and inline code (`...`)
-    const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
+    // Splits by display math ($$...$$), inline math ($...$ or \(...\)), bold (**...**), italic (*...*), strikethrough (~~...~~), highlight (==...==), and inline code (`...`)
+    const parts = text.split(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|(?:\\)+\([\s\S]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|~~[^~]+~~|==[^=]+==|`[^`]+`)/g);
 
     return parts.map((part, i) => {
       if (!part) return null;
@@ -140,6 +142,24 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           <em key={i} className="italic text-slate-800">
             {renderInline(part.slice(1, -1))}
           </em>
+        );
+      }
+
+      // Highlight: ==...==
+      if (part.startsWith("==") && part.endsWith("==") && part.length >= 4) {
+        return (
+          <mark key={i} className="bg-amber-100/80 text-slate-900 px-1 rounded">
+            {renderInline(part.slice(2, -2))}
+          </mark>
+        );
+      }
+
+      // Strikethrough: ~~...~~
+      if (part.startsWith("~~") && part.endsWith("~~") && part.length >= 4) {
+        return (
+          <del key={i} className="line-through text-slate-500">
+            {renderInline(part.slice(2, -2))}
+          </del>
         );
       }
 
@@ -652,13 +672,37 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Standard paragraph
+    // Standard paragraph: gather consecutive non-empty lines into a single paragraph
+    const paraLines: string[] = [trimmed];
+    i++;
+    while (i < lines.length) {
+      const nextRaw = lines[i];
+      const nextTrimmed = nextRaw.trim();
+      if (!nextTrimmed) break;
+      // Stop if next line is a special markdown element or display math block
+      if (
+        nextTrimmed.startsWith("#") ||
+        nextTrimmed.startsWith("$$") ||
+        /^(?:\\)+\[/.test(nextTrimmed) ||
+        nextTrimmed.startsWith("> ") ||
+        nextTrimmed.startsWith("```") ||
+        (nextTrimmed.startsWith("|") && nextTrimmed.endsWith("|")) ||
+        /^\s*(?:[-*•⁃◦▪▫–—]|\bo\b)\s+/.test(nextRaw) ||
+        /^\s*\d+[\.\)]\s+/.test(nextTrimmed) ||
+        (nextTrimmed.startsWith("\\frac") && !nextTrimmed.startsWith("$"))
+      ) {
+        break;
+      }
+      paraLines.push(nextTrimmed);
+      i++;
+    }
+
+    const fullParagraphText = paraLines.join(" ");
     renderedElements.push(
       <p key={`p-${i}`} className="text-sm text-slate-800 my-2 leading-relaxed">
-        {renderInline(trimmed)}
+        {renderInline(fullParagraphText)}
       </p>
     );
-    i++;
   }
 
   const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
@@ -772,6 +816,19 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             )}
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </button>
+
+          {/* Quick PDF Maker Export Button (Preview Source of Truth) */}
+          {onDownloadPdf && (
+            <button
+              onClick={onDownloadPdf}
+              disabled={isDownloading || isAiPolishing}
+              className="inline-flex items-center gap-1.5 text-xs font-extrabold text-rose-700 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border-2 border-rose-300 hover:border-rose-400 transition-colors shadow-2xs cursor-pointer disabled:opacity-50"
+              title="Download PDF directly matching this preview sheet"
+            >
+              <FileDown className="w-3.5 h-3.5 text-rose-600" />
+              <span>PDF</span>
+            </button>
+          )}
         </div>
       </div>
 
@@ -780,6 +837,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         <div className="p-2 sm:p-5 md:p-8 bg-slate-100/60 overflow-y-auto flex-1 flex justify-center">
           {/* Simulated Office Word Paper Sheet */}
           <div
+            id="preview-document-sheet"
             className="w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-300/80 p-4 sm:p-8 md:p-12 text-slate-800 relative transition-transform duration-150 origin-top overflow-x-hidden"
             style={{
               fontFamily: getCssFontFamily(fontFamily),

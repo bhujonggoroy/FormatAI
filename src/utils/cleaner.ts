@@ -99,14 +99,35 @@ export function cleanClientSideNotebookLM(
       continue;
     }
 
+    // Do NOT merge if buffer or line is a display equation delimiter or block
+    const isBufferBlockMath = /^(?:\\)+\[|^(?:\\)+\]|^\$\$$/.test(buffer.trim()) || buffer.trim().endsWith("\\]") || buffer.trim().endsWith("$$");
+    const isLineBlockMath = /^(?:\\)+\[|^(?:\\)+\]|^\$\$$/.test(line) || line.endsWith("\\]") || line.endsWith("$$");
+    const isLineStructural = /^#{1,6}\s+|^(?:[-*•⁃◦▪▫–—]|o|\d+[\.\)])\s+|^>|^\|/.test(line);
+
+    if (isBufferBlockMath || isLineBlockMath || isLineStructural) {
+      mergedLines.push(buffer);
+      buffer = line;
+      continue;
+    }
+
+    // Check if buffer has unclosed inline math delimiters:
+    // e.g. \( without \) or unclosed single $
+    const openParensCount = (buffer.match(/\\\(/g) || []).length;
+    const closeParensCount = (buffer.match(/\\\)/g) || []).length;
+    const hasUnclosedInlineParen = openParensCount > closeParensCount;
+
+    const unescapedDollars = (buffer.match(/(?<!\\)\$/g) || []).length;
+    const hasUnclosedDollar = unescapedDollars % 2 === 1;
+
     // Check if buffer should be joined with current line:
-    // a) Buffer ends with continuation operator: +, -, =, \cdot, /, (, {, \frac{...}{...
-    // b) Current line starts with continuation: }, ), \cdot, +, -, =, or lowercase continuation
-    const endsWithContinuation = /[+\-=\\/({,]$|\\cdot$|\\frac\{[^{}]*\}$/i.test(buffer);
-    const startsWithContinuation = /^[)}\],+\-=]|^(?:proportion|increases|variances|approaches|improving|where|for|and|with)\b/i.test(line);
+    // a) Unclosed inline math delimiters
+    // b) Buffer ends with continuation operator: +, -, =, \cdot, /, (, {, \frac{...}{...
+    // c) Current line starts with continuation: }, ), \cdot, or lowercase continuation
+    const endsWithContinuation = /[+\-=\\/({]$|\\cdot$|\\frac\{[^{}]*\}$/i.test(buffer);
+    const startsWithContinuation = /^[)}\]]|^(?:proportion|increases|variances|approaches|improving|where|for|and|with)\b/i.test(line);
     const isUnderflowDefinition = /^Parameter:|^Sampling Error:|^Student['’]s/i.test(buffer) && !/^\d+\.|\d+\.\d+|^#|^[A-Z][a-z]+:/i.test(line);
 
-    if (endsWithContinuation || startsWithContinuation || isUnderflowDefinition) {
+    if (hasUnclosedInlineParen || hasUnclosedDollar || endsWithContinuation || startsWithContinuation || isUnderflowDefinition) {
       buffer = buffer + " " + line;
     } else {
       mergedLines.push(buffer);
@@ -125,6 +146,32 @@ export function cleanClientSideNotebookLM(
     if (!line) {
       processed.push("");
       i++;
+      continue;
+    }
+
+    // Preserve display equation blocks ($$ ... $$ or \[ ... \]) cleanly
+    if (line.startsWith("$$") || line.startsWith("\\[")) {
+      const isBracket = line.startsWith("\\[");
+      const closeDelim = isBracket ? "\\]" : "$$";
+
+      if (line.length >= 4 && line.endsWith(closeDelim)) {
+        processed.push(line);
+        i++;
+        continue;
+      }
+
+      const mathLines: string[] = [line];
+      i++;
+      while (i < mergedLines.length) {
+        const cur = mergedLines[i];
+        mathLines.push(cur);
+        if (cur.trim().endsWith(closeDelim)) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      processed.push(mathLines.join("\n"));
       continue;
     }
 
@@ -599,6 +646,15 @@ function extractBalancedBraceCleaner(str: string, startIndex: number): { content
 function normalizeLineMath(line: string): string {
   let s = line;
 
+  const mathPlaceholders: string[] = [];
+  const putPh = (mathStr: string) => {
+    mathPlaceholders.push(mathStr);
+    return `__MATH_PH_${mathPlaceholders.length - 1}__`;
+  };
+
+  // 1. Protect all existing math blocks ($$...$$, \[...\], \(...\), $...$, `...`) BEFORE any other regex
+  s = s.replace(/(\$\$[\s\S]*?\$\$|\\\[[\s\S]*?\\\]|\\\([\s\S]*?\\\)|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
+
   // Normalize terms with math: **Parameter ($\theta$):** -> **Parameter** ($\theta$):
   s = s.replace(/\*\*([^*]+?)\s*\(\$([^$]+?)\$\)\s*:\*\*/g, (_, term, math) => `**${term}** ($${math}$):`);
   s = s.replace(/\*\*([^*]+?)\s*\(\$([^$]+?)\$\)\*\*/g, (_, term, math) => `**${term}** ($${math}$)`);
@@ -616,15 +672,6 @@ function normalizeLineMath(line: string): string {
   s = s.replace(/√\[([^[\]]+)\]/g, "\\sqrt{$1}");
   s = s.replace(/√\(([^()]+)\)/g, "\\sqrt{$1}");
   s = s.replace(/√([a-zA-Z0-9]+)/g, "\\sqrt{$1}");
-
-  const mathPlaceholders: string[] = [];
-  const putPh = (mathStr: string) => {
-    mathPlaceholders.push(mathStr);
-    return `__MATH_PH_${mathPlaceholders.length - 1}__`;
-  };
-
-  // 1. Protect existing math blocks ($$...$$, $...$, `...`)
-  s = s.replace(/(\$\$[\s\S]+?\$\$|\$[^$\n]+\$|`[^`]+`)/g, (match) => putPh(match));
 
   // 2. Normal distributions e.g. Z ~ N(0,1) or \bar{X} \sim N(\mu, \sigma^2/n)
   s = s.replace(/\b([A-Za-z\\]+(?:_[a-zA-Z0-9{}]+)?)\s*(?:\\sim|~)\s*N\(([^()]+)\)/g, (_, v, p) => putPh(`$${v} \\sim N(${p})$`));

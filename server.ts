@@ -15,6 +15,7 @@ import {
 import {
   validateExportFormat,
   getSafeFilenameBase,
+  generateFilenameFromContent,
   generateLaTeXDocument,
   generateMarkdownDocument,
   generatePlainTextDocument,
@@ -605,8 +606,11 @@ ${preCleaned}`;
         fallbackCount = aiResult.fallbackCount;
       }
 
-      // Safe filename sanitized against directory traversal and invalid chars
-      const safeBase = getSafeFilenameBase(title, "academic_notes");
+      // Dynamically generate filename independently for every generation directly from user content
+      const exportFilename = generateFilenameFromContent(markdownToBuild || text, title, targetFormat);
+      const encodedFilename = encodeURIComponent(exportFilename);
+      const asciiFallback = exportFilename.replace(/[^a-zA-Z0-9._-]/g, "_");
+      const contentDispositionHeader = `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
 
       // Common AI telemetry headers
       res.setHeader("x-ai-provider", providerName);
@@ -625,9 +629,8 @@ ${preCleaned}`;
             enabledSkillIds,
           });
 
-          const filename = `${safeBase}.docx`;
           res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Disposition", contentDispositionHeader);
           res.setHeader("Content-Length", docxBuffer.length);
           return res.end(docxBuffer);
         }
@@ -640,9 +643,8 @@ ${preCleaned}`;
             accentColor: accent,
           });
 
-          const filename = `${safeBase}.pdf`;
           res.setHeader("Content-Type", "application/pdf");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Disposition", contentDispositionHeader);
           res.setHeader("Content-Length", pdfBuffer.length);
           return res.end(pdfBuffer);
         }
@@ -651,10 +653,9 @@ ${preCleaned}`;
           // Generate LaTeX document (.tex)
           const texContent = generateLaTeXDocument(markdownToBuild, title);
           const texBuffer = Buffer.from(texContent, "utf-8");
-          const filename = `${safeBase}.tex`;
 
           res.setHeader("Content-Type", "text/x-tex; charset=utf-8");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Disposition", contentDispositionHeader);
           res.setHeader("Content-Length", texBuffer.length);
           return res.end(texBuffer);
         }
@@ -663,10 +664,9 @@ ${preCleaned}`;
           // Generate clean Markdown (.md)
           const mdContent = generateMarkdownDocument(markdownToBuild, title);
           const mdBuffer = Buffer.from(mdContent, "utf-8");
-          const filename = `${safeBase}.md`;
 
           res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Disposition", contentDispositionHeader);
           res.setHeader("Content-Length", mdBuffer.length);
           return res.end(mdBuffer);
         }
@@ -675,10 +675,9 @@ ${preCleaned}`;
           // Generate Plain Text (.txt)
           const txtContent = generatePlainTextDocument(markdownToBuild, title);
           const txtBuffer = Buffer.from(txtContent, "utf-8");
-          const filename = `${safeBase}.txt`;
 
           res.setHeader("Content-Type", "text/plain; charset=utf-8");
-          res.setHeader("Content-Disposition", `attachment; filename="${filename}"`);
+          res.setHeader("Content-Disposition", contentDispositionHeader);
           res.setHeader("Content-Length", txtBuffer.length);
           return res.end(txtBuffer);
         }

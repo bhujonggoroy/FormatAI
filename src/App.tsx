@@ -10,6 +10,8 @@ import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SplashScreen } from "./components/SplashScreen";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
+import { generateFilenameFromContent } from "./utils/filename";
+import { downloadPreviewAsPdf } from "./utils/pdfExport";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
@@ -253,6 +255,28 @@ export default function App() {
     };
 
     try {
+      // Generate safe filename from content for EVERY generation, strictly avoiding any sample or reference naming conventions
+      const activeContent = effectiveMarkdown || inputText;
+      const safeBaseName = generateFilenameFromContent(activeContent);
+      const safeFilename = `${safeBaseName}.${format}`;
+
+      // If exporting as PDF: the document preview is the single source of truth.
+      // Generate the PDF directly from the rendered document representation.
+      if (format === "pdf") {
+        const previewSheet = document.getElementById("preview-document-sheet");
+        if (previewSheet) {
+          setConversionStage("1/2: Preparing preview sheet for PDF generation...");
+          await downloadPreviewAsPdf({
+            element: previewSheet,
+            title: safeBaseName,
+            markdown: activeContent,
+            onProgress: (stage) => setConversionStage(stage),
+          });
+          setSuccessMessage(`"${safeFilename}" generated successfully matching the preview!`);
+          return;
+        }
+      }
+
       setConversionStage(`1/2: Preparing ${formatLabels[format] || format}...`);
 
       const userConfig = getUserSettings();
@@ -265,7 +289,7 @@ export default function App() {
         body: JSON.stringify({
           text: inputText,
           cleanedMarkdown: effectiveMarkdown,
-          title: docTitle.trim() || "Notes",
+          title: safeBaseName,
           font: fontFamily,
           accent: accentColor,
           equationFormat,
@@ -293,23 +317,7 @@ export default function App() {
 
       const blob = await response.blob();
 
-      // Extract filename from Content-Disposition header if available
-      let safeFilename = "";
-      const disposition = response.headers.get("Content-Disposition");
-      if (disposition && disposition.includes("filename=")) {
-        const match = disposition.match(/filename="?([^"]+)"?/);
-        if (match && match[1]) {
-          safeFilename = match[1];
-        }
-      }
-
-      if (!safeFilename) {
-        const baseName = (docTitle.trim() || "notes")
-          .toLowerCase()
-          .replace(/[^a-z0-9_\-]/g, "_");
-        safeFilename = `${baseName}.${format}`;
-      }
-
+      // Download strictly using the content-generated safeFilename, completely avoiding sample or reference file naming conventions
       const downloadUrl = window.URL.createObjectURL(blob);
       const link = document.createElement("a");
       link.href = downloadUrl;
@@ -589,6 +597,7 @@ export default function App() {
                 onTriggerAiPolish={handlePreviewClean}
                 isAiPolishing={isConverting}
                 onDownloadDocx={handleConvertToDocx}
+                onDownloadPdf={() => downloadFile("pdf")}
                 isDownloading={isConverting}
               />
             </div>
@@ -659,6 +668,7 @@ export default function App() {
               onTriggerAiPolish={handlePreviewClean}
               isAiPolishing={isConverting}
               onDownloadDocx={handleConvertToDocx}
+              onDownloadPdf={() => downloadFile("pdf")}
               isDownloading={isConverting}
             />
           </div>

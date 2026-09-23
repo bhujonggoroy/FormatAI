@@ -1,5 +1,8 @@
 import PDFDocument from "pdfkit";
 import { sanitizeMathToUnicode } from "./docxService.ts";
+import { generateFilenameFromContent, sanitizeFilenameBase } from "../utils/filename.ts";
+
+export { generateFilenameFromContent, sanitizeFilenameBase };
 
 export type ExportFormat = "docx" | "pdf" | "tex" | "md" | "txt";
 
@@ -28,22 +31,10 @@ export function validateExportFormat(rawFormat: unknown): ExportFormat {
 
 /**
  * Creates a safe, path-traversal-free filename base.
- * Strips path separators, dots, null bytes, special characters.
+ * Preserves Unicode letters (including Bangla and accented chars) while stripping invalid filesystem chars.
  */
-export function getSafeFilenameBase(title: string, defaultName = "academic_notes"): string {
-  if (!title || typeof title !== "string") return defaultName;
-  // Remove directory traversal sequences and invalid characters
-  let safe = title
-    .replace(/[/\\]+/g, "_")
-    .replace(/\.\.+/g, "")
-    .replace(/[^a-zA-Z0-9_\-\s]/g, "")
-    .trim()
-    .replace(/\s+/g, "_")
-    .replace(/_{2,}/g, "_")
-    .toLowerCase();
-
-  if (!safe || safe === "_") safe = defaultName;
-  return safe.slice(0, 80);
+export function getSafeFilenameBase(title: string, defaultName = "FormatAI_Document"): string {
+  return sanitizeFilenameBase(title, defaultName);
 }
 
 /**
@@ -435,10 +426,33 @@ export async function generatePdfBuffer(
           continue;
         }
 
-        // Display Math: $$ ... $$
-        if (trimmed.startsWith("$$")) {
+        // Display Math: $$ ... $$ or \[ ... \]
+        if (trimmed.startsWith("$$") || /^(?:\\)+\[/.test(trimmed)) {
           let mathContent = "";
-          if (trimmed.endsWith("$$") && trimmed.length > 2) {
+          const isBracket = /^(?:\\)+\[/.test(trimmed);
+
+          if (isBracket) {
+            const singleMatch = trimmed.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!)\s*)*(?:\\)+\]$/);
+            if (singleMatch) {
+              mathContent = singleMatch[1].trim().replace(/(?:\\)+(?:quad|qquad|,|;|!)\s*$/g, "").trim();
+            } else {
+              const mathLines: string[] = [];
+              const first = trimmed.replace(/^(?:\\)+\[\s*/, "").trim();
+              if (first) mathLines.push(first);
+              i++;
+              while (i < lines.length) {
+                const next = lines[i].trim();
+                if (/(?:\\)+\]$/.test(next)) {
+                  const endPart = next.replace(/(?:\\)+\]$/, "").trim();
+                  if (endPart) mathLines.push(endPart);
+                  break;
+                }
+                mathLines.push(lines[i]);
+                i++;
+              }
+              mathContent = mathLines.join(" ").trim();
+            }
+          } else if (trimmed.endsWith("$$") && trimmed.length > 2) {
             mathContent = trimmed.slice(2, -2).trim();
           } else {
             const mathLines: string[] = [];
@@ -472,6 +486,14 @@ export async function generatePdfBuffer(
           });
           doc.y = mathBoxY + 34;
           doc.moveDown(0.3);
+          continue;
+        }
+
+        // Horizontal divider (---, ***, ___)
+        if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+          doc.moveDown(0.5);
+          doc.moveTo(54, doc.y).lineTo(doc.page.width - 54, doc.y).lineWidth(0.5).strokeColor("#CBD5E1").stroke();
+          doc.moveDown(0.5);
           continue;
         }
 

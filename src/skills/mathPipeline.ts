@@ -219,8 +219,11 @@ export function normalizeMathEntity(entity: DetectedMathEntity): DetectedMathEnt
   // 7. Clean excessive internal spaces
   inner = inner.replace(/\s+/g, " ");
 
-  // Re-wrap with standard delimiters
-  const normalizedText = entity.isDisplay ? `$$\n${inner}\n$$` : `$${inner}$`;
+  // Re-wrap with standard delimiters: preserve \(...\) if original was \(...\)
+  const isParenInline = /^(?:\\)+\(/.test(entity.originalText);
+  const normalizedText = entity.isDisplay
+    ? `$$\n${inner}\n$$`
+    : (isParenInline ? `\\(${inner}\\)` : `$${inner}$`);
 
   return {
     ...entity,
