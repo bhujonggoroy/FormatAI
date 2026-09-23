@@ -38,6 +38,7 @@ interface ToolbarGridProps {
   onTriggerAiPolish: () => void;
   onTriggerFormatAI?: () => void;
   isNoAI?: boolean;
+  onProviderChange?: (providerId: string) => void;
   aiProviderName?: string;
   onDownloadDocx: () => void;
   onExportFormat?: (format: "docx" | "pdf" | "tex" | "md" | "txt") => void;
@@ -67,6 +68,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   onTriggerAiPolish,
   onTriggerFormatAI,
   isNoAI = false,
+  onProviderChange,
   aiProviderName,
   onDownloadDocx,
   onExportFormat,
@@ -596,6 +598,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 onTriggerAiPolish={onTriggerAiPolish}
                 onTriggerFormatAI={onTriggerFormatAI}
                 isNoAI={isNoAI}
+                onProviderChange={onProviderChange}
                 onClose={() => setOpenCard(null)}
                 onOpenAISettings={onOpenAISettings}
               />

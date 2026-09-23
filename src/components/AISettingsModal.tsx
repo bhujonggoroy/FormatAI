@@ -764,7 +764,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   <div className="flex flex-wrap items-center gap-1.5">
                     <span className="text-[11px] font-medium text-slate-500 mr-0.5">Active Providers:</span>
                     {providers.filter((p) => p.enabled).length === 0 ? (
-                      <span className="text-[11px] text-amber-700 italic">None active</span>
+                      <span className="text-[11px] text-amber-700 italic">None active (FormatAI Only)</span>
                     ) : (
                       providers
                         .filter((p) => p.enabled)
@@ -774,15 +774,46 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                           return (
                             <span
                               key={p.id}
-                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all ${
+                              onClick={() => {
+                                if (isCurrent) {
+                                  handleUpdateConfig({
+                                    activeProviderId: "formatai",
+                                    activeModel: "standard-academic",
+                                  });
+                                } else {
+                                  handleUpdateConfig({
+                                    activeProviderId: p.id,
+                                    activeModel: p.selectedModel || "",
+                                  });
+                                }
+                              }}
+                              onDoubleClick={(e) => {
+                                e.preventDefault();
+                                e.stopPropagation();
+                                handleUpdateConfig({
+                                  activeProviderId: "formatai",
+                                  activeModel: "standard-academic",
+                                });
+                              }}
+                              title={
+                                isCurrent
+                                  ? "Double-click to deselect and switch to FormatAI (No AI)"
+                                  : "Click to select as active AI"
+                              }
+                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
                                 isCurrent
                                   ? `${pTheme.badgeStyle} ring-1 ring-offset-0 shadow-2xs`
-                                  : "bg-slate-100 text-slate-700 border-slate-200"
+                                  : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
                               }`}
                             >
                               <AIBrandLogo providerId={p.id} size="sm" />
                               <span>{p.name.replace("Google ", "").replace(" Workers AI", "")}</span>
                               <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
+                              {isCurrent && (
+                                <span className="text-[9px] font-bold text-slate-500 hover:text-rose-600 ml-0.5">
+                                  ✕
+                                </span>
+                              )}
                             </span>
                           );
                         })
@@ -809,6 +840,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       value={config?.activeProviderId || "gemini"}
                       onChange={(e) => {
                         const newPId = e.target.value;
+                        if (newPId === "formatai") {
+                          handleUpdateConfig({
+                            activeProviderId: "formatai",
+                            activeModel: "standard-academic",
+                            activeKeyId: undefined,
+                          });
+                          return;
+                        }
                         const targetP = providers.find((p) => p.id === newPId);
                         handleUpdateConfig({
                           activeProviderId: newPId,
@@ -818,6 +857,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       }}
                       className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
+                      <option value="formatai">FormatAI (No AI • Deterministic Normalizer)</option>
                       {providers.map((p) => (
                         <option key={p.id} value={p.id}>
                           {p.name} {p.enabled ? "(ON)" : "(OFF)"}

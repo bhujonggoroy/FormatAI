@@ -37,6 +37,7 @@ interface AIPolishDropdownProps {
   onTriggerAiPolish: () => void;
   onTriggerFormatAI?: () => void;
   isNoAI?: boolean;
+  onProviderChange?: (providerId: string) => void;
   onClose: () => void;
   onOpenAISettings?: () => void;
   onOpenFreeKeyModal?: (helpConfig: ProviderHelpConfig) => void;
@@ -47,6 +48,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
   onTriggerAiPolish,
   onTriggerFormatAI,
   isNoAI = false,
+  onProviderChange,
   onClose,
   onOpenAISettings,
   onOpenFreeKeyModal,
@@ -186,9 +188,12 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     };
   };
 
-  // Currently selected provider
+  // Currently selected provider (null if FormatAI / local / deselected)
   const selectedProvider = useMemo(() => {
-    return providers.find((p) => p.id === selectedProviderId) || providers[0] || null;
+    if (selectedProviderId === "formatai" || selectedProviderId === "local") {
+      return null;
+    }
+    return providers.find((p) => p.id === selectedProviderId) || null;
   }, [providers, selectedProviderId]);
 
   const selectedSignal = selectedProvider ? getProviderSignal(selectedProvider) : null;
@@ -216,6 +221,23 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     );
     setProviders(updatedProvs);
     saveUserProviders(updatedProvs);
+    onProviderChange?.(p.id);
+  };
+
+  // Handle deselecting an AI provider (reverting to FormatAI / No AI)
+  const handleDeselectProvider = (_p?: UserProviderConfig) => {
+    setSelectedProviderId("formatai");
+    setSelectedModelId("standard-academic");
+
+    const updatedCfg: ManagerConfig = {
+      ...(managerConfig || getUserSettings()),
+      activeProviderId: "formatai",
+      activeModel: "standard-academic",
+      mode: "manual",
+    };
+    setManagerConfig(updatedCfg);
+    saveUserSettings(updatedCfg);
+    onProviderChange?.("formatai");
   };
 
   // Handle selecting a model for the chosen AI
@@ -348,6 +370,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
             };
             setManagerConfig(updatedCfg);
             saveUserSettings(updatedCfg);
+            onProviderChange?.("formatai");
           }}
           className={`p-2.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-2 text-left ${
             isFormatAiActive
@@ -388,9 +411,9 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
       {/* AI Provider Selection List */}
       <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 border-t border-slate-200/80 pt-2">
         <div className="text-[10px] font-bold text-slate-600 mb-1 flex items-center justify-between">
-          <span>Multi-Provider AI Engines (Optional Polish):</span>
-          <span className="text-[9px] text-slate-500">
-            {providers.filter((p) => p.enabled).length} Enabled
+          <span>Multi-Provider AI Engines:</span>
+          <span className="text-[9px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold border border-blue-200">
+            Double-click to deselect
           </span>
         </div>
 
@@ -403,7 +426,23 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
           return (
             <div
               key={p.id}
-              onClick={() => handleSelectProvider(p)}
+              onClick={() => {
+                if (isSelected) {
+                  handleDeselectProvider(p);
+                } else {
+                  handleSelectProvider(p);
+                }
+              }}
+              onDoubleClick={(e) => {
+                e.preventDefault();
+                e.stopPropagation();
+                handleDeselectProvider(p);
+              }}
+              title={
+                isSelected
+                  ? "Double-click (or click) to deselect and switch to FormatAI (No AI)"
+                  : "Click to select, double-click to deselect"
+              }
               className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 text-left ${
                 isSelected
                   ? `${theme.cardBorder} ${theme.activeRing} bg-slate-50/90 shadow-2xs`
@@ -416,7 +455,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                   <AIBrandLogo providerId={p.id} size="sm" />
                 </div>
                 <div className="min-w-0">
-                  <div className="flex items-center gap-1.5">
+                  <div className="flex items-center gap-1.5 flex-wrap">
                     <span
                       className={`text-xs font-bold truncate ${
                         isSelected ? "text-slate-950" : "text-slate-800"
@@ -425,9 +464,22 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                       {p.name}
                     </span>
                     {isSelected && (
-                      <span className="p-0.5 rounded-full bg-blue-600 text-white shrink-0">
-                        <Check className="w-2.5 h-2.5" />
-                      </span>
+                      <>
+                        <span className="p-0.5 rounded-full bg-blue-600 text-white shrink-0" title="Selected">
+                          <Check className="w-2.5 h-2.5" />
+                        </span>
+                        <button
+                          type="button"
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleDeselectProvider(p);
+                          }}
+                          className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 border border-slate-300 transition-colors cursor-pointer"
+                          title="Click to deselect"
+                        >
+                          ✕ Deselect
+                        </button>
+                      </>
                     )}
                   </div>
                   <div className="text-[10px] text-slate-500 truncate font-mono">

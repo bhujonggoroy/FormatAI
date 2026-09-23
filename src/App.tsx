@@ -143,8 +143,16 @@ export default function App() {
     }
   };
 
+  // Active AI provider ID state (synced with user settings and dropdown)
+  const [activeProviderId, setActiveProviderId] = useState<string>(() => {
+    return getUserSettings().activeProviderId || "formatai";
+  });
+
   // Determine if running in "No AI" state (offline mode, no configured AI keys, or FormatAI selected)
   const isNoAI = useMemo(() => {
+    if (activeProviderId === "formatai" || activeProviderId === "local") {
+      return true;
+    }
     const userConfig = getUserSettings();
     if (
       userConfig.activeProviderId === "formatai" ||
@@ -160,7 +168,7 @@ export default function App() {
     );
     const hasServerAI = (aiHealthInfo?.readyCount ?? 0) > 0;
     return !hasActiveKey && !hasServerAI;
-  }, [aiHealthInfo]);
+  }, [activeProviderId, aiHealthInfo]);
 
   // Trigger deterministic FormatAI normalization directly (Zero AI / No API key needed)
   const handleRunFormatAI = () => {
@@ -511,6 +519,7 @@ export default function App() {
           onTriggerAiPolish={handlePreviewClean}
           onTriggerFormatAI={handleRunFormatAI}
           isNoAI={isNoAI}
+          onProviderChange={(pId) => setActiveProviderId(pId)}
           aiProviderName={isNoAI ? "FormatAI" : aiHealthInfo?.providersSummary?.[0]}
           onDownloadDocx={handleConvertToDocx}
           onExportFormat={downloadFile}
