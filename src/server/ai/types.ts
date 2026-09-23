@@ -133,6 +133,26 @@ export interface AIRequest {
   maxTokens?: number;
   responseFormat?: string;
   capabilities?: string[]; // e.g., ["text", "math", "long_context"]
+  clientSettings?: {
+    config?: Partial<ManagerConfig> | null;
+    providers?: Array<{
+      id: string;
+      enabled?: boolean;
+      priority?: number;
+      selectedModel?: string;
+      selectedKeyId?: string;
+      customEndpoint?: string;
+      accountId?: string;
+      billingMode?: "free_only" | "free_and_paid" | "disabled";
+    }> | null;
+    keys?: Array<{
+      id?: string;
+      providerId: string;
+      name?: string;
+      key: string;
+      enabled?: boolean;
+    }> | null;
+  };
 }
 
 export interface FallbackStep {

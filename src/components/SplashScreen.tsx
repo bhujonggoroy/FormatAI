@@ -59,15 +59,6 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
   const [isFadingOut, setIsFadingOut] = useState<boolean>(false);
 
   useEffect(() => {
-    // When React splash mounts and app is not ready yet, remove the static early HTML splash
-    // so React's animated splash seamlessly owns the display
-    const earlyEl = document.getElementById("first-paint-splash");
-    if (earlyEl && !isAppReady) {
-      earlyEl.remove();
-    }
-  }, [shouldShowSplash]);
-
-  useEffect(() => {
     // If not showing splash for this session, remove early splash immediately
     if (!shouldShowSplash) {
       if (typeof window !== "undefined" && (window as any).hideFirstPaintSplash) {

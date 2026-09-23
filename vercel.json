@@ -1,0 +1,25 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "version": 2,
+  "framework": "vite",
+  "buildCommand": "vite build",
+  "outputDirectory": "dist",
+  "rewrites": [
+    {
+      "source": "/api/(.*)",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/export",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/convert",
+      "destination": "/api/index"
+    },
+    {
+      "source": "/((?!assets|manifest|service-worker|favicon|.*\\..*).*)",
+      "destination": "/index.html"
+    }
+  ]
+}

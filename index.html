@@ -59,17 +59,20 @@
     <meta name="twitter:card" content="summary_large_image" />
     <meta name="twitter:image" content="/logo.png" />
     <style>
+      .splash-transition,
       #first-paint-splash {
         transition: opacity 500ms ease-out, visibility 500ms ease-out;
         opacity: 1;
         visibility: visible;
       }
+      .splash-transition.splash-fade-out,
       #first-paint-splash.splash-fade-out {
-        opacity: 0;
-        visibility: hidden;
-        pointer-events: none;
+        opacity: 0 !important;
+        visibility: hidden !important;
+        pointer-events: none !important;
       }
       @media (prefers-reduced-motion: reduce) {
+        .splash-transition,
         #first-paint-splash {
           transition: none !important;
         }
@@ -78,7 +81,7 @@
   </head>
   <body style="margin: 0; background-color: #FAF7F2;">
     <!-- First-Frame Session-Aware FormatAI Splash Screen (Only on first entry in session, never on refresh) -->
-    <div id="first-paint-splash" style="display: none; position: fixed; inset: 0; z-index: 99999; background-color: #FAF7F2; flex-direction: column; align-items: center; justify-content: center; font-family: 'Playfair Display', Georgia, serif; user-select: none;">
+    <div id="first-paint-splash" class="splash-transition" style="display: none; position: fixed; inset: 0; z-index: 99999; background-color: #FAF7F2; flex-direction: column; align-items: center; justify-content: center; font-family: 'Playfair Display', Georgia, serif; user-select: none;">
       <div style="display: flex; flex-direction: column; align-items: center; text-align: center; max-width: 420px; padding: 16px;">
         <img src="/format-ai-icon-transparent.png" alt="FormatAI Logo" width="84" height="84" style="width: 84px; height: 84px; object-fit: contain; margin-bottom: 14px;" />
         <div style="display: flex; align-items: baseline; font-size: 36px; font-weight: 900; line-height: 1; letter-spacing: -0.02em; margin-bottom: 24px;">
@@ -116,41 +119,57 @@
 
         // Global helper for smooth class-based fade out handoff
         window.hideFirstPaintSplash = function(immediate) {
-          var el = document.getElementById('first-paint-splash');
-          var markSession = function() {
-            try {
-              sessionStorage.setItem('formatai_session_initialized', 'true');
-            } catch (e) {
-              // Fallback safe
-            }
-          };
+          // Immediately set the session initialization flag upon app ready
+          try {
+            sessionStorage.setItem('formatai_session_initialized', 'true');
+          } catch (e) {
+            // Fallback safe
+          }
 
+          var el = document.getElementById('first-paint-splash');
           if (!el) {
-            markSession();
             return;
           }
 
           if (immediate) {
             el.remove();
-            markSession();
             return;
           }
 
+          // Force browser layout reflow so the initial opacity is computed before transitioning
+          void el.offsetHeight;
+
+          // Apply class-based transition to trigger opacity and visibility change
           el.classList.add('splash-fade-out');
+
+          var isRemoved = false;
+          var cleanup = function() {
+            if (isRemoved) return;
+            isRemoved = true;
+            if (el && el.parentNode) {
+              el.remove();
+            }
+          };
+
           el.addEventListener('transitionend', function(e) {
             if (e.target === el) {
-              el.remove();
-              markSession();
+              cleanup();
             }
           }, { once: true });
 
-          setTimeout(function() {
-            if (el && el.parentNode) {
-              el.remove();
-              markSession();
-            }
-          }, 600);
+          // Fallback timeout in case transitionend does not trigger or is cancelled
+          setTimeout(cleanup, 550);
         };
+
+        // Safety fallback: if app ready is delayed, gracefully fade out splash
+        window.addEventListener('load', function() {
+          setTimeout(function() {
+            var el = document.getElementById('first-paint-splash');
+            if (el && !el.classList.contains('splash-fade-out')) {
+              window.hideFirstPaintSplash(false);
+            }
+          }, 3500);
+        });
       })();
     </script>
     <div id="root"></div>

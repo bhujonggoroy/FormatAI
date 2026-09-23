@@ -32,7 +32,7 @@ import {
 
 const PORT = 3000;
 
-async function startServer() {
+export function createServerApp(): express.Express {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
 
@@ -714,6 +714,12 @@ ${preCleaned}`;
     }
   });
 
+  return app;
+}
+
+export const app = createServerApp();
+
+export async function startStandaloneServer() {
   const httpServer = http.createServer(app);
 
   // Vite middleware for development vs static build for production
@@ -728,17 +734,25 @@ ${preCleaned}`;
     app.use(vite.middlewares);
   } else {
     const distPath = path.join(process.cwd(), "dist");
-    app.use(express.static(distPath));
-    app.get("*", (req, res) => {
-      res.sendFile(path.join(distPath, "index.html"));
-    });
+    if (fs.existsSync(distPath)) {
+      app.use(express.static(distPath));
+      app.get("*", (req, res) => {
+        res.sendFile(path.join(distPath, "index.html"));
+      });
+    }
   }
 
   httpServer.listen(PORT, "0.0.0.0", () => {
     console.log(`FormatAI Server running on http://0.0.0.0:${PORT}`);
   });
+  return httpServer;
 }
 
-startServer().catch((err) => {
-  console.error("Failed to start server:", err);
-});
+// Only start standalone server when NOT running under Vercel serverless runtime
+if (!process.env.VERCEL) {
+  startStandaloneServer().catch((err) => {
+    console.error("Failed to start server:", err);
+  });
+}
+
+export default app;

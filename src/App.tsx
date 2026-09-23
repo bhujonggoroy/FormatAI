@@ -284,7 +284,7 @@ export default function App() {
       const userProvs = getUserProviders();
       const userPrefs = getUserPreferences();
 
-      const response = await fetch(`/export?format=${format}`, {
+      const response = await fetch(`/api/export?format=${format}`, {
         method: "POST",
         headers: { "Content-Type": "application/json" },
         body: JSON.stringify({

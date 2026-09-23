@@ -27,3 +27,63 @@ html, body {
     transform: none !important;
   }
 }
+
+/* Publication-ready Print Styles for Exact Preview to PDF */
+@media print {
+  html, body {
+    background: #ffffff !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    color: #000000 !important;
+    font-size: 11pt !important;
+  }
+
+  /* Hide app interface: headers, toolbars, sidebar, buttons, controls */
+  header,
+  nav,
+  button,
+  .no-print,
+  #app-header,
+  #toolbar-grid,
+  #input-notes-column,
+  .split-pane-divider {
+    display: none !important;
+  }
+
+  /* Expand the academic document sheet to fill the page cleanly */
+  #academic-document-sheet,
+  .academic-paper-sheet {
+    width: 100% !important;
+    max-width: 100% !important;
+    margin: 0 !important;
+    padding: 0 !important;
+    border: none !important;
+    box-shadow: none !important;
+    transform: none !important;
+    background: #ffffff !important;
+  }
+
+  /* Keep equation cards intact across page breaks */
+  .equation-card,
+  [data-equation="true"] {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  /* Keep headings attached to following content */
+  h1, h2, h3, h4, h5, h6 {
+    page-break-after: avoid !important;
+    break-after: avoid !important;
+  }
+
+  /* Avoid breaking inside table rows */
+  table, tr, td, th {
+    page-break-inside: avoid !important;
+    break-inside: avoid !important;
+  }
+
+  @page {
+    size: A4 portrait;
+    margin: 18mm 18mm 18mm 18mm;
+  }
+}
