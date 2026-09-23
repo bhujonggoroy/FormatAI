@@ -574,36 +574,25 @@ export default function App() {
       const safeBaseName = generateFilenameFromContent(activeContent);
       const safeFilename = `${safeBaseName}.${format === "pdf" ? "pdf" : format === "docx" ? "docx" : format}`;
 
-      // If exporting as PDF: the document preview is the single source of truth.
-      // Generate the PDF directly from the rendered document representation.
+      // If exporting as PDF: generate publication-ready text-based PDF
       if (format === "pdf") {
-        let previewSheet =
+        setConversionStage("1/3: Preparing text-based academic PDF...");
+        const previewSheet =
           (document.getElementById("academic-document-sheet") ||
           document.getElementById("preview-document-sheet") ||
           document.querySelector(".academic-paper-sheet")) as HTMLElement | null;
 
-        if (!previewSheet && viewLayout === "editor") {
-          // Switch to split view so preview document sheet is mounted
-          setViewLayout("split");
-          await new Promise((r) => setTimeout(r, 150));
-          previewSheet =
-            (document.getElementById("academic-document-sheet") ||
-            document.getElementById("preview-document-sheet") ||
-            document.querySelector(".academic-paper-sheet")) as HTMLElement | null;
-        }
-
-        if (previewSheet) {
-          await downloadPreviewAsPdf({
-            element: previewSheet,
-            title: docTitle || safeBaseName,
-            markdown: activeContent,
-            fontFamily,
-            accentColor,
-            onProgress: (stage) => setConversionStage(stage),
-          });
-          setSuccessMessage(`"${safeFilename}" generated successfully matching the preview!`);
-          return;
-        }
+        await downloadPreviewAsPdf({
+          element: previewSheet,
+          title: docTitle || safeBaseName,
+          markdown: activeContent,
+          fontFamily,
+          accentColor,
+          mode: "text",
+          onProgress: (stage) => setConversionStage(stage),
+        });
+        setSuccessMessage(`"${safeFilename}" (Text-based PDF) generated successfully!`);
+        return;
       }
 
       setConversionStage(`1/2: Preparing ${formatLabels[format] || format}...`);
