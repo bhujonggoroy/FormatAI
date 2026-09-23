@@ -13,6 +13,7 @@ import {
   CheckCircle2,
   XCircle,
   Clock,
+  X,
 } from "lucide-react";
 import {
   getUserSettings,
@@ -300,14 +301,14 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
   const isFormatAiActive = selectedProviderId === "formatai" || selectedProviderId === "local" || isNoAI;
 
   return (
-    <div className="absolute right-0 top-full mt-2 w-84 sm:w-96 max-w-[calc(100vw-1.5rem)] bg-white rounded-2xl shadow-2xl border-2 border-slate-300 p-3.5 sm:p-4 z-40 animate-in fade-in zoom-in-95 space-y-3.5">
+    <div className="absolute left-0 sm:left-0 md:left-0 lg:left-auto lg:right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md max-h-[calc(100vh-140px)] overflow-y-auto bg-white rounded-2xl shadow-2xl border-2 border-slate-300 p-3.5 sm:p-4 z-40 animate-in fade-in zoom-in-95 space-y-3.5">
       {/* Header */}
       <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5">
-        <div>
+        <div className="min-w-0 pr-2">
           <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
             {isNoAI ? "Academic Normalizer" : "Multi-Provider Engine & FormatAI"}
           </div>
-          <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5">
+          <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
             <span>{isNoAI ? "FormatAI Engine" : "Select Engine"}</span>
             {isFormatAiActive ? (
               <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
@@ -321,20 +322,32 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
           </h3>
         </div>
 
-        {onOpenAISettings && (
+        <div className="flex items-center gap-1.5 shrink-0">
+          {onOpenAISettings && (
+            <button
+              type="button"
+              onClick={() => {
+                onClose();
+                onOpenAISettings();
+              }}
+              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-300 cursor-pointer"
+              title="Open AI Control Panel"
+            >
+              <Settings2 className="w-3.5 h-3.5 text-slate-600" />
+              <span className="hidden min-[380px]:inline">Settings</span>
+            </button>
+          )}
+
           <button
             type="button"
-            onClick={() => {
-              onClose();
-              onOpenAISettings();
-            }}
-            className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-300 cursor-pointer"
-            title="Open AI Control Panel"
+            onClick={onClose}
+            className="p-1 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer border border-transparent hover:border-slate-200"
+            title="Close menu"
+            aria-label="Close"
           >
-            <Settings2 className="w-3.5 h-3.5 text-slate-600" />
-            <span>Settings</span>
+            <X className="w-4 h-4" />
           </button>
-        )}
+        </div>
       </div>
 
       {/* When running with No AI, display informative banner */}
