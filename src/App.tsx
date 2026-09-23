@@ -16,6 +16,7 @@ import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
 import {
   getUserSettings,
   getUserProviders,
+  saveUserProviders,
   getUserPreferences,
 } from "./utils/userLocalStorage";
 import {
@@ -165,10 +166,54 @@ export default function App() {
 
       const data = await res.json();
       if (!res.ok) {
+        // Update provider statuses if returned in error payload
+        if (data.fallback_chain && Array.isArray(data.fallback_chain)) {
+          const currentProvs = getUserProviders();
+          let changed = false;
+          data.fallback_chain.forEach((step: any) => {
+            const prov = currentProvs.find((p) => p.id === step.providerId);
+            if (prov) {
+              if (step.status === "rate_limited") {
+                prov.status = "rate_limited";
+                prov.lastError = step.errorMessage || "Free tier rate limit / quota exceeded (429)";
+                changed = true;
+              } else if (step.status === "invalid_key" || step.status === "permission_denied") {
+                prov.status = "invalid_key";
+                prov.lastError = step.errorMessage || "API key error or invalid authentication";
+                changed = true;
+              }
+            }
+          });
+          if (changed) saveUserProviders(currentProvs);
+        }
         throw new Error(data.error || "Failed to polish notes with AI.");
       }
 
       setCleanedMarkdown(data.cleaned_markdown);
+
+      // Update provider statuses from fallback chain if present
+      if (data.fallback_chain && Array.isArray(data.fallback_chain)) {
+        const currentProvs = getUserProviders();
+        let changed = false;
+        data.fallback_chain.forEach((step: any) => {
+          const prov = currentProvs.find((p) => p.id === step.providerId);
+          if (prov) {
+            if (step.status === "rate_limited") {
+              prov.status = "rate_limited";
+              prov.lastError = step.errorMessage || "Free tier quota exceeded (429)";
+              changed = true;
+            } else if (step.status === "invalid_key" || step.status === "permission_denied") {
+              prov.status = "invalid_key";
+              prov.lastError = step.errorMessage || "API key error or connection failed";
+              changed = true;
+            } else if (step.status === "success" && prov.status === "rate_limited") {
+              prov.status = "active";
+              changed = true;
+            }
+          }
+        });
+        if (changed) saveUserProviders(currentProvs);
+      }
 
       if (data.provider_name) {
         const fallbackNote =
@@ -359,6 +404,7 @@ export default function App() {
             setCleanedMarkdown(null);
           }}
           onSelectSample={handleLoadSample}
+          onOpenAISettings={() => setIsAISettingsModalOpen(true)}
         />
 
         {/* High-Contrast Segmented View Switcher Bar (Split | Editor | Preview) */}

@@ -544,7 +544,10 @@ ${preCleaned}`;
       });
     } catch (err: any) {
       console.error("Preview error:", err);
-      res.status(500).json({ error: err.message || "Failed to process notes." });
+      res.status(500).json({
+        error: err.message || "Failed to process notes.",
+        fallback_chain: err.fallbackChain || [],
+      });
     }
   });
 

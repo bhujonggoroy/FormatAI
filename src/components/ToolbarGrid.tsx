@@ -20,6 +20,7 @@ import {
 import { SAMPLE_NOTES, SampleNote } from "../data/samples";
 import { skillRegistry } from "../skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "../utils/theme";
+import { AIPolishDropdown } from "./AIPolishDropdown";
 
 interface ToolbarGridProps {
   // Font
@@ -48,6 +49,8 @@ interface ToolbarGridProps {
   onSkillsChanged?: () => void;
   // Samples
   onSelectSample: (sample: SampleNote) => void;
+  // AI Settings Modal trigger
+  onOpenAISettings?: () => void;
 }
 
 export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
@@ -70,6 +73,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   onOpenSkillsManager,
   onSkillsChanged,
   onSelectSample,
+  onOpenAISettings,
 }) => {
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [isMobileExpanded, setIsMobileExpanded] = useState<boolean>(false);
@@ -523,7 +527,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
             <button
               id="card-toolbar-ai-polish"
               type="button"
-              onClick={onTriggerAiPolish}
+              onClick={() => toggleCard("ai-polish")}
               disabled={isAiPolishing}
               aria-expanded={openCard === "ai-polish"}
               className={`w-full min-h-[76px] sm:min-h-[82px] border-2 ${
@@ -548,17 +552,13 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                       AI Polish
                     </span>
                     <span className="text-[10px] font-bold text-blue-800 block">
-                      {isAiPolishing ? "Normalizing..." : "Click to Clean"}
+                      {isAiPolishing ? "Normalizing..." : "Select AI & Clean"}
                     </span>
                   </div>
                 </div>
 
                 <div className="flex items-center gap-1">
                   <ChevronDown
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      toggleCard("ai-polish");
-                    }}
                     className={`w-4 h-4 text-blue-700 group-hover:text-blue-900 transition-transform ${
                       openCard === "ai-polish" ? "rotate-180 text-blue-900 font-bold" : ""
                     }`}
@@ -566,37 +566,18 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 </div>
               </div>
               <p className="text-[10px] sm:text-[11px] text-blue-900/80 mt-1 font-semibold line-clamp-1">
-                {isAiPolishing ? "Normalizing equations..." : "Improve clarity, grammar & tone"}
+                {isAiPolishing ? "Normalizing equations..." : "Select provider & run polish"}
               </p>
             </button>
 
-            {/* AI Polish Sub-bar Dropdown */}
+            {/* AI Polish Sub-bar Dropdown with AI Selection, Health Signals & Run Button */}
             {openCard === "ai-polish" && (
-              <div className="absolute right-0 top-full mt-2 w-76 max-w-[calc(100vw-2rem)] bg-white rounded-2xl shadow-xl border-2 border-slate-300 p-3 z-40 animate-in fade-in zoom-in-95">
-                <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500 mb-1.5">
-                  Multi-Provider AI Polishing
-                </div>
-                <p className="text-xs text-slate-700 mb-3 leading-relaxed font-medium">
-                  Formats raw notes with standard LaTeX equations, cleans ASCII artifacts, and standardizes statistical notation.
-                </p>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenCard(null);
-                    onTriggerAiPolish();
-                  }}
-                  disabled={isAiPolishing}
-                  className="w-full bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-colors shadow-sm cursor-pointer"
-                >
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>Run AI Polish Now</span>
-                </button>
-                {aiProviderName && (
-                  <div className="text-[11px] text-slate-500 text-center mt-2.5 font-medium">
-                    Engine: <span className="font-extrabold text-slate-900">{aiProviderName}</span>
-                  </div>
-                )}
-              </div>
+              <AIPolishDropdown
+                isAiPolishing={isAiPolishing}
+                onTriggerAiPolish={onTriggerAiPolish}
+                onClose={() => setOpenCard(null)}
+                onOpenAISettings={onOpenAISettings}
+              />
             )}
           </div>
 
