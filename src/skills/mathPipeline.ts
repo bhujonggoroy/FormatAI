@@ -3,6 +3,7 @@ import type {
   MathClassificationType,
   MathValidationResult,
 } from "./types.ts";
+import { normalizeMathDelimiters } from "../shared/mathDelimiterNormalizer.ts";
 
 /**
  * 6-Stage Academic Math Pipeline:
@@ -37,8 +38,11 @@ const KNOWN_LATEX_COMMANDS = new Set([
 ]);
 
 // Stage 1: Detector
-export function detectMathEntities(text: string): DetectedMathEntity[] {
-  if (!text) return [];
+export function detectMathEntities(rawText: string): DetectedMathEntity[] {
+  if (!rawText) return [];
+
+  // 0. Centralized Delimiter Normalization: All \[...\] and \(...\) converted to standard $$ and $
+  const text = normalizeMathDelimiters(rawText);
 
   const entities: DetectedMathEntity[] = [];
   let entityCounter = 0;
@@ -64,34 +68,7 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
     });
   }
 
-  // 2. LaTeX display blocks: \[ ... \]
-  const texDisplayRegex = /\\\[([\s\S]*?)\\\]/g;
-  while ((match = texDisplayRegex.exec(text)) !== null) {
-    const rawContent = match[1];
-    const fullMatch = match[0];
-    const matchStart = match.index;
-    const matchEnd = match.index + fullMatch.length;
-    // Check if not already matched
-    const isOverlapping = entities.some(
-      (e) => matchStart < e.endPos && matchEnd > e.startPos
-    );
-    if (!isOverlapping) {
-      const id = `eq_display_${++entityCounter}`;
-      entities.push({
-        id,
-        originalText: fullMatch,
-        normalizedText: `$$\n${rawContent.trim()}\n$$`,
-        classification: "DISPLAY_MATH",
-        isDisplay: true,
-        startPos: matchStart,
-        endPos: matchEnd,
-        isValid: true,
-        lockToken: `%%MATH_LOCK_DISPLAY_${id}%%`,
-      });
-    }
-  }
-
-  // 3. Environment blocks: \begin{equation|align*|aligned|pmatrix|matrix|cases} ... \end{...}
+  // 2. Environment blocks: \begin{equation|align*|aligned|pmatrix|matrix|cases} ... \end{...}
   const envRegex = /\\begin\{(equation\*?|align\*?|aligned|gather\*?|pmatrix|bmatrix|vmatrix|matrix|cases)\}([\s\S]*?)\\end\{\1\}/g;
   while ((match = envRegex.exec(text)) !== null) {
     const fullMatch = match[0];
@@ -116,7 +93,7 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
     }
   }
 
-  // 4. Inline math: $...$ (avoiding double $$ and currency symbols like $50)
+  // 3. Inline math: $...$ (avoiding double $$ and currency symbols like $50)
   const inlineRegex = /(?<!\$)\$(?!\$)(.+?)(?<!\$)\$(?!\$)/g;
   while ((match = inlineRegex.exec(text)) !== null) {
     const fullMatch = match[0];
@@ -135,32 +112,6 @@ export function detectMathEntities(text: string): DetectedMathEntity[] {
         id,
         originalText: fullMatch,
         normalizedText: fullMatch,
-        classification: "INLINE_MATH",
-        isDisplay: false,
-        startPos: matchStart,
-        endPos: matchEnd,
-        isValid: true,
-        lockToken: `%%MATH_LOCK_INLINE_${id}%%`,
-      });
-    }
-  }
-
-  // 5. TeX inline math: \( ... \)
-  const texInlineRegex = /\\\(([\s\S]*?)\\\)/g;
-  while ((match = texInlineRegex.exec(text)) !== null) {
-    const fullMatch = match[0];
-    const rawInner = match[1];
-    const matchStart = match.index;
-    const matchEnd = match.index + fullMatch.length;
-    const isOverlapping = entities.some(
-      (e) => matchStart < e.endPos && matchEnd > e.startPos
-    );
-    if (!isOverlapping && rawInner.trim().length > 0) {
-      const id = `eq_inline_${++entityCounter}`;
-      entities.push({
-        id,
-        originalText: fullMatch,
-        normalizedText: `$${rawInner.trim()}$`,
         classification: "INLINE_MATH",
         isDisplay: false,
         startPos: matchStart,
@@ -399,11 +350,14 @@ export function executeMathPipeline(text: string): MathPipelineExecution {
     };
   }
 
+  // 0. Centralized Delimiter Normalization
+  const normalizedText = normalizeMathDelimiters(text);
+
   // 1. Detect
-  const detected = detectMathEntities(text);
+  const detected = detectMathEntities(normalizedText);
 
   // Calculate math density
-  const totalLength = text.length;
+  const totalLength = normalizedText.length;
   const mathChars = detected.reduce((acc, e) => acc + (e.endPos - e.startPos), 0);
   const mathDensity = totalLength > 0 ? mathChars / totalLength : 0;
 
@@ -453,7 +407,7 @@ export function executeMathPipeline(text: string): MathPipelineExecution {
   };
 
   // 6. Lock
-  const { lockedText, lockMap } = lockMathExpressions(text, processedEntities);
+  const { lockedText, lockMap } = lockMathExpressions(normalizedText, processedEntities);
 
   return {
     processedText: lockedText,
