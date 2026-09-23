@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useCallback, useEffect } from "react";
 import {
   Copy,
   Check,
@@ -79,6 +79,56 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   const [copied, setCopied] = useState(false);
   const [viewMode, setViewMode] = useState<"rendered" | "source">("rendered");
   const [zoomLevel, setZoomLevel] = useState<number>(100);
+
+  const [scrollProgress, setScrollProgress] = useState<number>(0);
+  const scrollContainerRef = useRef<HTMLDivElement>(null);
+
+  const updateScrollProgress = useCallback(() => {
+    const container = scrollContainerRef.current;
+    if (!container) {
+      setScrollProgress(0);
+      return;
+    }
+    const { scrollTop, scrollHeight, clientHeight } = container;
+    const maxScroll = scrollHeight - clientHeight;
+    if (maxScroll <= 0) {
+      setScrollProgress(0);
+    } else {
+      const progress = Math.min(100, Math.max(0, (scrollTop / maxScroll) * 100));
+      setScrollProgress(progress);
+    }
+  }, []);
+
+  const handleScroll = () => {
+    updateScrollProgress();
+  };
+
+  useEffect(() => {
+    const frame = requestAnimationFrame(() => {
+      updateScrollProgress();
+    });
+    return () => cancelAnimationFrame(frame);
+  }, [markdown, viewMode, zoomLevel, updateScrollProgress]);
+
+  useEffect(() => {
+    window.addEventListener("resize", updateScrollProgress);
+    return () => window.removeEventListener("resize", updateScrollProgress);
+  }, [updateScrollProgress]);
+
+  const handleProgressBarClick = (e: React.MouseEvent<HTMLDivElement>) => {
+    const container = scrollContainerRef.current;
+    if (!container) return;
+    const rect = e.currentTarget.getBoundingClientRect();
+    const clickX = e.clientX - rect.left;
+    const ratio = Math.max(0, Math.min(1, clickX / rect.width));
+    const maxScroll = container.scrollHeight - container.clientHeight;
+    if (maxScroll > 0) {
+      container.scrollTo({
+        top: ratio * maxScroll,
+        behavior: "smooth",
+      });
+    }
+  };
 
   const handleCopy = () => {
     navigator.clipboard.writeText(markdown);
@@ -840,9 +890,42 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         </div>
       </div>
 
+      {/* Subtle Document Reading Scroll Progress Bar */}
+      <div
+        onClick={handleProgressBarClick}
+        role="progressbar"
+        aria-label="Document scroll progress"
+        aria-valuenow={Math.round(scrollProgress)}
+        aria-valuemin={0}
+        aria-valuemax={100}
+        title={
+          scrollProgress > 0
+            ? `Scrolled: ${Math.round(scrollProgress)}% • Click anywhere to jump`
+            : "Document top • 0% scrolled"
+        }
+        className="group relative w-full h-[3px] hover:h-[5px] bg-slate-200/60 overflow-hidden shrink-0 transition-all duration-150 cursor-pointer no-print select-none z-10"
+      >
+        <div
+          className="h-full transition-[width] duration-150 ease-out rounded-r-full"
+          style={{
+            width: `${scrollProgress}%`,
+            backgroundColor: accentColor || "#1A365D",
+            boxShadow: scrollProgress > 0 ? `0 0 6px ${accentColor}66` : undefined,
+          }}
+        />
+        {/* Subtle hover tooltip showing percentage */}
+        <div className="pointer-events-none absolute right-2 -bottom-6 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-30 bg-slate-900/90 text-white text-[10px] font-mono px-1.5 py-0.5 rounded shadow-xs">
+          {Math.round(scrollProgress)}% read
+        </div>
+      </div>
+
       {/* Main Preview Container */}
       {viewMode === "rendered" ? (
-        <div className="p-2 sm:p-5 md:p-8 bg-slate-100/60 overflow-y-auto flex-1 flex flex-col items-center">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="p-2 sm:p-5 md:p-8 bg-slate-100/60 overflow-y-auto flex-1 flex flex-col items-center"
+        >
           {/* Validation Failure Warning Banner */}
           {validationAlert?.failed && (
             <div className="w-full max-w-[816px] mb-3 bg-amber-50 border-2 border-amber-300 rounded-xl p-3 text-xs text-amber-950 shadow-xs animate-fadeIn">
@@ -934,7 +1017,11 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         </div>
       ) : (
         /* Source LaTeX / Markdown View */
-        <div className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto flex-1 leading-relaxed select-text">
+        <div
+          ref={scrollContainerRef}
+          onScroll={handleScroll}
+          className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto flex-1 leading-relaxed select-text"
+        >
           <pre className="whitespace-pre-wrap">{markdown}</pre>
         </div>
       )}

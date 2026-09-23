@@ -24,12 +24,12 @@ export type AIErrorKind =
   | "unknown";
 
 export interface NormalizedAIError {
-  code: AIErrorCode;
+  code?: AIErrorCode;
   kind: AIErrorKind;
   statusCode?: number;
-  title: string;
+  title?: string;
   message: string;
-  userFacingMessage: string;
+  userFacingMessage?: string;
   retryable: boolean;
   rawError?: any;
 }
