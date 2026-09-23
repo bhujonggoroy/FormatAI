@@ -1,3 +1,16 @@
+export type AIErrorCode =
+  | "INVALID_API_KEY"
+  | "MODEL_UNAVAILABLE"
+  | "RATE_LIMIT"
+  | "QUOTA_EXCEEDED"
+  | "BAD_REQUEST"
+  | "UNAUTHORIZED"
+  | "FORBIDDEN"
+  | "SERVER_ERROR"
+  | "NETWORK_ERROR"
+  | "TIMEOUT"
+  | "UNKNOWN_ERROR";
+
 export type AIErrorKind =
   | "invalid_key"          // HTTP 401
   | "permission_denied"    // HTTP 403
@@ -11,9 +24,12 @@ export type AIErrorKind =
   | "unknown";
 
 export interface NormalizedAIError {
+  code: AIErrorCode;
   kind: AIErrorKind;
   statusCode?: number;
+  title: string;
   message: string;
+  userFacingMessage: string;
   retryable: boolean;
   rawError?: any;
 }
@@ -52,6 +68,8 @@ export interface ApiKeyItem {
   status?: "active" | "rate_limited" | "invalid" | "disabled";
   lastTestedAt?: number;
   lastTestLatencyMs?: number;
+  lastTestedModel?: string;
+  lastErrorCode?: AIErrorCode;
   lastError?: string;
 }
 
@@ -68,6 +86,8 @@ export interface ClientApiKeyItem {
   status?: "active" | "rate_limited" | "invalid" | "disabled";
   lastTestedAt?: number;
   lastTestLatencyMs?: number;
+  lastTestedModel?: string;
+  lastErrorCode?: AIErrorCode;
   lastError?: string;
 }
 
@@ -201,10 +221,25 @@ export interface TestResult {
   model: string;
   keyId?: string;
   keyName?: string;
+  maskedKey?: string;
+  endpoint?: string;
   latencyMs: number;
+  errorCode?: AIErrorCode;
+  errorKind?: AIErrorKind;
+  errorTitle?: string;
+  userFacingMessage?: string;
   errorMessage?: string;
   statusCode?: number;
-  errorKind?: AIErrorKind;
+  diagnostic?: {
+    provider: string;
+    keyId: string;
+    modelId: string;
+    endpoint: string;
+    maskedKey: string;
+    result: string;
+    latencyMs: number;
+    rawMessage?: string;
+  };
 }
 
 export interface ProviderStats {
