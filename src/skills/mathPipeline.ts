@@ -1,8 +1,8 @@
-import {
+import type {
   DetectedMathEntity,
   MathClassificationType,
   MathValidationResult,
-} from "./types";
+} from "./types.ts";
 
 /**
  * 6-Stage Academic Math Pipeline:

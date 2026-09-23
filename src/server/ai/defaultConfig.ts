@@ -1,4 +1,4 @@
-import { ManagerConfig, ProviderConfig } from "./types.ts";
+import type { ManagerConfig, ProviderConfig } from "./types.ts";
 import { CLOUDFLARE_DEFAULT_MODELS } from "./adapters/CloudflareAdapter.ts";
 
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = {

@@ -1,4 +1,4 @@
-import { Skill } from "../types";
+import type { Skill } from "../types.ts";
 
 /**
  * Skill 6: Chemical Equations & Stoichiometry

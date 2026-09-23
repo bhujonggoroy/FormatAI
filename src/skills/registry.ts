@@ -1,16 +1,16 @@
-import { Skill, SkillCategory, SkillPriority } from "./types";
-import { mathDocxSkill } from "./math-docx";
-import { pandocMathDocxSkill } from "./pandoc-math-docx";
-import { statNotationSkill } from "./stat-notation-docx";
-import { scientificDocxSkill } from "./scientific-docx";
-import { chemEquationSkill } from "./chem-equation-skill";
-import { academicManuscriptSkill } from "./academic-manuscript";
-import { latexTableFormatterSkill } from "./latex-table-formatter";
-import { citationReferencingSkill } from "./citation-referencing-skill";
-import { examBankSkill } from "./exam-bank-skill";
-import { figureCaptionCrossrefSkill } from "./figure-caption-crossref-skill";
-import { algorithmicPseudocodeSkill } from "./algorithmic-pseudocode-skill";
-import { markdownCleanerTypographySkill } from "./markdown-cleaner-typography-skill";
+import type { Skill, SkillCategory, SkillPriority } from "./types.ts";
+import { mathDocxSkill } from "./math-docx/index.ts";
+import { pandocMathDocxSkill } from "./pandoc-math-docx/index.ts";
+import { statNotationSkill } from "./stat-notation-docx/index.ts";
+import { scientificDocxSkill } from "./scientific-docx/index.ts";
+import { chemEquationSkill } from "./chem-equation-skill/index.ts";
+import { academicManuscriptSkill } from "./academic-manuscript/index.ts";
+import { latexTableFormatterSkill } from "./latex-table-formatter/index.ts";
+import { citationReferencingSkill } from "./citation-referencing-skill/index.ts";
+import { examBankSkill } from "./exam-bank-skill/index.ts";
+import { figureCaptionCrossrefSkill } from "./figure-caption-crossref-skill/index.ts";
+import { algorithmicPseudocodeSkill } from "./algorithmic-pseudocode-skill/index.ts";
+import { markdownCleanerTypographySkill } from "./markdown-cleaner-typography-skill/index.ts";
 
 /**
  * The 12 Canonical Document, Math, and Scientific Skill Repositories

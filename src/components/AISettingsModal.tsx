@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   ClientProviderConfig,
   ClientApiKeyItem,
@@ -49,6 +49,8 @@ import {
   ExternalLink,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
 } from "lucide-react";
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
 import { GetFreeApiKeyModal } from "./GetFreeApiKeyModal";
@@ -65,6 +67,51 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   onConfigChanged,
 }) => {
   const [activeTab, setActiveTab] = useState<"control" | "fallback" | "stats" | "logs">("control");
+
+  // Tab Slide Bar & Scroll Controls
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkTabBarScroll = () => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 6);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 6);
+  };
+
+  const handleSlideTabBar = (direction: "left" | "right") => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    const distance = direction === "left" ? -200 : 200;
+    el.scrollBy({ left: distance, behavior: "smooth" });
+    setTimeout(checkTabBarScroll, 350);
+  };
+
+  const handleSelectTab = (tab: "control" | "fallback" | "stats" | "logs") => {
+    setActiveTab(tab);
+    setTimeout(() => {
+      const btn = document.getElementById(`ai-tab-btn-${tab}`);
+      if (btn && tabBarRef.current) {
+        btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      }
+      checkTabBarScroll();
+    }, 60);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(checkTabBarScroll, 100);
+    const el = tabBarRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkTabBarScroll, { passive: true });
+    window.addEventListener("resize", checkTabBarScroll);
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener("scroll", checkTabBarScroll);
+      window.removeEventListener("resize", checkTabBarScroll);
+    };
+  }, [isOpen]);
   const [config, setConfig] = useState<ManagerConfig | null>(null);
   const [providers, setProviders] = useState<ClientProviderConfig[]>([]);
   const [stats, setStats] = useState<ProviderStats[]>([]);
@@ -393,39 +440,41 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const currentProviderKeys = currentActiveProvider?.apiKeys || [];
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs antialiased">
-      <div className="bg-white w-full max-w-7xl h-[88vh] max-h-[92vh] min-h-[520px] sm:min-h-[580px] rounded-2xl shadow-2xl flex flex-col overflow-hidden border border-slate-200">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs antialiased">
+      <div className="bg-white w-full sm:max-w-7xl h-full sm:h-[88vh] sm:max-h-[92vh] sm:rounded-2xl rounded-none shadow-2xl flex flex-col overflow-hidden border-0 sm:border sm:border-slate-200">
         {/* Modal Header */}
-        <div className="shrink-0 px-6 py-4 border-b border-slate-200 flex items-center justify-between bg-slate-50/80">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs">
-              <Sparkles className="w-5 h-5" />
+        <div className="shrink-0 px-3 sm:px-6 py-2.5 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50/90">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 className="text-lg font-bold text-slate-900 flex items-center gap-2">
-                Multi-Provider AI Control Panel
-                <span className="text-xs font-semibold px-2 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200">
+            <div className="min-w-0">
+              <h2 className="text-sm sm:text-lg font-extrabold text-slate-900 flex items-center gap-1.5 sm:gap-2 truncate">
+                <span className="hidden sm:inline">Multi-Provider AI Control Panel</span>
+                <span className="sm:hidden">AI Control Panel</span>
+                <span className="text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
                   8 Providers
                 </span>
               </h2>
-              <p className="text-xs text-slate-500">
+              <p className="hidden sm:block text-xs text-slate-500 mt-0.5 truncate">
                 Explicit ON/OFF activation, key rotation, priority fallback, and zero-leak secrets management.
               </p>
             </div>
           </div>
 
-          <div className="flex items-center gap-2">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
             <button
               onClick={handleSaveSettings}
               disabled={isSaving}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-semibold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50"
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
             >
               <Save className="w-3.5 h-3.5" />
-              <span>{isSaving ? "Saving..." : "Save AI Settings"}</span>
+              <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save AI Settings"}</span>
+              <span className="sm:hidden">{isSaving ? "Saving..." : "Save"}</span>
             </button>
             <button
               onClick={handleResetSettings}
-              className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
+              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
               title="Reset AI Settings to safe defaults"
             >
               <RotateCcw className="w-3.5 h-3.5" />
@@ -433,7 +482,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             </button>
             <button
               onClick={onClose}
-              className="p-1.5 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer ml-1"
+              className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
+              aria-label="Close modal"
             >
               <X className="w-5 h-5" />
             </button>
@@ -443,7 +493,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         {/* Global Notification Banner */}
         {statusBanner && (
           <div
-            className={`shrink-0 px-6 py-2.5 text-xs font-medium flex items-center justify-between border-b ${
+            className={`shrink-0 px-3 sm:px-6 py-2 sm:py-2.5 text-xs font-medium flex items-center justify-between border-b ${
               statusBanner.type === "error"
                 ? "bg-rose-50 text-rose-800 border-rose-200"
                 : statusBanner.type === "info"
@@ -451,73 +501,141 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 : "bg-emerald-50 text-emerald-800 border-emerald-200"
             }`}
           >
-            <div className="flex items-center gap-2">
+            <div className="flex items-center gap-2 min-w-0">
               {statusBanner.type === "error" ? (
                 <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
               ) : (
                 <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
               )}
-              <span>{statusBanner.text}</span>
+              <span className="truncate">{statusBanner.text}</span>
             </div>
             <button
               onClick={() => setStatusBanner(null)}
-              className="text-slate-400 hover:text-slate-700 text-xs cursor-pointer ml-4"
+              className="text-slate-400 hover:text-slate-700 text-xs cursor-pointer ml-2 p-1"
             >
               ✕
             </button>
           </div>
         )}
 
-        {/* Tabs Navigation */}
-        <div className="shrink-0 flex border-b border-slate-200 px-6 bg-white gap-2 text-xs font-semibold overflow-x-auto select-none">
-          <button
-            onClick={() => setActiveTab("control")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === "control"
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <Settings2 className="w-4 h-4 shrink-0" />
-            <span>AI Control Panel & Keys</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("fallback")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === "fallback"
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <ShieldCheck className="w-4 h-4 shrink-0" />
-            <span>Fallback Strategy & Safety</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("stats")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === "stats"
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <Activity className="w-4 h-4 shrink-0" />
-            <span>Usage & Health Telemetry</span>
-          </button>
-          <button
-            onClick={() => setActiveTab("logs")}
-            className={`py-3 px-3 border-b-2 transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 ${
-              activeTab === "logs"
-                ? "border-blue-600 text-blue-600 font-bold"
-                : "border-transparent text-slate-600 hover:text-slate-900"
-            }`}
-          >
-            <ScrollText className="w-4 h-4 shrink-0" />
-            <span>Fallback Audit Logs</span>
-          </button>
+        {/* Tabs Navigation with Visible Slide Bar & Controls */}
+        <div className="shrink-0 bg-slate-100 border-b-2 border-slate-300 px-2 sm:px-4 py-2 space-y-1.5">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Left Slide Button */}
+            <button
+              id="slide-ai-tabs-left-btn"
+              type="button"
+              onClick={() => handleSlideTabBar("left")}
+              disabled={!canScrollLeft}
+              className={`p-2 rounded-xl border-2 transition-all cursor-pointer shrink-0 flex items-center justify-center ${
+                canScrollLeft
+                  ? "bg-white text-blue-700 border-blue-400 hover:bg-blue-50 shadow-2xs hover:scale-105 active:scale-95"
+                  : "bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed"
+              }`}
+              title="Slide Left (বামে স্লাইড করুন)"
+              aria-label="Slide Left"
+            >
+              <ChevronLeft className="w-4 h-4 stroke-[3]" />
+            </button>
+
+            {/* Scrollable Container with EXPLICIT Visible Slide Bar (Scrollbar) */}
+            <div
+              ref={tabBarRef}
+              className="flex-1 bg-white p-1 rounded-xl border-2 border-slate-300 flex items-center gap-1.5 overflow-x-auto shadow-inner pb-2.5 [scrollbar-width:auto] [scrollbar-color:#2563eb_#e2e8f0] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-slate-200 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-600 hover:[&::-webkit-scrollbar-thumb]:bg-blue-700 [&::-webkit-scrollbar-thumb]:rounded-full"
+            >
+              <button
+                id="ai-tab-btn-control"
+                onClick={() => handleSelectTab("control")}
+                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
+                  activeTab === "control"
+                    ? "bg-blue-900 text-white shadow-xs font-extrabold border border-blue-950"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Settings2 className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">AI Control Panel & Keys</span>
+                <span className="sm:hidden">Keys & Models</span>
+              </button>
+              <button
+                id="ai-tab-btn-fallback"
+                onClick={() => handleSelectTab("fallback")}
+                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
+                  activeTab === "fallback"
+                    ? "bg-indigo-900 text-white shadow-xs font-extrabold border border-indigo-950"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <ShieldCheck className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Fallback Strategy & Safety</span>
+                <span className="sm:hidden">Fallback</span>
+              </button>
+              <button
+                id="ai-tab-btn-stats"
+                onClick={() => handleSelectTab("stats")}
+                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
+                  activeTab === "stats"
+                    ? "bg-emerald-900 text-white shadow-xs font-extrabold border border-emerald-950"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Activity className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Usage & Health Telemetry</span>
+                <span className="sm:hidden">Telemetry</span>
+              </button>
+              <button
+                id="ai-tab-btn-logs"
+                onClick={() => handleSelectTab("logs")}
+                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
+                  activeTab === "logs"
+                    ? "bg-purple-900 text-white shadow-xs font-extrabold border border-purple-950"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <ScrollText className="w-4 h-4 shrink-0" />
+                <span className="hidden sm:inline">Fallback Audit Logs</span>
+                <span className="sm:hidden">Audit Logs</span>
+              </button>
+            </div>
+
+            {/* Right Slide Button */}
+            <button
+              id="slide-ai-tabs-right-btn"
+              type="button"
+              onClick={() => handleSlideTabBar("right")}
+              disabled={!canScrollRight}
+              className={`p-2 rounded-xl border-2 transition-all cursor-pointer shrink-0 flex items-center justify-center ${
+                canScrollRight
+                  ? "bg-blue-600 text-white border-blue-700 hover:bg-blue-700 shadow-2xs hover:scale-105 active:scale-95 animate-pulse"
+                  : "bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed"
+              }`}
+              title="Slide Right to see all options (বাকি অপশন দেখতে ডানে স্লাইড করুন)"
+              aria-label="Slide Right"
+            >
+              <ChevronRight className="w-4 h-4 stroke-[3]" />
+            </button>
+          </div>
+
+          {/* Slide Bar Helper Guidance */}
+          <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-600">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-blue-600 shrink-0" />
+              <span>Slide Bar (স্লাইড বার) ◀ ▶ : মোট ৪টি অপশন রয়েছে</span>
+            </div>
+            {canScrollRight && (
+              <button
+                type="button"
+                onClick={() => handleSlideTabBar("right")}
+                className="text-blue-700 hover:text-blue-900 font-extrabold flex items-center gap-1 cursor-pointer bg-blue-50 hover:bg-blue-100 px-2 py-0.5 rounded-md border border-blue-200 transition-colors"
+              >
+                <span>বাকি অপশন দেখতে স্লাইড করুন</span>
+                <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+              </button>
+            )}
+          </div>
         </div>
 
         {/* Modal Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-6 space-y-6 bg-slate-50/50">
+        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 bg-slate-50/50">
           {isLoading ? (
             <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-3">
               <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
@@ -1327,16 +1445,16 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         </div>
 
         {/* Modal Footer */}
-        <div className="shrink-0 px-6 py-3.5 border-t border-slate-200 flex items-center justify-between bg-slate-50 text-xs">
-          <div className="flex items-center gap-2 text-slate-500">
-            <ShieldCheck className="w-4 h-4 text-emerald-600" />
-            <span>Server-side isolated: Raw API keys are never returned to client source.</span>
+        <div className="shrink-0 px-3 sm:px-6 py-2.5 sm:py-3.5 border-t border-slate-200 flex items-center justify-between gap-2 bg-slate-50 text-xs">
+          <div className="flex items-center gap-1.5 text-slate-500 text-[11px] sm:text-xs min-w-0">
+            <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
+            <span className="truncate sm:whitespace-normal">Server-side isolated: Raw API keys protected.</span>
           </div>
           <button
             onClick={onClose}
-            className="px-4 py-2 rounded-lg font-bold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition-colors cursor-pointer shadow-2xs"
+            className="shrink-0 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl font-extrabold text-slate-800 bg-white border-2 border-slate-300 hover:bg-slate-100 transition-colors cursor-pointer shadow-2xs text-xs whitespace-nowrap"
           >
-            Close Control Panel
+            Close
           </button>
         </div>
       </div>

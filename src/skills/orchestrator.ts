@@ -1,16 +1,16 @@
-import {
+import type {
   Skill,
   SkillMode,
   SkillCategory,
   OrchestrationReport,
   SkillPipelineResult,
-} from "./types";
-import { skillRegistry, ALL_12_SKILLS } from "./registry";
+} from "./types.ts";
+import { skillRegistry, ALL_12_SKILLS } from "./registry.ts";
 import {
   executeMathPipeline,
   unlockMathExpressions,
-  MathPipelineExecution,
-} from "./mathPipeline";
+} from "./mathPipeline.ts";
+import type { MathPipelineExecution } from "./mathPipeline.ts";
 
 /**
  * Skill Orchestrator

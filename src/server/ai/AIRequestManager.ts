@@ -1,7 +1,7 @@
 import {
-  AIProviderAdapter,
   maskApiKey,
   estimateTokenCount,
+  type AIProviderAdapter,
 } from "./adapters/BaseAdapter.ts";
 import { GeminiAdapter } from "./adapters/GeminiAdapter.ts";
 import { GroqAdapter } from "./adapters/GroqAdapter.ts";
@@ -11,7 +11,7 @@ import { CohereAdapter } from "./adapters/CohereAdapter.ts";
 import { HuggingFaceAdapter } from "./adapters/HuggingFaceAdapter.ts";
 import { CloudflareAdapter } from "./adapters/CloudflareAdapter.ts";
 import { CustomAdapter } from "./adapters/CustomAdapter.ts";
-import {
+import type {
   AIRequest,
   AIResponse,
   ApiKeyItem,

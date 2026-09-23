@@ -1,10 +1,10 @@
 import { GoogleGenAI } from "@google/genai";
 import {
-  AIProviderAdapter,
-  AdapterOptions,
   estimateTokenCount,
+  type AIProviderAdapter,
+  type AdapterOptions,
 } from "./BaseAdapter.ts";
-import {
+import type {
   AIRequest,
   ModelInfo,
   NormalizedAIError,

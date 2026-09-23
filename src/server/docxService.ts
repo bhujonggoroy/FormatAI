@@ -23,7 +23,7 @@ import {
   MathRoundBrackets,
   MathSquareBrackets,
 } from "docx";
-import { executeSkillPipeline, getActiveDocxOptions } from "../skills/pipeline";
+import { executeSkillPipeline, getActiveDocxOptions } from "../skills/pipeline.ts";
 
 export const UNICODE_MATH_REPLACEMENTS: Record<string, string> = {
   '\\alpha': 'α', '\\beta': 'β', '\\gamma': 'γ', '\\Gamma': 'Γ',

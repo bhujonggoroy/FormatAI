@@ -1,6 +1,6 @@
-import { SkillPipelineResult, SkillMode } from "./types";
-import { skillRegistry } from "./registry";
-import { skillOrchestrator } from "./orchestrator";
+import type { SkillPipelineResult, SkillMode } from "./types.ts";
+import { skillRegistry } from "./registry.ts";
+import { skillOrchestrator } from "./orchestrator.ts";
 
 /**
  * Executes enabled skills sequentially with the 6-stage Math Pipeline and safe orchestration.

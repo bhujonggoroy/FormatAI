@@ -19,7 +19,7 @@ import {
   generateMarkdownDocument,
   generatePlainTextDocument,
   generatePdfBuffer,
-  ExportFormat
+  type ExportFormat
 } from "./src/server/exportService.ts";
 import { cleanClientSideNotebookLM } from "./src/utils/cleaner.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";

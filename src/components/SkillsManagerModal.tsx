@@ -1,4 +1,4 @@
-import React, { useState, useMemo } from "react";
+import React, { useState, useMemo, useRef, useEffect } from "react";
 import {
   Skill,
   skillRegistry,
@@ -16,6 +16,8 @@ import {
   Trash2,
   ChevronDown,
   ChevronUp,
+  ChevronLeft,
+  ChevronRight,
   Sliders,
   Play,
   BookOpen,
@@ -414,6 +416,51 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   const [skills, setSkills] = useState<Skill[]>(() => skillRegistry.getAllSkills());
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>("math-docx");
   const [activeTab, setActiveTab] = useState<SkillsModalTab>(initialTab);
+
+  // Tab Slide Bar & Scroll Controls
+  const tabBarRef = useRef<HTMLDivElement>(null);
+  const [canScrollLeft, setCanScrollLeft] = useState(false);
+  const [canScrollRight, setCanScrollRight] = useState(true);
+
+  const checkTabBarScroll = () => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    setCanScrollLeft(el.scrollLeft > 6);
+    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 6);
+  };
+
+  const handleSlideTabBar = (direction: "left" | "right") => {
+    const el = tabBarRef.current;
+    if (!el) return;
+    const distance = direction === "left" ? -240 : 240;
+    el.scrollBy({ left: distance, behavior: "smooth" });
+    setTimeout(checkTabBarScroll, 350);
+  };
+
+  const handleSelectTab = (tab: SkillsModalTab) => {
+    setActiveTab(tab);
+    setTimeout(() => {
+      const btn = document.getElementById(`tab-btn-${tab}`);
+      if (btn && tabBarRef.current) {
+        btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
+      }
+      checkTabBarScroll();
+    }, 60);
+  };
+
+  useEffect(() => {
+    if (!isOpen) return;
+    const timer = setTimeout(checkTabBarScroll, 100);
+    const el = tabBarRef.current;
+    if (!el) return;
+    el.addEventListener("scroll", checkTabBarScroll, { passive: true });
+    window.addEventListener("resize", checkTabBarScroll);
+    return () => {
+      clearTimeout(timer);
+      el.removeEventListener("scroll", checkTabBarScroll);
+      window.removeEventListener("resize", checkTabBarScroll);
+    };
+  }, [isOpen]);
   
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
@@ -716,26 +763,34 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
     switch (priority) {
       case 1:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200">
-            <Sigma className="w-3 h-3 text-blue-600" /> Priority 1: Math Equation
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-blue-50 text-blue-700 border border-blue-200 shrink-0">
+            <Sigma className="w-3 h-3 text-blue-600 shrink-0" />
+            <span className="hidden sm:inline">Priority 1: Math Equation</span>
+            <span className="sm:hidden">P1: Math</span>
           </span>
         );
       case 2:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200">
-            <Atom className="w-3 h-3 text-emerald-600" /> Priority 2: Scientific
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-emerald-50 text-emerald-700 border border-emerald-200 shrink-0">
+            <Atom className="w-3 h-3 text-emerald-600 shrink-0" />
+            <span className="hidden sm:inline">Priority 2: Scientific</span>
+            <span className="sm:hidden">P2: Science</span>
           </span>
         );
       case 3:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200">
-            <BookOpen className="w-3 h-3 text-purple-600" /> Priority 3: Manuscript
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-purple-50 text-purple-700 border border-purple-200 shrink-0">
+            <BookOpen className="w-3 h-3 text-purple-600 shrink-0" />
+            <span className="hidden sm:inline">Priority 3: Manuscript</span>
+            <span className="sm:hidden">P3: Manuscript</span>
           </span>
         );
       default:
         return (
-          <span className="inline-flex items-center gap-1 px-2.5 py-0.5 rounded-full text-[11px] font-bold bg-slate-50 text-slate-700 border border-slate-200">
-            <FileText className="w-3 h-3 text-slate-600" /> Priority 4: General
+          <span className="inline-flex items-center gap-1 px-2 py-0.5 rounded-full text-[10px] sm:text-[11px] font-bold bg-slate-50 text-slate-700 border border-slate-200 shrink-0">
+            <FileText className="w-3 h-3 text-slate-600 shrink-0" />
+            <span className="hidden sm:inline">Priority 4: General</span>
+            <span className="sm:hidden">P4: General</span>
           </span>
         );
     }
@@ -784,27 +839,28 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-3 sm:p-5 bg-slate-900/65 backdrop-blur-xs overflow-y-auto">
-      <div className="relative w-full max-w-5xl bg-white rounded-2xl shadow-2xl border border-slate-200/90 overflow-hidden flex flex-col max-h-[92vh] transition-all">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5 bg-slate-900/65 backdrop-blur-xs overflow-y-auto">
+      <div className="relative w-full max-w-5xl bg-white sm:rounded-2xl rounded-none shadow-2xl sm:border sm:border-slate-200/90 overflow-hidden flex flex-col h-full sm:h-auto sm:max-h-[92vh] transition-all">
         {/* Header */}
-        <div className="px-6 py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-10 h-10 rounded-xl bg-indigo-500/25 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-inner">
-              <Layers className="w-5 h-5" />
+        <div className="px-3 sm:px-6 py-2.5 sm:py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2">
+          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-indigo-500/25 border border-indigo-400/30 flex items-center justify-center text-indigo-300 shadow-inner shrink-0">
+              <Layers className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <div className="flex items-center gap-2.5 flex-wrap">
-                <h2 className="text-base sm:text-lg font-bold text-white tracking-tight">
-                  Academic Skills & Formatting Center
+            <div className="min-w-0">
+              <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
+                <h2 className="text-sm sm:text-lg font-extrabold text-white tracking-tight truncate sm:whitespace-normal">
+                  <span className="hidden sm:inline">Academic Skills & Formatting Center</span>
+                  <span className="sm:hidden">Skills & Formatting Center</span>
                 </h2>
-                <span className="px-2 py-0.5 text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30">
+                <span className="px-2 py-0.5 text-[10px] sm:text-[11px] font-bold rounded-full bg-emerald-500/20 text-emerald-300 border border-emerald-500/30 shrink-0">
                   {activeCount} of {skills.length} Active
                 </span>
                 <span className="hidden sm:inline-block px-2 py-0.5 text-[11px] font-semibold rounded-full bg-blue-500/20 text-blue-200 border border-blue-500/30">
                   Strict 4-Tier Pipeline
                 </span>
               </div>
-              <p className="text-xs text-slate-300 mt-0.5">
+              <p className="hidden sm:block text-xs text-slate-300 mt-0.5 truncate">
                 Modular GitHub typesetting engines, execution hierarchy, 15 academic standards & live tester
               </p>
             </div>
@@ -813,7 +869,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
           <button
             id="close-skills-modal-btn"
             onClick={onClose}
-            className="p-2 rounded-lg text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer"
+            className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
             title="Close modal"
           >
             <X className="w-5 h-5" />
@@ -822,156 +878,220 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
 
         {/* Status Toast */}
         {statusNotification && (
-          <div className="bg-emerald-600 text-white text-xs px-5 py-2 flex items-center justify-between transition-all shadow-xs">
-            <div className="flex items-center gap-2 font-medium">
-              <Check className="w-4 h-4" />
-              <span>{statusNotification}</span>
+          <div className="bg-emerald-600 text-white text-xs px-3 sm:px-5 py-2 flex items-center justify-between transition-all shadow-xs">
+            <div className="flex items-center gap-2 font-medium min-w-0">
+              <Check className="w-4 h-4 shrink-0" />
+              <span className="truncate">{statusNotification}</span>
             </div>
           </div>
         )}
 
-        {/* Professional Segmented Tab Bar */}
-        <div className="bg-slate-50 border-b border-slate-200/90 px-4 sm:px-6 py-2.5">
-          <div className="bg-slate-200/70 p-1 rounded-xl flex items-center gap-1 overflow-x-auto shadow-inner">
-            {/* Tab 1: Installed Skills */}
+        {/* Professional Segmented Tab Bar with Visible Slide Bar & Slider Controls */}
+        <div className="bg-slate-100 border-b-2 border-slate-300 px-2 sm:px-4 py-2 space-y-1.5">
+          <div className="flex items-center gap-1.5 sm:gap-2">
+            {/* Left Slide Button */}
             <button
-              id="tab-btn-skills"
+              id="slide-tabs-left-btn"
               type="button"
-              onClick={() => setActiveTab("skills")}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === "skills"
-                  ? "bg-white text-indigo-950 shadow-xs border border-slate-200/90"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              onClick={() => handleSlideTabBar("left")}
+              disabled={!canScrollLeft}
+              className={`p-2 rounded-xl border-2 transition-all cursor-pointer shrink-0 flex items-center justify-center ${
+                canScrollLeft
+                  ? "bg-white text-indigo-700 border-indigo-400 hover:bg-indigo-50 shadow-2xs hover:scale-105 active:scale-95"
+                  : "bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed"
               }`}
+              title="Slide Left (বামে স্লাইড করুন)"
+              aria-label="Slide Left"
             >
-              <Layers className={`w-3.5 h-3.5 ${activeTab === "skills" ? "text-indigo-600" : "text-slate-500"}`} />
-              <span>Modular Skills</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === "skills" ? "bg-indigo-100 text-indigo-800" : "bg-slate-200 text-slate-600"
-              }`}>
-                {activeCount}/{skills.length}
-              </span>
+              <ChevronLeft className="w-4 h-4 stroke-[3]" />
             </button>
 
-            {/* Tab 2: Execution Hierarchy */}
-            <button
-              id="tab-btn-pipeline"
-              type="button"
-              onClick={() => setActiveTab("pipeline")}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === "pipeline"
-                  ? "bg-white text-blue-950 shadow-xs border border-slate-200/90"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
+            {/* Scrollable Container with EXPLICIT Visible Slide Bar (Scrollbar) */}
+            <div
+              ref={tabBarRef}
+              className="flex-1 bg-white p-1 rounded-xl border-2 border-slate-300 flex items-center gap-1.5 overflow-x-auto shadow-inner pb-2.5 [scrollbar-width:auto] [scrollbar-color:#4f46e5_#e2e8f0] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-slate-200 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-indigo-600 hover:[&::-webkit-scrollbar-thumb]:bg-indigo-700 [&::-webkit-scrollbar-thumb]:rounded-full"
             >
-              <Sliders className={`w-3.5 h-3.5 ${activeTab === "pipeline" ? "text-blue-600" : "text-slate-500"}`} />
-              <span>Execution Pipeline</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === "pipeline" ? "bg-blue-100 text-blue-800" : "bg-slate-200 text-slate-600"
-              }`}>
-                4 Tiers
-              </span>
-            </button>
+              {/* Tab 1: Installed Skills */}
+              <button
+                id="tab-btn-skills"
+                type="button"
+                onClick={() => handleSelectTab("skills")}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeTab === "skills"
+                    ? "bg-indigo-900 text-white shadow-xs border border-indigo-950 font-extrabold"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Layers className={`w-3.5 h-3.5 shrink-0 ${activeTab === "skills" ? "text-indigo-200" : "text-slate-500"}`} />
+                <span className="hidden sm:inline">Modular Skills</span>
+                <span className="sm:hidden">Skills</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === "skills" ? "bg-indigo-700 text-white" : "bg-slate-200 text-slate-700"
+                }`}>
+                  {activeCount}/{skills.length}
+                </span>
+              </button>
 
-            {/* Tab 3: Interactive Tester */}
-            <button
-              id="tab-btn-tester"
-              type="button"
-              onClick={() => {
-                setActiveTab("tester");
-                if (!testOutput) runTester();
-              }}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === "tester"
-                  ? "bg-white text-emerald-950 shadow-xs border border-slate-200/90"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <Play className={`w-3.5 h-3.5 ${activeTab === "tester" ? "text-emerald-600" : "text-slate-500"}`} />
-              <span>Interactive Tester</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === "tester" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
-              }`}>
-                Live Sandbox
-              </span>
-            </button>
+              {/* Tab 2: Execution Hierarchy */}
+              <button
+                id="tab-btn-pipeline"
+                type="button"
+                onClick={() => handleSelectTab("pipeline")}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeTab === "pipeline"
+                    ? "bg-blue-900 text-white shadow-xs border border-blue-950 font-extrabold"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Sliders className={`w-3.5 h-3.5 shrink-0 ${activeTab === "pipeline" ? "text-blue-200" : "text-slate-500"}`} />
+                <span className="hidden sm:inline">Execution Pipeline</span>
+                <span className="sm:hidden">Pipeline</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === "pipeline" ? "bg-blue-700 text-white" : "bg-slate-200 text-slate-700"
+                }`}>
+                  4 Tiers
+                </span>
+              </button>
 
-            {/* Tab 4: 15 Academic Standards */}
-            <button
-              id="tab-btn-rules"
-              type="button"
-              onClick={() => setActiveTab("rules")}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === "rules"
-                  ? "bg-white text-purple-950 shadow-xs border border-slate-200/90"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <BookOpen className={`w-3.5 h-3.5 ${activeTab === "rules" ? "text-purple-600" : "text-slate-500"}`} />
-              <span>15 Academic Standards</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === "rules" ? "bg-purple-100 text-purple-800" : "bg-slate-200 text-slate-600"
-              }`}>
-                Standards
-              </span>
-            </button>
+              {/* Tab 3: Interactive Tester */}
+              <button
+                id="tab-btn-tester"
+                type="button"
+                onClick={() => {
+                  handleSelectTab("tester");
+                  if (!testOutput) runTester();
+                }}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeTab === "tester"
+                    ? "bg-emerald-900 text-white shadow-xs border border-emerald-950 font-extrabold"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Play className={`w-3.5 h-3.5 shrink-0 ${activeTab === "tester" ? "text-emerald-200" : "text-slate-500"}`} />
+                <span className="hidden sm:inline">Interactive Tester</span>
+                <span className="sm:hidden">Tester</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === "tester" ? "bg-emerald-700 text-white" : "bg-slate-200 text-slate-700"
+                }`}>
+                  Live
+                </span>
+              </button>
 
-            {/* Tab 5: AI Studio System Prompt (Password Protected) */}
-            <button
-              id="tab-btn-instructions"
-              type="button"
-              onClick={() => setActiveTab("instructions")}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === "instructions"
-                  ? "bg-white text-amber-950 shadow-xs border border-slate-200/90"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
-              }`}
-            >
-              <Terminal className={`w-3.5 h-3.5 ${activeTab === "instructions" ? "text-amber-600" : "text-slate-500"}`} />
-              <span>AI Studio Prompt</span>
-              <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                isPromptUnlocked
-                  ? "bg-emerald-100 text-emerald-800"
-                  : "bg-amber-100 text-amber-800"
-              }`}>
-                {isPromptUnlocked ? (
-                  <>
-                    <Unlock className="w-2.5 h-2.5" />
-                    <span>Unlocked</span>
-                  </>
-                ) : (
-                  <>
-                    <Lock className="w-2.5 h-2.5" />
-                    <span>Password</span>
-                  </>
-                )}
-              </span>
-            </button>
+              {/* Tab 4: 15 Academic Standards */}
+              <button
+                id="tab-btn-rules"
+                type="button"
+                onClick={() => handleSelectTab("rules")}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeTab === "rules"
+                    ? "bg-purple-900 text-white shadow-xs border border-purple-950 font-extrabold"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <BookOpen className={`w-3.5 h-3.5 shrink-0 ${activeTab === "rules" ? "text-purple-200" : "text-slate-500"}`} />
+                <span className="hidden sm:inline">15 Academic Standards</span>
+                <span className="sm:hidden">15 Rules</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === "rules" ? "bg-purple-700 text-white" : "bg-slate-200 text-slate-700"
+                }`}>
+                  Standards
+                </span>
+              </button>
 
-            {/* Tab 6: Open Source License & 12 Repos */}
+              {/* Tab 5: AI Studio System Prompt (Password Protected) */}
+              <button
+                id="tab-btn-instructions"
+                type="button"
+                onClick={() => handleSelectTab("instructions")}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeTab === "instructions"
+                    ? "bg-amber-900 text-white shadow-xs border border-amber-950 font-extrabold"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Terminal className={`w-3.5 h-3.5 shrink-0 ${activeTab === "instructions" ? "text-amber-200" : "text-slate-500"}`} />
+                <span className="hidden sm:inline">AI Studio Prompt</span>
+                <span className="sm:hidden">System Prompt</span>
+                <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  isPromptUnlocked
+                    ? "bg-emerald-100 text-emerald-800"
+                    : "bg-amber-100 text-amber-800"
+                }`}>
+                  {isPromptUnlocked ? (
+                    <>
+                      <Unlock className="w-2.5 h-2.5" />
+                      <span className="hidden sm:inline">Unlocked</span>
+                    </>
+                  ) : (
+                    <>
+                      <Lock className="w-2.5 h-2.5" />
+                      <span className="hidden sm:inline">Password</span>
+                    </>
+                  )}
+                </span>
+              </button>
+
+              {/* Tab 6: Open Source License & 12 Repos */}
+              <button
+                id="tab-btn-license"
+                type="button"
+                onClick={() => handleSelectTab("license")}
+                className={`flex items-center gap-1.5 sm:gap-2 px-3 sm:px-4 py-1.5 sm:py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer shrink-0 ${
+                  activeTab === "license"
+                    ? "bg-teal-900 text-white shadow-xs border border-teal-950 font-extrabold"
+                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                }`}
+              >
+                <Scale className={`w-3.5 h-3.5 shrink-0 ${activeTab === "license" ? "text-teal-200" : "text-slate-500"}`} />
+                <span className="hidden sm:inline">License & 12 Repos</span>
+                <span className="sm:hidden">License</span>
+                <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
+                  activeTab === "license" ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-700"
+                }`}>
+                  MIT Free
+                </span>
+              </button>
+            </div>
+
+            {/* Right Slide Button */}
             <button
-              id="tab-btn-license"
+              id="slide-tabs-right-btn"
               type="button"
-              onClick={() => setActiveTab("license")}
-              className={`flex items-center gap-2 px-3.5 py-2 rounded-lg text-xs font-semibold whitespace-nowrap transition-all cursor-pointer ${
-                activeTab === "license"
-                  ? "bg-white text-emerald-950 shadow-xs border border-slate-200/90"
-                  : "text-slate-600 hover:text-slate-900 hover:bg-white/60"
+              onClick={() => handleSlideTabBar("right")}
+              disabled={!canScrollRight}
+              className={`p-2 rounded-xl border-2 transition-all cursor-pointer shrink-0 flex items-center justify-center ${
+                canScrollRight
+                  ? "bg-indigo-600 text-white border-indigo-700 hover:bg-indigo-700 shadow-2xs hover:scale-105 active:scale-95 animate-pulse"
+                  : "bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed"
               }`}
+              title="Slide Right to see all 6 options (বাকি অপশন দেখতে ডানে স্লাইড করুন)"
+              aria-label="Slide Right"
             >
-              <Scale className={`w-3.5 h-3.5 ${activeTab === "license" ? "text-emerald-600" : "text-slate-500"}`} />
-              <span>License & 12 Repos</span>
-              <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
-                activeTab === "license" ? "bg-emerald-100 text-emerald-800" : "bg-slate-200 text-slate-600"
-              }`}>
-                MIT / Free
-              </span>
+              <ChevronRight className="w-4 h-4 stroke-[3]" />
             </button>
+          </div>
+
+          {/* Slide Bar Helper Guidance */}
+          <div className="flex items-center justify-between px-1 text-[11px] font-bold text-slate-600">
+            <div className="flex items-center gap-1.5">
+              <span className="w-2 h-2 rounded-full bg-indigo-600 shrink-0" />
+              <span>Slide Bar (স্লাইড বার) ◀ ▶ : মোট ৬টি অপশন রয়েছে</span>
+            </div>
+            {canScrollRight && (
+              <button
+                type="button"
+                onClick={() => handleSlideTabBar("right")}
+                className="text-indigo-700 hover:text-indigo-900 font-extrabold flex items-center gap-1 cursor-pointer bg-indigo-50 hover:bg-indigo-100 px-2 py-0.5 rounded-md border border-indigo-200 transition-colors"
+              >
+                <span>বাকি অপশন দেখতে স্লাইড করুন</span>
+                <ChevronRight className="w-3.5 h-3.5 stroke-[3]" />
+              </button>
+            )}
           </div>
         </div>
 
         {/* Content Body */}
-        <div className="p-4 sm:p-6 overflow-y-auto flex-1 space-y-4 bg-slate-50/40">
+        <div className="p-3 sm:p-6 overflow-y-auto flex-1 space-y-4 bg-slate-50/40">
           {/* TAB 1: MODULAR SKILLS */}
           {activeTab === "skills" && (
             <div className="space-y-4">
@@ -994,46 +1114,46 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                   </div>
 
                   {/* Mode Badges */}
-                  <div className="inline-flex p-1 bg-slate-800/90 rounded-xl border border-slate-700/80 gap-1 self-start sm:self-auto">
+                  <div className="grid grid-cols-3 sm:inline-flex p-1 bg-slate-800/90 rounded-xl border border-slate-700/80 gap-1 w-full sm:w-auto">
                     <button
                       type="button"
                       onClick={() => handleModeChange("auto")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-1.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                         skillMode === "auto"
                           ? "bg-emerald-500 text-white shadow-xs"
                           : "text-slate-300 hover:text-white hover:bg-white/5"
                       }`}
                       title="Automatically detects document indicators (math, chemistry, tables, citations) and routes to optimal skills"
                     >
-                      <Sparkles className="w-3.5 h-3.5" />
+                      <Sparkles className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
                       <span>AUTO DETECT</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleModeChange("manual")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-1.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                         skillMode === "manual"
                           ? "bg-indigo-600 text-white shadow-xs"
                           : "text-slate-300 hover:text-white hover:bg-white/5"
                       }`}
                       title="User manually controls active skills with conflict detection"
                     >
-                      <Sliders className="w-3.5 h-3.5" />
+                      <Sliders className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
                       <span>SMART MANUAL</span>
                     </button>
 
                     <button
                       type="button"
                       onClick={() => handleModeChange("all_on")}
-                      className={`px-3 py-1.5 rounded-lg text-xs font-bold transition-all flex items-center gap-1.5 cursor-pointer ${
+                      className={`px-1.5 sm:px-3 py-1.5 rounded-lg text-[10px] sm:text-xs font-bold transition-all flex items-center justify-center gap-1 cursor-pointer whitespace-nowrap ${
                         skillMode === "all_on"
                           ? "bg-purple-600 text-white shadow-xs"
                           : "text-slate-300 hover:text-white hover:bg-white/5"
                       }`}
                       title="Force all 12 skills ON with Sentinel Math Lock protection"
                     >
-                      <Layers className="w-3.5 h-3.5" />
+                      <Layers className="w-3 h-3 sm:w-3.5 sm:h-3.5 shrink-0" />
                       <span>ALL ON</span>
                     </button>
                   </div>
@@ -1251,57 +1371,57 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                         }`}
                       >
                         {/* Header Row */}
-                        <div className="p-4 flex items-center justify-between gap-3">
-                          <div className="flex items-center gap-3.5 min-w-0">
+                        <div className="p-3 sm:p-4 flex items-start sm:items-center justify-between gap-2.5">
+                          <div className="flex items-start sm:items-center gap-2.5 sm:gap-3.5 min-w-0">
                             {/* Toggle Switch */}
                             <button
                               type="button"
                               onClick={() => handleToggle(skill.id)}
-                              className={`w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 ${
+                              className={`w-10 sm:w-11 h-6 flex items-center rounded-full p-1 transition-colors cursor-pointer shrink-0 mt-0.5 sm:mt-0 ${
                                 skill.enabled ? "bg-emerald-600" : "bg-slate-300"
                               }`}
                               title={skill.enabled ? "Click to disable skill" : "Click to enable skill"}
                             >
                               <div
                                 className={`bg-white w-4 h-4 rounded-full shadow-md transform transition-transform ${
-                                  skill.enabled ? "translate-x-5" : "translate-x-0"
+                                  skill.enabled ? "translate-x-4 sm:translate-x-5" : "translate-x-0"
                                 }`}
                               />
                             </button>
 
                             <div className="min-w-0">
-                              <div className="flex items-center gap-2 flex-wrap">
-                                <h3 className="text-sm font-bold text-slate-900 truncate">
+                              <div className="flex items-center gap-1.5 sm:gap-2 flex-wrap">
+                                <h3 className="text-xs sm:text-sm font-extrabold text-slate-900 break-words leading-tight">
                                   {skill.name}
                                 </h3>
-                                <span className="text-xs text-slate-500 font-mono">
+                                <span className="text-[10px] sm:text-xs text-slate-500 font-mono">
                                   v{skill.version}
                                 </span>
                                 {getPriorityBadge(skill.priority)}
                               </div>
-                              <p className="text-xs text-slate-600 mt-0.5 line-clamp-1">
+                              <p className="text-[11px] sm:text-xs text-slate-600 mt-0.5 line-clamp-2">
                                 {skill.description}
                               </p>
                             </div>
                           </div>
 
-                          <div className="flex items-center gap-1.5 shrink-0">
+                          <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 pt-0.5 sm:pt-0">
                             <a
                               href={skill.repositoryUrl}
                               target="_blank"
                               rel="noopener noreferrer"
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 sm:p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                               title={`View original repository on GitHub (${skill.author})`}
                             >
-                              <ExternalLink className="w-4 h-4" />
+                              <ExternalLink className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             </a>
                             <button
                               type="button"
                               onClick={() => handleReset(skill.id)}
-                              className="p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
+                              className="p-1 sm:p-1.5 text-slate-400 hover:text-indigo-600 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer"
                               title="Reset to original defaults"
                             >
-                              <RefreshCw className="w-4 h-4" />
+                              <RefreshCw className="w-3.5 h-3.5 sm:w-4 sm:h-4" />
                             </button>
                             <button
                               type="button"
@@ -2183,14 +2303,15 @@ Text:
         </div>
 
         {/* Footer */}
-        <div className="px-6 py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between">
-          <div className="text-xs text-slate-500 font-medium">
-            <span className="font-bold text-slate-800">{activeCount} active skills</span> chained automatically during conversion & DOCX generation.
+        <div className="px-3 sm:px-6 py-2.5 sm:py-3.5 bg-slate-50 border-t border-slate-200 flex items-center justify-between gap-2 text-xs">
+          <div className="text-slate-500 font-medium text-[11px] sm:text-xs min-w-0">
+            <span className="font-bold text-slate-800">{activeCount} active skills</span>
+            <span className="hidden sm:inline"> chained automatically during conversion & DOCX generation.</span>
           </div>
           <button
             type="button"
             onClick={onClose}
-            className="px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-bold rounded-lg transition-colors cursor-pointer shadow-xs"
+            className="shrink-0 px-4 py-2 bg-slate-900 hover:bg-slate-800 text-white text-xs font-extrabold rounded-xl transition-colors cursor-pointer shadow-xs whitespace-nowrap"
           >
             Done
           </button>

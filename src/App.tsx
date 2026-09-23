@@ -12,6 +12,7 @@ import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
+import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
 import {
   getUserSettings,
   getUserProviders,
@@ -28,6 +29,7 @@ import {
   Eye,
   Columns,
   X,
+  FileDown,
 } from "lucide-react";
 
 export default function App() {
@@ -311,14 +313,16 @@ export default function App() {
   const charCount = inputText.length;
   const wordCount = inputText.trim() ? inputText.trim().split(/\s+/).length : 0;
   const lineCount = inputText ? inputText.split("\n").length : 0;
+  const currentTheme = getAcademicTheme(accentColor);
 
   return (
-    <div className="min-h-screen bg-slate-50/70 text-slate-800 flex flex-col antialiased w-full overflow-x-hidden">
+    <div className="min-h-screen bg-[#F4F6F8] text-slate-900 flex flex-col antialiased w-full overflow-x-hidden">
       {/* Precision Top Header */}
       <Header
         docTitle={docTitle}
         onDocTitleChange={setDocTitle}
         onToggleSidebar={() => setIsSidebarOpen(true)}
+        accentColor={accentColor}
       />
 
       {/* Main Container Area */}
@@ -357,52 +361,67 @@ export default function App() {
           onSelectSample={handleLoadSample}
         />
 
-        {/* Segmented View Switcher Bar (Split | Editor | Preview) matching Mockup */}
-        <div className="w-full bg-white rounded-2xl border border-slate-200/90 p-1 sm:p-1.5 shadow-2xs flex items-center justify-between text-xs font-semibold text-slate-700">
+        {/* High-Contrast Segmented View Switcher Bar (Split | Editor | Preview) */}
+        <div className="w-full bg-slate-200/90 rounded-2xl border-2 border-slate-300 p-1 sm:p-1.5 shadow-2xs flex items-center justify-between text-xs font-bold text-slate-700">
           <button
             type="button"
             id="view-tab-split"
             onClick={() => setViewLayout("split")}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`flex-1 min-h-[42px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
               viewLayout === "split"
-                ? "bg-[#EFF6FF] text-[#1D4ED8] shadow-2xs font-bold"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
+                : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
             }`}
           >
-            <Columns className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-blue-600 shrink-0" />
-            <span className="text-xs sm:text-sm">Split</span>
+            <Columns
+              className="w-4 h-4 shrink-0"
+              style={{ color: viewLayout === "split" ? currentTheme.hex : undefined }}
+            />
+            <span className="text-xs sm:text-sm">Split View</span>
+            <span className="hidden md:inline-block text-[10px] text-slate-500 font-normal ml-0.5">(Desktop)</span>
           </button>
 
-          <div className="w-px h-4 sm:h-5 bg-slate-200/90 shrink-0" />
+          <div className="w-px h-5 bg-slate-300 shrink-0" />
 
           <button
             type="button"
             id="view-tab-editor"
             onClick={() => setViewLayout("editor")}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`flex-1 min-h-[42px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
               viewLayout === "editor"
-                ? "bg-[#EFF6FF] text-[#1D4ED8] shadow-2xs font-bold"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
+                : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
             }`}
           >
-            <FileText className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700 shrink-0" />
-            <span className="text-xs sm:text-sm">Editor</span>
+            <FileText
+              className="w-4 h-4 shrink-0"
+              style={{ color: viewLayout === "editor" ? currentTheme.hex : undefined }}
+            />
+            <span className="text-xs sm:text-sm">Raw Editor</span>
+            {charCount > 0 && (
+              <span className="text-[10px] bg-slate-300/80 text-slate-900 px-1.5 py-0.2 rounded-full font-bold">
+                {wordCount}w
+              </span>
+            )}
           </button>
 
-          <div className="w-px h-4 sm:h-5 bg-slate-200/90 shrink-0" />
+          <div className="w-px h-5 bg-slate-300 shrink-0" />
 
           <button
             type="button"
             id="view-tab-preview"
             onClick={() => setViewLayout("preview")}
-            className={`flex-1 flex items-center justify-center gap-1.5 sm:gap-2 py-2 sm:py-2.5 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`flex-1 min-h-[42px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-2 sm:px-4 rounded-xl transition-all cursor-pointer ${
               viewLayout === "preview"
-                ? "bg-[#EFF6FF] text-[#1D4ED8] shadow-2xs font-bold"
-                : "text-slate-600 hover:text-slate-900 hover:bg-slate-50"
+                ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
+                : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
             }`}
           >
-            <Eye className="w-3.5 h-3.5 sm:w-4 sm:h-4 text-slate-700 shrink-0" />
-            <span className="text-xs sm:text-sm">Preview</span>
+            <Eye
+              className="w-4 h-4 shrink-0"
+              style={{ color: viewLayout === "preview" ? currentTheme.hex : undefined }}
+            />
+            <span className="text-xs sm:text-sm">Document Sheet</span>
           </button>
         </div>
       </div>
@@ -456,20 +475,21 @@ export default function App() {
         {viewLayout === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start flex-1">
             {/* Left Pane: Raw Notes & AI Content Editor */}
-            <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col h-[480px] sm:h-[580px] lg:h-[680px] overflow-hidden">
-              {/* Editor Header Bar */}
-              <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-                <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+            <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col h-[480px] sm:h-[580px] lg:h-[680px] overflow-hidden">
+              {/* Editor Header Bar with clear, distinct action buttons */}
+              <div className="px-4 py-2.5 border-b-2 border-slate-200 flex items-center justify-between bg-slate-100/90">
+                <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
                   Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
                 </span>
 
-                <div className="flex items-center gap-1">
+                <div className="flex items-center gap-2">
                   <button
                     onClick={handlePasteClipboard}
-                    className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                    className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-extrabold text-white px-3 py-1.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                    style={{ backgroundColor: currentTheme.btnPrimary }}
                     title="Paste from clipboard"
                   >
-                    <Clipboard className="w-3 h-3 text-slate-500" />
+                    <Clipboard className="w-3.5 h-3.5 text-white" />
                     <span>Paste</span>
                   </button>
                   <button
@@ -479,10 +499,10 @@ export default function App() {
                       setErrorMessage(null);
                       setSuccessMessage(null);
                     }}
-                    className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 px-2 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                    className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                     title="Clear input"
                   >
-                    <Eraser className="w-3 h-3" />
+                    <Eraser className="w-3.5 h-3.5" />
                     <span>Clear</span>
                   </button>
                 </div>
@@ -496,16 +516,16 @@ export default function App() {
                   if (cleanedMarkdown) setCleanedMarkdown(null);
                 }}
                 placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
-                className="w-full flex-1 p-4 font-mono text-xs sm:text-[13px] text-slate-800 bg-transparent resize-none focus:outline-none leading-relaxed select-text"
+                className="w-full flex-1 p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400"
               />
 
               {/* Editor Status Bar */}
-              <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500 flex items-center justify-between">
+              <div className="px-4 py-2.5 border-t-2 border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between">
                 <span>
                   {charCount.toLocaleString()} chars • {wordCount.toLocaleString()} words • {lineCount} lines
                 </span>
-                <span className="text-emerald-700 font-medium flex items-center gap-1">
-                  <span className="w-1.5 h-1.5 rounded-full bg-emerald-500 animate-pulse" />
+                <span className="text-emerald-700 font-bold flex items-center gap-1.5">
+                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   Live Sync Active
                 </span>
               </div>
@@ -531,17 +551,17 @@ export default function App() {
 
         {/* WORKSPACE VIEW: EDITOR ONLY */}
         {viewLayout === "editor" && (
-          <div className="bg-white rounded-xl border border-slate-200/90 shadow-xs flex flex-col min-h-[640px] overflow-hidden">
-            <div className="px-4 py-2.5 border-b border-slate-100 flex items-center justify-between bg-slate-50/50">
-              <span className="text-xs font-bold text-slate-700 uppercase tracking-wider">
+          <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col min-h-[640px] overflow-hidden">
+            <div className="px-4 py-2.5 border-b-2 border-slate-200 flex items-center justify-between bg-slate-100/90">
+              <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
                 Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
               </span>
               <div className="flex items-center gap-2">
                 <button
                   onClick={handlePasteClipboard}
-                  className="inline-flex items-center gap-1 text-xs text-slate-600 hover:text-slate-900 bg-white hover:bg-slate-100 px-2.5 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                  className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
                 >
-                  <Clipboard className="w-3 h-3 text-slate-500" />
+                  <Clipboard className="w-3.5 h-3.5 text-white" />
                   <span>Paste</span>
                 </button>
                 <button
@@ -549,9 +569,9 @@ export default function App() {
                     setInputText("");
                     setCleanedMarkdown(null);
                   }}
-                  className="inline-flex items-center gap-1 text-xs text-slate-500 hover:text-rose-600 bg-white hover:bg-rose-50 px-2.5 py-1 rounded-md border border-slate-200 transition-colors cursor-pointer"
+                  className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                 >
-                  <Eraser className="w-3 h-3" />
+                  <Eraser className="w-3.5 h-3.5" />
                   <span>Clear</span>
                 </button>
               </div>
@@ -565,14 +585,14 @@ export default function App() {
               }}
               placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, or any notes/equations)..."
               rows={22}
-              className="w-full flex-1 p-4 font-mono text-xs sm:text-sm text-slate-800 bg-transparent resize-y focus:outline-none leading-relaxed select-text"
+              className="w-full flex-1 p-4 font-mono text-xs sm:text-sm text-slate-900 bg-white resize-y focus:outline-none leading-relaxed select-text placeholder:text-slate-400"
             />
 
-            <div className="px-4 py-2 border-t border-slate-100 bg-slate-50/70 text-[11px] text-slate-500 flex items-center justify-between">
+            <div className="px-4 py-2.5 border-t-2 border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between">
               <span>{charCount.toLocaleString()} chars • {wordCount.toLocaleString()} words • {lineCount} lines</span>
               <button
                 onClick={() => setViewLayout("split")}
-                className="text-blue-700 font-semibold hover:underline cursor-pointer"
+                className="text-blue-700 font-extrabold hover:underline cursor-pointer"
               >
                 Switch to Split View →
               </button>
@@ -599,8 +619,79 @@ export default function App() {
         )}
       </main>
 
+      {/* Mobile Sticky Bottom Floating Action Dock (Mobile Users only, hidden on sm+) */}
+      <div className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t-2 border-slate-300 px-2.5 py-2 flex items-center justify-between gap-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.12)]">
+        {/* View Switcher Toggle (Edit & Preview: at least 48x48px touch hit-box) */}
+        <div className="flex bg-slate-200 p-0.5 rounded-xl border border-slate-300 shrink-0 gap-0.5">
+          <button
+            type="button"
+            onClick={() => setViewLayout("editor")}
+            className={`min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+              viewLayout === "editor" ? "bg-white text-slate-900 shadow-xs border border-slate-300" : "text-slate-700 hover:text-slate-900"
+            }`}
+            title="Switch to Editor"
+            aria-label="Edit"
+          >
+            <FileText
+              className="w-4 h-4 shrink-0"
+              style={{ color: viewLayout === "editor" ? currentTheme.hex : undefined }}
+            />
+            <span>Edit</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setViewLayout("preview")}
+            className={`min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-lg text-xs font-extrabold flex items-center justify-center gap-1.5 transition-all cursor-pointer active:scale-95 ${
+              viewLayout === "preview" ? "bg-white text-slate-900 shadow-xs border border-slate-300" : "text-slate-700 hover:text-slate-900"
+            }`}
+            title="Switch to Preview"
+            aria-label="Preview"
+          >
+            <Eye
+              className="w-4 h-4 shrink-0"
+              style={{ color: viewLayout === "preview" ? currentTheme.hex : undefined }}
+            />
+            <span>Preview</span>
+          </button>
+        </div>
+
+        {/* AI Polish Button (at least 48x48px touch hit-box) */}
+        <button
+          type="button"
+          onClick={handlePreviewClean}
+          disabled={isConverting}
+          className="flex-1 min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-xl text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+          style={{ backgroundColor: currentTheme.btnPrimary }}
+          title="Run AI Polish"
+          aria-label="AI Polish"
+        >
+          {isConverting ? (
+            <Loader2 className="w-4 h-4 animate-spin shrink-0 text-white" />
+          ) : (
+            <Sparkles className="w-4 h-4 shrink-0 text-amber-300" />
+          )}
+          <span className="whitespace-nowrap">{isConverting ? "Polishing..." : "AI Polish"}</span>
+        </button>
+
+        {/* Export DOCX Button (at least 48x48px touch hit-box) */}
+        <button
+          type="button"
+          onClick={() => downloadFile("docx")}
+          disabled={!inputText.trim() || isConverting}
+          className="flex-1 min-h-[48px] min-w-[48px] px-3 py-2.5 rounded-xl bg-slate-900 hover:bg-slate-800 active:bg-black active:scale-95 text-white font-extrabold text-xs flex items-center justify-center gap-1.5 shadow-sm transition-all disabled:opacity-50 cursor-pointer"
+          title="Download Word Document"
+          aria-label="Export"
+        >
+          <FileDown className="w-4 h-4 shrink-0 text-blue-300" />
+          <span className="whitespace-nowrap">
+            <span>Export</span>
+            <span className="hidden min-[370px]:inline"> DOCX</span>
+          </span>
+        </button>
+      </div>
+
       {/* Educational Dedication & Open Source Footer */}
-      <footer className="border-t border-slate-200 bg-white/80 py-4 px-4 sm:px-6 mt-8">
+      <footer className="border-t-2 border-slate-300 bg-white py-4 px-4 sm:px-6 mt-8 pb-24 sm:pb-4">
         <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
           <div className="flex items-center gap-2 text-center sm:text-left flex-wrap justify-center sm:justify-start">
             <span className="font-semibold text-slate-700">FormatAI</span>

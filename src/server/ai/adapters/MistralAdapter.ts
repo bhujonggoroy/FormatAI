@@ -1,5 +1,5 @@
 import { OpenAICompatibleAdapter } from "./OpenAICompatibleAdapter.ts";
-import { ModelInfo } from "../types.ts";
+import type { ModelInfo } from "../types.ts";
 
 export class MistralAdapter extends OpenAICompatibleAdapter {
   constructor() {
