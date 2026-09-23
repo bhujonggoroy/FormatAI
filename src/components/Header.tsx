@@ -21,12 +21,6 @@ export const Header: React.FC<HeaderProps> = ({
 
   return (
     <header className="border-b-2 border-slate-300 bg-white sticky top-0 z-30 transition-all w-full shadow-2xs">
-      {/* Top dynamic theme color bar for full visual harmony */}
-      <div
-        className="h-1 w-full transition-colors duration-300"
-        style={{ backgroundColor: currentTheme.hex }}
-      />
-
       <div className="max-w-7xl mx-auto px-3 sm:px-5 py-2 flex items-center justify-between gap-2.5 sm:gap-4">
         {/* Left: 3-Lines Bar (Hamburger) + Brand */}
         <div className="flex items-center gap-2 sm:gap-3 shrink-0">
