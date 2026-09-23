@@ -34,7 +34,7 @@ async function runTests() {
   assert(probeKeyRes.keyId === "key_probe_02", "Test 2: Key ID matches explicit target key");
   assert(probeKeyRes.model === "meta-llama/llama-3.3-70b-instruct:free", "Test 2: Model matches explicit target model");
   assert(Boolean(probeKeyRes.diagnostic), "Test 2: Diagnostic object is generated");
-  assert(probeKeyRes.diagnostic?.maskedKey?.includes("************"), "Test 2: Diagnostic masks API key safely");
+  assert(Boolean(probeKeyRes.diagnostic?.maskedKey?.includes("************")), "Test 2: Diagnostic masks API key safely");
 
   // Test 3: Missing key during explicit test produces INVALID_API_KEY error
   const emptyKeyRes = await manager.testApiConnection("groq", "key_empty", "llama-3.3-70b-versatile", "");
@@ -59,7 +59,7 @@ async function runTests() {
         { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", isFree: false, contextWindow: 2097152, capabilities: ["text", "math"] },
       ],
       apiKeys: [
-        { id: "k1", name: "Key 1", key: "AIzaSyTestKey12345", enabled: false }, // OFF Key
+        { id: "k1", name: "Key 1", key: "AIzaSyTestKey12345", maskedKey: "AIza************2345", enabled: false }, // OFF Key
       ],
       maxRetries: 2,
       timeoutMs: 45000,

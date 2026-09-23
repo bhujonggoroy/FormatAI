@@ -59,6 +59,7 @@ async function runTests() {
       latencyMs: 10,
       providerId: "test-new-ai",
       providerName: "Test New AI",
+      model: "test-model",
     }),
     generate: async () => ({ text: "hello" }),
     classifyError: () => ({ kind: "unknown", message: "err", retryable: false }),

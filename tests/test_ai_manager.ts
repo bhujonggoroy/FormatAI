@@ -28,6 +28,18 @@ class MockTestAdapter implements AIProviderAdapter {
     return this.models;
   }
 
+  async getModels(): Promise<ModelInfo[]> {
+    return this.models;
+  }
+
+  async test(): Promise<boolean> {
+    return true;
+  }
+
+  classifyError(error: any): string {
+    return this.normalizeError(error).kind;
+  }
+
   supportsCapability(capability: string, modelId: string): boolean {
     const m = this.models.find((mod) => mod.id === modelId) || this.models[0];
     return m.capabilities.includes(capability);

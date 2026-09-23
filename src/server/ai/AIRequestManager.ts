@@ -62,13 +62,13 @@ export class AIRequestManager {
 
   private registerAdapters() {
     for (const adapter of listProviders()) {
-      this.adapters.set(adapter.id, adapter);
+      if (adapter.id) this.adapters.set(adapter.id, adapter);
     }
   }
 
   public registerCustomAdapter(adapter: AIProviderAdapter) {
     providerRegistry.register(adapter);
-    this.adapters.set(adapter.id, adapter);
+    if (adapter.id) this.adapters.set(adapter.id, adapter);
   }
 
   public getAdapter(providerId: string): AIProviderAdapter | undefined {
@@ -123,14 +123,19 @@ export class AIRequestManager {
     }
 
     try {
-      const models = await adapter.getModels(apiKey, { customEndpoint });
+      const rawModels = await adapter.getModels(apiKey, { customEndpoint });
+      const models: ModelInfo[] = (rawModels || []).map((m: any) =>
+        typeof m === "string"
+          ? { id: m, name: m, contextWindow: 32000, isFree: false, capabilities: ["text", "math"] }
+          : m
+      );
       return { success: true, models: models.length > 0 ? models : (this.templateProviders.find(p => p.id === providerId)?.availableModels || []) };
     } catch (err: any) {
-      const norm = adapter.classifyError ? adapter.classifyError(err) : { message: err?.message };
+      const errorMessage = typeof err === "string" ? err : err?.message || "Failed to fetch models catalog";
       return {
         success: false,
         models: this.templateProviders.find(p => p.id === providerId)?.availableModels || [],
-        error: norm.message || "Failed to fetch models catalog",
+        error: errorMessage,
       };
     }
   }
@@ -213,8 +218,9 @@ export class AIRequestManager {
         timeoutMs: options?.timeoutMs || 15000,
       });
 
+      const testObj = typeof result === "object" && result !== null ? result : { success: Boolean(result), latencyMs: 0 };
       return {
-        ...result,
+        ...testObj,
         keyId,
         model: effectiveModel,
         providerId,
@@ -222,7 +228,13 @@ export class AIRequestManager {
         maskedKey: masked,
       };
     } catch (err: any) {
-      const norm = adapter.classifyError ? adapter.classifyError(err) : adapter.normalizeError(err);
+      const norm: NormalizedAIError = adapter.normalizeError
+        ? adapter.normalizeError(err)
+        : {
+            kind: typeof adapter.classifyError === "function" ? (adapter.classifyError(err) as any) : "unknown",
+            message: err?.message || String(err),
+            retryable: false,
+          };
       return {
         success: false,
         providerId,
@@ -231,7 +243,7 @@ export class AIRequestManager {
         keyId,
         maskedKey: masked,
         latencyMs: 0,
-        errorCode: norm.code || "UNKNOWN_ERROR",
+        errorCode: (norm.code as any) || "UNKNOWN_ERROR",
         errorKind: norm.kind,
         errorTitle: norm.title || "❌ Connection Failed",
         errorMessage: norm.message,
@@ -243,7 +255,7 @@ export class AIRequestManager {
           modelId: effectiveModel,
           endpoint: options?.customEndpoint || "default",
           maskedKey: masked,
-          result: norm.code || "FAILED",
+          result: (norm.code as any) || "FAILED",
           latencyMs: 0,
           rawMessage: norm.message,
         },
@@ -481,14 +493,21 @@ export class AIRequestManager {
       }
 
       // Capability matching check
+      const supportsCap = (cap: string, mId: string) => {
+        if (typeof (adapter as any).supportsCapability === "function") {
+          return (adapter as any).supportsCapability(cap, mId);
+        }
+        return true;
+      };
+
       const missingCapability = requiredCapabilities.find(
-        (cap) => !adapter.supportsCapability(cap, modelToUse)
+        (cap) => !supportsCap(cap, modelToUse)
       );
 
       if (missingCapability) {
         if (config.enableModelFallback) {
           const compatibleModel = provider.availableModels.find((m) =>
-            requiredCapabilities.every((cap) => adapter.supportsCapability(cap, m.id))
+            requiredCapabilities.every((cap) => supportsCap(cap, m.id))
           );
           if (compatibleModel) {
             modelToUse = compatibleModel.id;
@@ -580,7 +599,14 @@ export class AIRequestManager {
             };
           } catch (err: any) {
             const latency = Date.now() - callStart;
-            const normalized = adapter.classifyError ? adapter.classifyError(err) : adapter.normalizeError(err);
+            const normalized: NormalizedAIError = adapter.normalizeError
+              ? adapter.normalizeError(err)
+              : {
+                  kind: typeof adapter.classifyError === "function" ? (adapter.classifyError(err) as any) : "unknown",
+                  code: "UNKNOWN_ERROR",
+                  message: err?.message || String(err),
+                  retryable: true,
+                };
 
             const stepStatus =
               normalized.code === "RATE_LIMIT" || normalized.kind === "rate_limit"

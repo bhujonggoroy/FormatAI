@@ -11,7 +11,7 @@ import { SplashScreen } from "./components/SplashScreen";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
 import { generateFilenameFromContent, getDisplayTitleFromContent } from "./utils/filename";
-import { downloadPreviewAsPdf } from "./utils/pdfExport";
+import { downloadPreviewAsPdf, generateDocumentPdf } from "./utils/pdfGenerator";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
@@ -577,16 +577,28 @@ export default function App() {
       // If exporting as PDF: the document preview is the single source of truth.
       // Generate the PDF directly from the rendered document representation.
       if (format === "pdf") {
-        const previewSheet =
-          document.getElementById("academic-document-sheet") ||
+        let previewSheet =
+          (document.getElementById("academic-document-sheet") ||
           document.getElementById("preview-document-sheet") ||
-          document.querySelector(".academic-paper-sheet");
+          document.querySelector(".academic-paper-sheet")) as HTMLElement | null;
+
+        if (!previewSheet && viewLayout === "editor") {
+          // Switch to split view so preview document sheet is mounted
+          setViewLayout("split");
+          await new Promise((r) => setTimeout(r, 150));
+          previewSheet =
+            (document.getElementById("academic-document-sheet") ||
+            document.getElementById("preview-document-sheet") ||
+            document.querySelector(".academic-paper-sheet")) as HTMLElement | null;
+        }
+
         if (previewSheet) {
-          setConversionStage("1/2: Preparing preview sheet for PDF generation...");
           await downloadPreviewAsPdf({
             element: previewSheet,
-            title: safeBaseName,
+            title: docTitle || safeBaseName,
             markdown: activeContent,
+            fontFamily,
+            accentColor,
             onProgress: (stage) => setConversionStage(stage),
           });
           setSuccessMessage(`"${safeFilename}" generated successfully matching the preview!`);

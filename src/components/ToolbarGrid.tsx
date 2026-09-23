@@ -1036,23 +1036,23 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                     </span>
                   </button>
 
-                  {/* Print / Save PDF (Exact Preview Match) */}
+                  {/* PDF (Preview Match) */}
                   <button
                     type="button"
                     id="opt-print-preview-pdf"
                     onClick={() => {
                       setOpenCard(null);
-                      window.print();
+                      if (onExportFormat) onExportFormat("pdf");
                     }}
                     className="w-full text-left px-3 py-2 rounded-xl text-xs font-bold text-slate-800 hover:bg-rose-50 flex items-center justify-between group transition-colors cursor-pointer border-2 border-transparent hover:border-rose-300"
                   >
                     <div className="flex items-center gap-2.5">
                       <span className="w-7 h-7 rounded-lg bg-rose-100 border border-rose-300 flex items-center justify-center text-rose-700 font-extrabold text-[10px] shrink-0">
-                        PRINT
+                        PDF
                       </span>
                       <div className="flex flex-col">
-                        <span className="font-extrabold text-slate-900 group-hover:text-rose-950">Save as PDF (Preview Match)</span>
-                        <span className="text-[10px] text-slate-500 font-medium">Exact KaTeX Vector Math</span>
+                        <span className="font-extrabold text-slate-900 group-hover:text-rose-950">Download PDF (Preview Match)</span>
+                        <span className="text-[10px] text-slate-500 font-medium">Exact KaTeX Vector Math • A4</span>
                       </div>
                     </div>
                     <span className="text-[9px] font-extrabold text-emerald-800 bg-emerald-100 px-1.5 py-0.5 rounded border border-emerald-300">

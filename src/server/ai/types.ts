@@ -83,7 +83,7 @@ export interface ClientApiKeyItem {
   maskedKey: string;          // e.g. "AIza************ZrsI"
   enabled: boolean;           // ON / OFF switch in UI
   envVarName?: string;
-  status?: "active" | "rate_limited" | "invalid" | "disabled";
+  status?: "active" | "rate_limited" | "invalid" | "disabled" | "model_unavailable";
   lastTestedAt?: number;
   lastTestLatencyMs?: number;
   lastTestedModel?: string;

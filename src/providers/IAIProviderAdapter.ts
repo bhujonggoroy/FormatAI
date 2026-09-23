@@ -71,31 +71,14 @@ export interface IAIProviderAdapter {
   /**
    * 3. Text Generation
    * Generates AI responses / mathematical document transformations.
-   * Overloaded to support both:
-   *   generate(apiKey, modelId, request, options?)
-   *   generate(request, key, model, options?)
-   *
-   * @param apiKey Or AIRequest object
-   * @param modelId Or apiKey string
-   * @param request Or modelId string
-   * @param options Additional options
+   * Supports both:
+   *   generate(apiKey: string, modelId: string, request: any, options?: AdapterOptions): Promise<any>
+   *   generate(request: AIRequest, key: string, model: string, options?: AdapterOptions): Promise<GenerationResult>
    */
   generate(
-    apiKey: string,
-    modelId: string,
-    request: any,
-    options?: AdapterOptions
-  ): Promise<any>;
-  generate(
-    request: AIRequest,
-    key: string,
-    model: string,
-    options?: AdapterOptions
-  ): Promise<GenerationResult>;
-  generate(
-    requestOrKey: any,
-    keyOrModelId?: any,
-    modelOrRequest?: any,
+    arg1: any,
+    arg2?: any,
+    arg3?: any,
     options?: AdapterOptions
   ): Promise<any>;
 

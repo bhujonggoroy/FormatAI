@@ -659,12 +659,36 @@ export function saveUserStats(stats: ProviderStats[]): void {
 
 export function recordProviderMetric(
   providerId: string,
-  success: boolean,
-  latencyMs: number,
-  inTokens = 0,
-  outTokens = 0,
-  errorMsg?: string
+  arg2: boolean | string,
+  arg3?: number | boolean,
+  arg4?: number,
+  arg5?: number | boolean,
+  arg6?: string | number,
+  arg7?: number,
+  arg8?: string
 ): void {
+  let success: boolean;
+  let latencyMs: number;
+  let inTokens = 0;
+  let outTokens = 0;
+  let errorMsg: string | undefined;
+
+  if (typeof arg2 === "string") {
+    // Signature: (providerId, providerName, success, latencyMs, isFallback, inTokens, outTokens, errorMsg)
+    success = Boolean(arg3);
+    latencyMs = typeof arg4 === "number" ? arg4 : 0;
+    inTokens = typeof arg6 === "number" ? arg6 : 0;
+    outTokens = typeof arg7 === "number" ? arg7 : 0;
+    errorMsg = arg8;
+  } else {
+    // Signature: (providerId, success, latencyMs, inTokens, outTokens, errorMsg)
+    success = Boolean(arg2);
+    latencyMs = typeof arg3 === "number" ? arg3 : 0;
+    inTokens = typeof arg4 === "number" ? arg4 : 0;
+    outTokens = typeof arg5 === "number" ? arg5 : 0;
+    errorMsg = typeof arg6 === "string" ? arg6 : undefined;
+  }
+
   const stats = getUserStats();
   const existing = stats.find((s) => s.providerId === providerId);
   const now = Date.now();

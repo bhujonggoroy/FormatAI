@@ -14,6 +14,7 @@ import {
   RefreshCw,
   FileText,
   Printer,
+  Download,
   Layers,
   ChevronRight,
   ShieldAlert,
@@ -21,6 +22,7 @@ import {
   X,
 } from "lucide-react";
 import katex from "katex";
+import { downloadPreviewAsPdf, generateDocumentPdf } from "../utils/pdfGenerator";
 
 export interface ValidationAlertState {
   failed: boolean;
@@ -863,14 +865,29 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             </button>
           </div>
 
-          {/* Print / Save PDF Button */}
+          {/* Download Preview PDF Button */}
           <button
-            onClick={() => (onDownloadPdf ? onDownloadPdf() : window.print())}
+            onClick={() => {
+              if (onDownloadPdf) {
+                onDownloadPdf();
+              } else {
+                const sheet = document.getElementById("academic-document-sheet");
+                if (sheet) {
+                  downloadPreviewAsPdf({
+                    element: sheet,
+                    title: docTitle || "Academic Notes",
+                    markdown,
+                    fontFamily,
+                    accentColor,
+                  });
+                }
+              }
+            }}
             className="inline-flex items-center gap-1.5 text-xs font-bold text-rose-800 bg-rose-50 hover:bg-rose-100 px-2.5 py-1.5 rounded-lg border-2 border-rose-200 hover:border-rose-400 transition-colors shadow-2xs cursor-pointer active:bg-rose-200"
-            title="Print or Save Exact Preview as PDF (100% Vector KaTeX Math)"
+            title="Download Exact Document Sheet as PDF (100% Vector KaTeX Math)"
           >
-            <Printer className="w-3.5 h-3.5 text-rose-700" />
-            <span className="hidden sm:inline">Print / Save PDF</span>
+            <Download className="w-3.5 h-3.5 text-rose-700" />
+            <span className="hidden sm:inline">Download PDF</span>
             <span className="sm:hidden">PDF</span>
           </button>
 

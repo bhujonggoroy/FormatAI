@@ -91,9 +91,11 @@ export interface ClientApiKeyItem {
   maskedKey: string;
   enabled: boolean;
   envVarName?: string;
-  status?: "active" | "rate_limited" | "invalid" | "disabled";
+  status?: "active" | "rate_limited" | "invalid" | "disabled" | "model_unavailable";
   lastTestedAt?: number;
   lastTestLatencyMs?: number;
+  lastTestedModel?: string;
+  lastErrorCode?: string;
   lastError?: string;
 }
 
