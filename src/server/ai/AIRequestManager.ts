@@ -4,6 +4,7 @@ import {
   type AIProviderAdapter,
   type AdapterOptions,
 } from "./adapters/BaseAdapter.ts";
+import { canonicalProviderId } from "../../shared/centralModelCatalog.ts";
 import {
   providerRegistry,
   getProvider,
@@ -72,7 +73,8 @@ export class AIRequestManager {
   }
 
   public getAdapter(providerId: string): AIProviderAdapter | undefined {
-    return getProvider(providerId) || this.adapters.get(providerId);
+    const canonical = canonicalProviderId(providerId);
+    return getProvider(canonical) || this.adapters.get(canonical) || this.adapters.get(providerId);
   }
 
   /**
@@ -117,7 +119,8 @@ export class AIRequestManager {
     apiKey?: string,
     customEndpoint?: string
   ): Promise<{ success: boolean; models: ModelInfo[]; error?: string }> {
-    const adapter = this.adapters.get(providerId);
+    const canonical = canonicalProviderId(providerId);
+    const adapter = this.adapters.get(canonical) || this.adapters.get(providerId) || getProvider(canonical);
     if (!adapter) {
       return { success: false, models: [], error: `Unknown provider '${providerId}'.` };
     }
@@ -127,14 +130,15 @@ export class AIRequestManager {
       const models: ModelInfo[] = (rawModels || []).map((m: any) =>
         typeof m === "string"
           ? { id: m, name: m, contextWindow: 32000, isFree: false, capabilities: ["text", "math"] }
-          : m
+          : { ...m, provider: canonical }
       );
-      return { success: true, models: models.length > 0 ? models : (this.templateProviders.find(p => p.id === providerId)?.availableModels || []) };
+      const fallbackModels = this.templateProviders.find(p => p.id === canonical || p.id === providerId)?.availableModels || [];
+      return { success: true, models: models.length > 0 ? models : fallbackModels };
     } catch (err: any) {
       const errorMessage = typeof err === "string" ? err : err?.message || "Failed to fetch models catalog";
       return {
         success: false,
-        models: this.templateProviders.find(p => p.id === providerId)?.availableModels || [],
+        models: this.templateProviders.find(p => p.id === canonical || p.id === providerId)?.availableModels || [],
         error: errorMessage,
       };
     }
@@ -154,8 +158,9 @@ export class AIRequestManager {
     apiKey: string,
     options?: AdapterOptions
   ): Promise<TestResult> {
-    const adapter = this.adapters.get(providerId);
-    const providerTemplate = this.templateProviders.find((p) => p.id === providerId);
+    const canonical = canonicalProviderId(providerId);
+    const adapter = this.adapters.get(canonical) || this.adapters.get(providerId) || getProvider(canonical);
+    const providerTemplate = this.templateProviders.find((p) => p.id === canonical || p.id === providerId);
     const providerName = providerTemplate?.name || adapter?.name || providerId;
     const cleanKey = apiKey ? apiKey.trim() : "";
     const masked = maskApiKey(cleanKey);

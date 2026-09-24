@@ -129,10 +129,10 @@ export const UniversalModelTesterPanel: React.FC<UniversalModelTesterPanelProps>
               <RefreshCw className="w-3.5 h-3.5 animate-spin text-indigo-600" />
               <span>
                 {progress.stage === "validating_key"
-                  ? "Validating API Key..."
+                  ? `Validating ${providerName} API Key...`
                   : progress.stage === "discovering_models"
-                  ? "Discovering Provider Models..."
-                  : `Testing Models (${progress.testedCount} / ${progress.totalModels})...`}
+                  ? `Discovering ${providerName} Models...`
+                  : `Testing ${providerName} Models (${progress.testedCount} / ${progress.totalModels})...`}
               </span>
             </span>
             <span className="font-mono text-xs font-bold text-indigo-700">

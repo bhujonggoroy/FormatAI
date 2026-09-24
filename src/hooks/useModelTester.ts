@@ -24,6 +24,7 @@ import {
   UniversalTestOptions,
   categorizeFailure,
 } from "../services/UniversalModelTester";
+import { canonicalProviderId } from "../shared/centralModelCatalog";
 
 export interface UseModelTesterOptions {
   providerId?: string;
@@ -89,8 +90,9 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
 
   // Synchronize cache when defaultProviderId changes
   useEffect(() => {
-    if (autoLoadCache && defaultProviderId) {
-      const cached = getCachedModelTestReport(defaultProviderId);
+    const canonical = canonicalProviderId(defaultProviderId);
+    if (autoLoadCache && canonical) {
+      const cached = getCachedModelTestReport(canonical);
       setReport(cached || null);
       setProgress(null);
       setErrorMessage(null);
@@ -116,7 +118,7 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
       overrideApiKey?: string,
       overrideOptions?: UniversalTestOptions
     ): Promise<ProviderModelTestReport | null> => {
-      const targetProvider = (overrideProviderId || defaultProviderId || "").toLowerCase().trim();
+      const targetProvider = canonicalProviderId(overrideProviderId || defaultProviderId || "");
       const targetApiKey = overrideApiKey !== undefined ? overrideApiKey : defaultApiKey || "";
 
       if (!targetProvider) {
@@ -223,7 +225,7 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
    * Clear cached test report
    */
   const clearReport = useCallback((targetProviderId?: string) => {
-    const pId = targetProviderId || activeProviderRef.current;
+    const pId = canonicalProviderId(targetProviderId || activeProviderRef.current);
     if (pId) {
       clearModelTestReport(pId);
     }
@@ -236,16 +238,25 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
    * Explicitly reload cached report
    */
   const loadCachedReport = useCallback((targetProviderId?: string) => {
-    const pId = targetProviderId || activeProviderRef.current;
+    const pId = canonicalProviderId(targetProviderId || activeProviderRef.current);
     if (pId) {
       const cached = getCachedModelTestReport(pId);
       setReport(cached || null);
     }
   }, []);
 
-  // Derived readiness arrays
-  const readyModels = useMemo(() => report?.readyModels || [], [report]);
-  const notReadyModels = useMemo(() => report?.notReadyModels || [], [report]);
+  // Derived readiness arrays - STRICTLY ISOLATED to THIS provider
+  const readyModels = useMemo(() => {
+    const list = report?.readyModels || [];
+    const canonical = canonicalProviderId(defaultProviderId);
+    return canonical ? list.filter((m) => canonicalProviderId(m.provider) === canonical) : list;
+  }, [report, defaultProviderId]);
+
+  const notReadyModels = useMemo(() => {
+    const list = report?.notReadyModels || [];
+    const canonical = canonicalProviderId(defaultProviderId);
+    return canonical ? list.filter((m) => canonicalProviderId(m.provider) === canonical) : list;
+  }, [report, defaultProviderId]);
 
   // Normalized error mapping for all failed/not-ready models
   const errorMap = useMemo(() => {

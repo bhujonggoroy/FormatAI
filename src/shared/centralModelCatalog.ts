@@ -29,6 +29,53 @@ export interface ModelInfo {
 }
 
 /**
+ * Canonical provider ID normalizer
+ * Maps aliases like 'google-gemini' -> 'gemini', 'anthropic' -> 'claude', 'open-router' -> 'openrouter', etc.
+ */
+export function canonicalProviderId(id?: string): string {
+  if (!id) return "";
+  const clean = id.toLowerCase().trim();
+  switch (clean) {
+    case "google-gemini":
+    case "google_gemini":
+    case "google":
+    case "gemini":
+      return "gemini";
+    case "anthropic":
+    case "claude":
+      return "claude";
+    case "open-ai":
+    case "open_ai":
+    case "openai":
+      return "openai";
+    case "open-router":
+    case "open_router":
+    case "openrouter":
+      return "openrouter";
+    case "groq":
+      return "groq";
+    case "mistral":
+    case "mistralai":
+      return "mistral";
+    case "cohere":
+      return "cohere";
+    case "hugging-face":
+    case "hugging_face":
+    case "hf":
+    case "huggingface":
+      return "huggingface";
+    case "cloudflare-workers-ai":
+    case "cloudflare":
+    case "cf":
+      return "cloudflare";
+    case "custom":
+      return "custom";
+    default:
+      return clean;
+  }
+}
+
+/**
  * Filter models that are selectable in the standard active model selector:
  * Must be status === "active" (or genuine free usable "preview")
  * AND free === true
@@ -971,10 +1018,15 @@ export const CENTRAL_CATALOG: Record<string, ModelInfo[]> = {
   ],
 };
 
+// Aliases for provider keys
+(CENTRAL_CATALOG as any)["google-gemini"] = CENTRAL_CATALOG.gemini;
+(CENTRAL_CATALOG as any)["open-router"] = CENTRAL_CATALOG.openrouter;
+
 /**
  * Get catalog models for a provider ID
  */
 export function getCatalogModels(providerId: string): ModelInfo[] {
-  const list = CENTRAL_CATALOG[providerId.toLowerCase()];
+  const canonical = canonicalProviderId(providerId);
+  const list = CENTRAL_CATALOG[canonical] || CENTRAL_CATALOG[providerId.toLowerCase()];
   return list ? [...list] : [];
 }

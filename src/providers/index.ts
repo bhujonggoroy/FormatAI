@@ -11,6 +11,7 @@ import {
   type AdapterOptions,
   type GenerationResult,
 } from "./IAIProviderAdapter.ts";
+import { canonicalProviderId } from "../shared/centralModelCatalog.ts";
 import {
   maskApiKey,
   estimateTokenCount,
@@ -65,6 +66,12 @@ class CentralProviderRegistry implements ProviderRegistry {
     // Also register 'anthropic' as alias for 'claude'
     const anthropicAdapter = new AnthropicAdapter();
     this.adapters.set("anthropic", anthropicAdapter);
+    // Also register 'google-gemini' as alias for 'gemini'
+    const geminiAdapter = new GeminiAdapter();
+    this.adapters.set("google-gemini", geminiAdapter);
+    // Also register 'open-router' as alias for 'openrouter'
+    const openRouterAdapter = new OpenRouterAdapter();
+    this.adapters.set("open-router", openRouterAdapter);
   }
 
   public register(adapter: AIProviderAdapter): void {
@@ -74,7 +81,8 @@ class CentralProviderRegistry implements ProviderRegistry {
 
   public getProvider(id: string): AIProviderAdapter | undefined {
     if (!id) return undefined;
-    return this.adapters.get(id.toLowerCase());
+    const canonical = canonicalProviderId(id);
+    return this.adapters.get(canonical) || this.adapters.get(id.toLowerCase());
   }
 
   public listProviders(): AIProviderAdapter[] {
@@ -83,7 +91,8 @@ class CentralProviderRegistry implements ProviderRegistry {
 
   public hasProvider(id: string): boolean {
     if (!id) return false;
-    return this.adapters.has(id.toLowerCase());
+    const canonical = canonicalProviderId(id);
+    return this.adapters.has(canonical) || this.adapters.has(id.toLowerCase());
   }
 
   // Developer ergonomics aliases

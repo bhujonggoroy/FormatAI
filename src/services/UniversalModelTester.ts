@@ -8,7 +8,12 @@
  */
 
 import { ModelInfo, TestResult } from "../types/ai";
-import { CENTRAL_CATALOG, isModelSelectable, DEPRECATED_OR_RETIRED_MODELS } from "../shared/centralModelCatalog";
+import {
+  CENTRAL_CATALOG,
+  isModelSelectable,
+  DEPRECATED_OR_RETIRED_MODELS,
+  canonicalProviderId,
+} from "../shared/centralModelCatalog";
 import { getActiveModels } from "../config/modelRegistry";
 import { maskApiKey } from "../utils/userLocalStorage";
 
@@ -49,6 +54,42 @@ export interface TestedModelItem {
   testedAt: number;
 }
 
+/**
+ * Requirement 14: Provider-scoped model result format
+ */
+export interface ProviderScopedModelResult {
+  providerId: string;
+  modelId: string;
+  status: "ready" | "not_ready";
+  reason: string;
+  responseTime: number;
+  capabilities: string[];
+  testedAt: number;
+}
+
+/**
+ * Requirement 14: Provider-scoped test results container
+ */
+export interface ProviderScopedTestResults {
+  providerId: string;
+  testedAt: number;
+  models: ProviderScopedModelResult[];
+}
+
+export type GlobalModelTestResultsMap = Record<string, ProviderScopedTestResults>;
+
+/**
+ * Requirement 2: Provider-bound test job
+ */
+export interface ModelTestJob {
+  providerId: string;
+  apiKeyId?: string;
+  models: ModelInfo[];
+  results: TestedModelItem[];
+  progress: ModelTestingProgress;
+  status: TestingStage;
+}
+
 export interface ModelTestingProgress {
   providerId: string;
   stage: TestingStage;
@@ -81,11 +122,65 @@ export interface UniversalTestOptions {
 }
 
 const STORAGE_PREFIX = "formatai:models_tested:";
+const GLOBAL_STORAGE_KEY = "formatai:model_test_results";
+
+// In-memory fallback when localStorage is unavailable (e.g. Node tests/SSR)
+const memoryStorage: Record<string, string> = {};
+
+function safeGetItem(key: string): string | null {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      return window.localStorage.getItem(key);
+    } catch {
+      return memoryStorage[key] || null;
+    }
+  }
+  return memoryStorage[key] || null;
+}
+
+function safeSetItem(key: string, value: string): void {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.setItem(key, value);
+      return;
+    } catch {}
+  }
+  memoryStorage[key] = value;
+}
+
+function safeRemoveItem(key: string): void {
+  if (typeof window !== "undefined" && window.localStorage) {
+    try {
+      window.localStorage.removeItem(key);
+    } catch {}
+  }
+  delete memoryStorage[key];
+}
+
+export function getModelTestResultsMap(): GlobalModelTestResultsMap {
+  try {
+    const raw = safeGetItem(GLOBAL_STORAGE_KEY);
+    if (!raw) return {};
+    return JSON.parse(raw);
+  } catch {
+    return {};
+  }
+}
+
+export function getModelTestResults(providerId: string): ProviderScopedTestResults | null {
+  if (!providerId) return null;
+  const canonical = canonicalProviderId(providerId);
+  const map = getModelTestResultsMap();
+  return map[canonical] || map[providerId.toLowerCase().trim()] || null;
+}
 
 export function getCachedModelTestReport(providerId: string): ProviderModelTestReport | null {
-  if (typeof window === "undefined" || !window.localStorage) return null;
+  if (!providerId) return null;
+  const canonical = canonicalProviderId(providerId);
   try {
-    const raw = window.localStorage.getItem(`${STORAGE_PREFIX}${providerId.toLowerCase()}`);
+    const raw =
+      safeGetItem(`${STORAGE_PREFIX}${canonical}`) ||
+      safeGetItem(`${STORAGE_PREFIX}${providerId.toLowerCase().trim()}`);
     if (!raw) return null;
     return JSON.parse(raw);
   } catch {
@@ -94,21 +189,72 @@ export function getCachedModelTestReport(providerId: string): ProviderModelTestR
 }
 
 export function saveModelTestReport(report: ProviderModelTestReport): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
+  if (!report?.providerId) return;
+  const canonical = canonicalProviderId(report.providerId);
+  const normalizedReport: ProviderModelTestReport = {
+    ...report,
+    providerId: canonical,
+    readyModels: (report.readyModels || []).map((m) => ({ ...m, provider: canonical })),
+    notReadyModels: (report.notReadyModels || []).map((m) => ({ ...m, provider: canonical })),
+  };
+
   try {
-    window.localStorage.setItem(
-      `${STORAGE_PREFIX}${report.providerId.toLowerCase()}`,
-      JSON.stringify(report)
+    // 1. Save provider-isolated report
+    safeSetItem(
+      `${STORAGE_PREFIX}${canonical}`,
+      JSON.stringify(normalizedReport)
     );
+    if (canonical !== report.providerId.toLowerCase().trim()) {
+      safeSetItem(
+        `${STORAGE_PREFIX}${report.providerId.toLowerCase().trim()}`,
+        JSON.stringify(normalizedReport)
+      );
+    }
+
+    // 2. Requirement 14: Save explicitly provider-scoped results structure
+    const map = getModelTestResultsMap();
+    const scopedModels: ProviderScopedModelResult[] = [
+      ...normalizedReport.readyModels.map((m) => ({
+        providerId: canonical,
+        modelId: m.id,
+        status: "ready" as const,
+        reason: m.reason || "Ready for Deployment",
+        responseTime: m.latencyMs || 0,
+        capabilities: m.capabilities || ["text", "math"],
+        testedAt: m.testedAt || normalizedReport.testedAt,
+      })),
+      ...normalizedReport.notReadyModels.map((m) => ({
+        providerId: canonical,
+        modelId: m.id,
+        status: "not_ready" as const,
+        reason: m.reason || "Not Ready",
+        responseTime: m.latencyMs || 0,
+        capabilities: m.capabilities || ["text", "math"],
+        testedAt: m.testedAt || normalizedReport.testedAt,
+      })),
+    ];
+
+    map[canonical] = {
+      providerId: canonical,
+      testedAt: normalizedReport.testedAt,
+      models: scopedModels,
+    };
+    safeSetItem(GLOBAL_STORAGE_KEY, JSON.stringify(map));
   } catch (err) {
     console.warn("Failed to cache model test report:", err);
   }
 }
 
 export function clearModelTestReport(providerId: string): void {
-  if (typeof window === "undefined" || !window.localStorage) return;
+  if (!providerId) return;
+  const canonical = canonicalProviderId(providerId);
   try {
-    window.localStorage.removeItem(`${STORAGE_PREFIX}${providerId.toLowerCase()}`);
+    safeRemoveItem(`${STORAGE_PREFIX}${canonical}`);
+    safeRemoveItem(`${STORAGE_PREFIX}${providerId.toLowerCase().trim()}`);
+    const map = getModelTestResultsMap();
+    delete map[canonical];
+    delete map[providerId.toLowerCase().trim()];
+    safeSetItem(GLOBAL_STORAGE_KEY, JSON.stringify(map));
   } catch {}
 }
 
@@ -191,13 +337,37 @@ export async function runUniversalModelTest(
   options?: UniversalTestOptions,
   onProgress?: (progress: ModelTestingProgress) => void
 ): Promise<ProviderModelTestReport> {
-  const pId = providerId.toLowerCase().trim();
+  const pId = canonicalProviderId(providerId);
   const cleanKey = apiKey?.trim() || "";
   const maskedKey = maskApiKey(cleanKey);
 
+  if (!pId) {
+    const err = "No valid provider ID specified for model scan.";
+    onProgress?.({
+      providerId: "unknown",
+      stage: "error",
+      totalModels: 0,
+      testedCount: 0,
+      readyCount: 0,
+      notReadyCount: 0,
+      progressPercent: 0,
+      errorMessage: err,
+    });
+    return {
+      providerId: "unknown",
+      testedAt: Date.now(),
+      apiKeyMasked: "none",
+      readyModels: [],
+      notReadyModels: [],
+      totalTested: 0,
+      status: "error",
+      errorMessage: err,
+    };
+  }
+
   // 1. Initial Key Presence Check
   if (!cleanKey && pId !== "gemini") {
-    const err = "No API key provided. Please enter an API key to test models.";
+    const err = `No API key provided for ${pId}. Please enter an API key to test models.`;
     onProgress?.({
       providerId: pId,
       stage: "error",
@@ -284,7 +454,7 @@ export async function runUniversalModelTest(
     // Proceed to discovery even if probe timed out, but continue
   }
 
-  // 3. Model Discovery
+  // 3. Model Discovery (Strictly Scoped to THIS Provider)
   onProgress?.({
     providerId: pId,
     stage: "discovering_models",
@@ -321,12 +491,65 @@ export async function runUniversalModelTest(
     discoveredModels = regModels.length > 0 ? (regModels as any) : (CENTRAL_CATALOG[pId] || []);
   }
 
-  // Deduplicate and filter out purely deprecated/retired models from active testing pool
-  const candidatePool = discoveredModels.filter((m) => Boolean(m.id));
+  // STRICT PROVIDER ISOLATION:
+  // Candidate pool MUST ONLY contain models belonging to THIS provider.
+  // Never merge models from any other providers.
+  const seenIds = new Set<string>();
+  const candidatePool: ModelInfo[] = [];
+
+  for (const m of discoveredModels) {
+    if (!m || !m.id) continue;
+    const modelIdClean = m.id.trim();
+    if (seenIds.has(modelIdClean)) continue;
+
+    // Reject models explicitly tagged with another provider
+    if (m.provider) {
+      const modelProv = canonicalProviderId(m.provider);
+      if (modelProv && modelProv !== pId && pId !== "custom" && pId !== "openrouter") {
+        continue;
+      }
+    }
+
+    // Direct provider anti-contamination checks:
+    const idLower = modelIdClean.toLowerCase();
+    if (pId === "gemini") {
+      if (idLower.startsWith("gpt-") || idLower.startsWith("o1-") || idLower.startsWith("o3-") || idLower.startsWith("claude-") || idLower.startsWith("llama-") || idLower.startsWith("mistral-")) {
+        continue;
+      }
+    } else if (pId === "openai") {
+      if (idLower.startsWith("gemini-") || idLower.startsWith("claude-") || idLower.startsWith("llama-") || idLower.startsWith("mistral-")) {
+        continue;
+      }
+    } else if (pId === "claude") {
+      if (idLower.startsWith("gemini-") || idLower.startsWith("gpt-") || idLower.startsWith("o1-") || idLower.startsWith("o3-") || idLower.startsWith("llama-") || idLower.startsWith("mistral-")) {
+        continue;
+      }
+    } else if (pId === "groq") {
+      if (idLower.startsWith("gemini-") || idLower.startsWith("claude-")) {
+        continue;
+      }
+    } else if (pId === "mistral") {
+      if (idLower.startsWith("gemini-") || idLower.startsWith("gpt-") || idLower.startsWith("claude-")) {
+        continue;
+      }
+    } else if (pId === "cohere") {
+      if (idLower.startsWith("gemini-") || idLower.startsWith("gpt-") || idLower.startsWith("claude-")) {
+        continue;
+      }
+    }
+
+    seenIds.add(modelIdClean);
+    candidatePool.push({
+      ...m,
+      id: modelIdClean,
+      provider: pId,
+    });
+  }
+
   const total = candidatePool.length;
 
   if (total === 0) {
-    const err = `No models found for provider ${pId}.`;
+    const err = `No models discovered for provider ${pId}.`;
     onProgress?.({
       providerId: pId,
       stage: "error",
@@ -349,7 +572,7 @@ export async function runUniversalModelTest(
     };
   }
 
-  // 4. Test Each Model Individually
+  // 4. Test Each Model Individually (STRICTLY for this provider)
   const readyModels: TestedModelItem[] = [];
   const notReadyModels: TestedModelItem[] = [];
 

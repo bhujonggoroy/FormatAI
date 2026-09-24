@@ -25,7 +25,7 @@ import {
 import { UserProviderConfig, ManagerConfig, ProviderStats } from "../types/ai";
 import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
-import { isModelSelectable } from "../shared/centralModelCatalog";
+import { isModelSelectable, canonicalProviderId, getCatalogModels } from "../shared/centralModelCatalog";
 import { getActiveModels } from "../config/modelRegistry";
 import { getCachedModelTestReport } from "../services/UniversalModelTester";
 
@@ -592,20 +592,60 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
           {showModelPicker ? (
             <div className="space-y-1 max-h-36 overflow-y-auto bg-slate-50 p-1.5 rounded-xl border border-slate-200">
               {(() => {
+                const canonical = canonicalProviderId(selectedProvider.id);
                 const activeModels = getActiveModels(selectedProvider.id);
-                const selectableModels = activeModels.length > 0
+                const catalogModels = getCatalogModels(selectedProvider.id);
+                const testReport = getCachedModelTestReport(selectedProvider.id);
+                const readyList = (testReport?.readyModels || []).filter(
+                  (m) => canonicalProviderId(m.provider) === canonical
+                );
+
+                const seen = new Set<string>();
+                const selectableModels: Array<{ id: string; name: string; isReady: boolean; isFree: boolean; freeTier?: string }> = [];
+
+                // 1. Ready to deploy models at the top
+                for (const m of readyList) {
+                  if (!seen.has(m.id)) {
+                    seen.add(m.id);
+                    selectableModels.push({
+                      id: m.id,
+                      name: m.name || m.id,
+                      isReady: true,
+                      isFree: m.isFree,
+                      freeTier: m.freeTier,
+                    });
+                  }
+                }
+
+                // 2. Base models for this provider
+                const basePool = activeModels.length > 0
                   ? activeModels
-                  : selectedProvider.availableModels.filter(isModelSelectable);
+                  : (selectedProvider.availableModels || []).length > 0
+                  ? selectedProvider.availableModels.filter((m) => !m.deprecated && !m.retired)
+                  : catalogModels;
+
+                for (const m of basePool) {
+                  if (!seen.has(m.id)) {
+                    seen.add(m.id);
+                    selectableModels.push({
+                      id: m.id,
+                      name: m.name || m.id,
+                      isReady: false,
+                      isFree: Boolean(m.free || (m as any).isFree),
+                      freeTier: m.freeTier,
+                    });
+                  }
+                }
+
                 if (selectableModels.length === 0) {
                   return (
                     <div className="p-2 text-center text-[11px] text-slate-500 font-medium italic">
-                      No currently available free model for this provider
+                      No models configured for this provider
                     </div>
                   );
                 }
-                const testReport = getCachedModelTestReport(selectedProvider.id);
+
                 return selectableModels.map((m) => {
-                  const isReady = testReport?.readyModels?.some((r) => r.id === m.id);
                   return (
                     <div
                       key={m.id}
@@ -618,12 +658,12 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                     >
                       <div className="truncate flex items-center gap-1">
                         <span>{m.name}</span>
-                        {isReady && (
+                        {m.isReady && (
                           <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-600 text-white font-bold">
                             ✓ Ready
                           </span>
                         )}
-                        {m.free && !isReady && (
+                        {m.isFree && !m.isReady && (
                           <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold" title={m.freeTier || "Free tier — subject to provider limits"}>
                             Free tier
                           </span>

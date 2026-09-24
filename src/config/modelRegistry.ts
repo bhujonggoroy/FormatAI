@@ -9,16 +9,22 @@
  *    status === 'active', free === true, and apiAvailable === true.
  */
 
+import { canonicalProviderId } from "../shared/centralModelCatalog";
+
 export type ModelStatus = "active" | "preview" | "deprecated" | "retired" | "unavailable";
 
 export type AIProviderId =
   | "gemini"
+  | "openai"
+  | "claude"
+  | "anthropic"
   | "groq"
   | "openrouter"
   | "mistral"
   | "cohere"
   | "huggingface"
-  | "cloudflare";
+  | "cloudflare"
+  | "custom";
 
 /**
  * Academic workload & technical capabilities for mathematical formatting
@@ -977,7 +983,144 @@ export const MODEL_REGISTRY: Record<string, AIModel[]> = {
       description: "Compact, dependable open instruction model on Cloudflare edge.",
     },
   ],
+  openai: [
+    {
+      id: "gpt-4o-mini",
+      name: "GPT-4o Mini",
+      provider: "openai",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "OpenAI developer tier / pay-as-you-go",
+      contextWindow: 128000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation", "notation_standardization"],
+      description: "Fast, cost-efficient OpenAI model optimized for mathematical notation and formatting.",
+    },
+    {
+      id: "gpt-4o",
+      name: "GPT-4o",
+      provider: "openai",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "OpenAI developer tier / pay-as-you-go",
+      contextWindow: 128000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation", "theorem_proof_structuring", "matrix_tabular_math"],
+      description: "Flagship omni model with advanced technical reasoning across mathematical proofs.",
+    },
+    {
+      id: "o3-mini",
+      name: "o3-mini",
+      provider: "openai",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "OpenAI developer tier / pay-as-you-go",
+      contextWindow: 200000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation", "symbolic_computation"],
+      description: "High-intelligence STEM reasoning model with specialized mathematical problem solving.",
+    },
+    {
+      id: "o1",
+      name: "o1",
+      provider: "openai",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "OpenAI developer tier / pay-as-you-go",
+      contextWindow: 200000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation", "theorem_proof_structuring"],
+      description: "Deep reasoning model specialized for advanced mathematics, physics, and STEM formatting.",
+    },
+    {
+      id: "o1-mini",
+      name: "o1-mini",
+      provider: "openai",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "OpenAI developer tier / pay-as-you-go",
+      contextWindow: 128000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation"],
+      description: "Reasoning model designed for STEM workflows and complex LaTeX notations.",
+    },
+  ],
+  claude: [
+    {
+      id: "claude-3-7-sonnet-latest",
+      name: "Claude 3.7 Sonnet",
+      provider: "claude",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "Anthropic API tier / pay-as-you-go",
+      contextWindow: 200000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation", "theorem_proof_structuring", "matrix_tabular_math"],
+      description: "Anthropic's hybrid reasoning model for sophisticated scientific and academic manuscripts.",
+    },
+    {
+      id: "claude-3-5-sonnet-latest",
+      name: "Claude 3.5 Sonnet",
+      provider: "claude",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "Anthropic API tier / pay-as-you-go",
+      contextWindow: 200000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "formula_derivation", "notation_standardization"],
+      description: "Premier model for structured LaTeX, proof formatting, and clear exposition.",
+    },
+    {
+      id: "claude-3-5-haiku-latest",
+      name: "Claude 3.5 Haiku",
+      provider: "claude",
+      status: "active",
+      free: false,
+      isFree: false,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "Anthropic API tier / pay-as-you-go",
+      contextWindow: 200000,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: ["latex_typesetting", "notation_standardization"],
+      description: "Ultra-fast, responsive model for instant note cleanup and symbol standardization.",
+    },
+  ],
 };
+
+// Aliases for provider keys
+(MODEL_REGISTRY as any)["google-gemini"] = MODEL_REGISTRY.gemini;
+(MODEL_REGISTRY as any)["anthropic"] = MODEL_REGISTRY.claude;
+(MODEL_REGISTRY as any)["open-router"] = MODEL_REGISTRY.openrouter;
 
 /**
  * Unified list of all registered models across all providers
@@ -985,36 +1128,51 @@ export const MODEL_REGISTRY: Record<string, AIModel[]> = {
 export const UNIFIED_MODEL_REGISTRY: AIModel[] = Object.values(MODEL_REGISTRY).flat();
 
 /**
- * Getter function getActiveModels(provider) that returns only models
- * where status is 'active', free is true, and apiAvailable is true.
+ * STRICTLY PROVIDER-SCOPED Getter: getActiveModels(provider)
  *
- * @param provider Optional provider ID (e.g. 'gemini', 'groq', 'openrouter', 'mistral', 'cohere', 'huggingface', 'cloudflare')
- * @returns Filtered array of active, free-tier, API-available AIModel instances
+ * MUST ONLY return models belonging to the specified provider.
+ * Under NO circumstances does this function return models from other providers.
+ * If provider is omitted, empty, or unrecognized, returns an EMPTY array [].
+ *
+ * @param provider Provider ID (e.g. 'gemini', 'google-gemini', 'openai', 'claude', 'groq', etc.)
+ * @returns Filtered array of active, API-available AIModel instances for THAT provider ONLY
  */
 export function getActiveModels(provider?: AIProviderId | string): AIModel[] {
-  let candidateModels: AIModel[] = [];
-
-  if (provider) {
-    const key = provider.toLowerCase().trim();
-    candidateModels = MODEL_REGISTRY[key] || [];
-  } else {
-    candidateModels = Object.values(MODEL_REGISTRY).flat();
+  if (!provider) {
+    // STRICT ISOLATION: Never return models from other providers when provider is omitted
+    return [];
   }
+
+  const canonical = canonicalProviderId(provider);
+  const candidateModels = MODEL_REGISTRY[canonical] || MODEL_REGISTRY[provider.toLowerCase().trim()] || [];
 
   return candidateModels.filter(
     (m) =>
       (m.status === "active" || m.status === "preview") &&
-      m.free === true &&
       m.apiAvailable === true
   );
 }
 
 /**
- * Helper to get models for a provider
+ * Explicit global helper if all active models across the entire registry are needed
+ */
+export function getAllActiveModels(): AIModel[] {
+  return Object.values(MODEL_REGISTRY)
+    .flat()
+    .filter(
+      (m) =>
+        (m.status === "active" || m.status === "preview") &&
+        m.apiAvailable === true
+    );
+}
+
+/**
+ * STRICTLY PROVIDER-SCOPED Helper to get models for a provider
  */
 export function getModelsByProvider(provider: AIProviderId | string): AIModel[] {
-  const key = provider.toLowerCase().trim();
-  return MODEL_REGISTRY[key] || [];
+  if (!provider) return [];
+  const canonical = canonicalProviderId(provider);
+  return MODEL_REGISTRY[canonical] || MODEL_REGISTRY[provider.toLowerCase().trim()] || [];
 }
 
 /**

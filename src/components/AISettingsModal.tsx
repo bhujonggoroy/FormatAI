@@ -29,8 +29,9 @@ import {
   setCachedProviderModels,
   invalidateProviderModelCache,
 } from "../utils/userLocalStorage";
-import { isModelSelectable } from "../shared/centralModelCatalog";
+import { isModelSelectable, canonicalProviderId, getCatalogModels } from "../shared/centralModelCatalog";
 import { getActiveModels } from "../config/modelRegistry";
+import { getCachedModelTestReport } from "../services/UniversalModelTester";
 import {
   X,
   Sparkles,
@@ -650,11 +651,47 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const isFreeOnly = Boolean(config?.freeOnlyMode || config?.billingMode === "free_only");
   const rawAvailableModels = currentActiveProvider?.availableModels || [];
   const activeRegistryModels = getActiveModels(currentActiveProvider?.id);
-  const currentAvailableModels = activeRegistryModels.length > 0
-    ? activeRegistryModels
-    : (isFreeOnly
-        ? rawAvailableModels.filter(isModelSelectable)
-        : rawAvailableModels.filter((m) => !m.deprecated && !m.retired && m.status !== "retired"));
+  const activeCatalogModels = getCatalogModels(currentActiveProvider?.id || "");
+  const activeReport = getCachedModelTestReport(currentActiveProvider?.id || "");
+  const activeCanonical = canonicalProviderId(currentActiveProvider?.id);
+  const activeReadyModels = (activeReport?.readyModels || []).filter(
+    (m) => canonicalProviderId(m.provider) === activeCanonical
+  );
+
+  const currentAvailableModels = (() => {
+    const seen = new Set<string>();
+    const list: Array<{ id: string; name: string; free: boolean; isReady?: boolean }> = [];
+
+    // 1. Ready-to-Deploy models first (Requirement 10)
+    for (const m of activeReadyModels) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        list.push({ id: m.id, name: m.name || m.id, free: m.isFree, isReady: true });
+      }
+    }
+
+    // 2. Base models for this provider
+    const basePool = activeRegistryModels.length > 0
+      ? activeRegistryModels
+      : isFreeOnly
+      ? rawAvailableModels.filter(isModelSelectable)
+      : rawAvailableModels.length > 0
+      ? rawAvailableModels.filter((m) => !m.deprecated && !m.retired && m.status !== "retired")
+      : activeCatalogModels;
+
+    for (const m of basePool) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        list.push({
+          id: m.id,
+          name: m.name || m.id,
+          free: Boolean(m.free || (m as any).isFree),
+          isReady: false,
+        });
+      }
+    }
+    return list;
+  })();
   const currentProviderKeys = currentActiveProvider?.apiKeys || [];
 
   return (
@@ -1334,20 +1371,65 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                 className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800 focus:ring-1 focus:ring-blue-500"
                               >
                                 {(() => {
-                                  const activeModels = getActiveModels(p.id);
-                                  const modelsToRender = activeModels.length > 0
-                                    ? activeModels
-                                    : p.availableModels.filter(isModelSelectable);
+                                  const canonical = canonicalProviderId(p.id);
+                                  const testReport = getCachedModelTestReport(p.id);
+                                  const readyList = (testReport?.readyModels || []).filter(
+                                    (m) => canonicalProviderId(m.provider) === canonical
+                                  );
+
+                                  // Strictly provider-scoped candidates
+                                  const registryModels = getActiveModels(p.id);
+                                  const catalogModels = getCatalogModels(p.id);
+                                  const availableFallback = (p.availableModels || []).filter(
+                                    (m) => !m.deprecated && !m.retired && m.status !== "retired"
+                                  );
+
+                                  const seen = new Set<string>();
+                                  const modelsToRender: Array<{ id: string; name: string; isReady: boolean; isFree: boolean }> = [];
+
+                                  // 1. Ready to deploy models for THIS provider strictly at top
+                                  for (const m of readyList) {
+                                    if (!seen.has(m.id)) {
+                                      seen.add(m.id);
+                                      modelsToRender.push({
+                                        id: m.id,
+                                        name: m.name || m.id,
+                                        isReady: true,
+                                        isFree: m.isFree,
+                                      });
+                                    }
+                                  }
+
+                                  // 2. Additional available models for this provider
+                                  const basePool = registryModels.length > 0
+                                    ? registryModels
+                                    : availableFallback.length > 0
+                                    ? availableFallback
+                                    : catalogModels;
+
+                                  for (const m of basePool) {
+                                    if (!seen.has(m.id)) {
+                                      seen.add(m.id);
+                                      modelsToRender.push({
+                                        id: m.id,
+                                        name: m.name || m.id,
+                                        isReady: false,
+                                        isFree: Boolean(m.free || (m as any).isFree),
+                                      });
+                                    }
+                                  }
+
                                   if (modelsToRender.length === 0) {
                                     return (
                                       <option value="" disabled>
-                                        No active free models
+                                        No models configured for {p.name}
                                       </option>
                                     );
                                   }
+
                                   return modelsToRender.map((m) => (
                                     <option key={m.id} value={m.id}>
-                                      {m.name} {m.free ? "(Free tier)" : "(Paid)"}
+                                      {m.isReady ? `✓ [Ready to Deploy] ${m.name}` : m.name} {m.isFree ? "(Free tier)" : "(Paid)"}
                                     </option>
                                   ));
                                 })()}
