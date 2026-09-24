@@ -26,12 +26,15 @@ import {
 } from "./utils/aiStatusClassifier";
 import {
   getUserSettings,
+  saveUserSettings,
   getUserProviders,
   saveUserProviders,
   getUserPreferences,
   recordProviderMetric,
   recordAuditLogEntry,
 } from "./utils/userLocalStorage";
+import { getActiveModels } from "./config/modelRegistry";
+import { ModelInfo } from "./types/ai";
 import {
   Sparkles,
   Eraser,
@@ -110,7 +113,68 @@ export default function App() {
 
       const userConfig = getUserSettings();
       const userProvs = getUserProviders(templates);
-      const ready = userProvs.filter((p) => p.enabled && (p.apiKeys || []).some((k) => k.enabled));
+
+      // Populate provider model selection dropdowns with active, free-tier models from getActiveModels
+      let provsUpdated = false;
+      const sanitizedProvs = userProvs.map((prov) => {
+        const activeModels = getActiveModels(prov.id);
+        if (activeModels.length > 0) {
+          const mappedModels: ModelInfo[] = activeModels.map((m) => ({
+            id: m.id,
+            name: m.name,
+            provider: m.provider,
+            status: m.status,
+            free: m.free,
+            isFree: m.isFree,
+            apiAvailable: m.apiAvailable,
+            deprecated: false,
+            retired: false,
+            freeTier: m.freeTier,
+            contextWindow: m.contextWindow,
+            capabilities: m.capabilities as string[],
+            description: m.description,
+          }));
+
+          let selectedModel = prov.selectedModel;
+          if (!mappedModels.some((m) => m.id === selectedModel)) {
+            selectedModel = mappedModels[0].id;
+            provsUpdated = true;
+          }
+
+          const hasChanged =
+            !prov.availableModels ||
+            prov.availableModels.length !== mappedModels.length ||
+            prov.availableModels.some((pm, idx) => pm.id !== mappedModels[idx].id);
+
+          if (hasChanged) {
+            provsUpdated = true;
+          }
+
+          return {
+            ...prov,
+            availableModels: mappedModels,
+            selectedModel,
+          };
+        }
+        return prov;
+      });
+
+      if (provsUpdated) {
+        saveUserProviders(sanitizedProvs);
+      }
+
+      // Ensure global activeModel in user settings points to an active, selectable model
+      const activeProv = sanitizedProvs.find(
+        (p) => p.id === (userConfig.activeProviderId || "gemini")
+      );
+      if (activeProv && activeProv.availableModels && activeProv.availableModels.length > 0) {
+        if (!activeProv.availableModels.some((m) => m.id === userConfig.activeModel)) {
+          userConfig.activeModel = activeProv.availableModels[0].id;
+          saveUserSettings(userConfig);
+        }
+      }
+
+      const ready = sanitizedProvs.filter((p) => p.enabled && (p.apiKeys || []).some((k) => k.enabled));
       setAiHealthInfo({
         readyCount: ready.length,
         providersSummary: ready.map((p) => p.name),

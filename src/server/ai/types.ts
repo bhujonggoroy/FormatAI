@@ -34,11 +34,20 @@ export interface NormalizedAIError {
   rawError?: any;
 }
 
+export type ModelStatus = "active" | "preview" | "deprecated" | "retired" | "unavailable";
+
 export interface ModelInfo {
   id: string;
   name: string;
-  contextWindow: number;
+  provider?: string;
+  status?: ModelStatus;
+  free?: boolean;
   isFree: boolean;
+  apiAvailable?: boolean;
+  deprecated?: boolean;
+  retired?: boolean;
+  freeTier?: string;
+  contextWindow: number;
   capabilities: string[]; // e.g. ["text", "math", "long_context", "json", "code"]
   description?: string;
 }

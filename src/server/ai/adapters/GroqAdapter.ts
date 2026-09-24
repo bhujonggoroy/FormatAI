@@ -1,43 +1,11 @@
 import { OpenAICompatibleAdapter } from "./OpenAICompatibleAdapter.ts";
 import type { ModelInfo } from "../types.ts";
 import type { AdapterOptions } from "./BaseAdapter.ts";
+import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
 
 export class GroqAdapter extends OpenAICompatibleAdapter {
   constructor() {
-    const defaultModels: ModelInfo[] = [
-      {
-        id: "llama-3.3-70b-versatile",
-        name: "Llama 3.3 70B Versatile",
-        contextWindow: 128000,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Meta's flagship 70B parameter open model on Groq LPU with lightning-fast inference.",
-      },
-      {
-        id: "llama-3.1-8b-instant",
-        name: "Llama 3.1 8B Instant",
-        contextWindow: 128000,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Extremely low latency model for quick note formatting and equations.",
-      },
-      {
-        id: "mixtral-8x7b-32768",
-        name: "Mixtral 8x7B Instruct",
-        contextWindow: 32768,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Mistral's mixture-of-experts model on Groq.",
-      },
-      {
-        id: "gemma2-9b-it",
-        name: "Gemma 2 9B IT",
-        contextWindow: 8192,
-        isFree: true,
-        capabilities: ["text", "math", "json", "code"],
-        description: "Google lightweight open model on Groq.",
-      },
-    ];
+    const defaultModels: ModelInfo[] = CENTRAL_CATALOG.groq;
 
     super({
       id: "groq",
@@ -65,26 +33,38 @@ export class GroqAdapter extends OpenAICompatibleAdapter {
       const data = await res.json();
       if (!Array.isArray(data?.data)) return this.defaultModels;
 
-      // Filter active chat models (excluding whisper/audio/embeddings)
+      // Filter active chat models (excluding whisper/audio/embeddings/safeguard and decommissioned models)
       const chatModels = data.data.filter((m: any) => {
         const id = (m.id || "").toLowerCase();
         return (
           m.active !== false &&
           !id.includes("whisper") &&
           !id.includes("embed") &&
-          !id.includes("guard")
+          !id.includes("guard") &&
+          !DEPRECATED_OR_RETIRED_MODELS[m.id]
         );
       });
 
       if (chatModels.length > 0) {
-        return chatModels.map((m: any) => ({
-          id: m.id,
-          name: m.id.replace(/[-_]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
-          contextWindow: m.context_window || 32768,
-          isFree: true, // Groq free tier applies to all standard models
-          capabilities: ["text", "math", "long_context", "json", "code"],
-          description: `Groq LPU model (${m.id})`,
-        }));
+        return chatModels.map((m: any) =>
+          normalizeModelInfo(
+            {
+              id: m.id,
+              name: m.id.replace(/[-_]/g, " ").replace(/\b\w/g, (c: string) => c.toUpperCase()),
+              status: "active",
+              free: true,
+              isFree: true,
+              apiAvailable: true,
+              deprecated: false,
+              retired: false,
+              freeTier: "Free tier (30 RPM on Groq LPU)",
+              contextWindow: m.context_window || 131072,
+              capabilities: ["text", "math", "long_context", "json", "code"],
+              description: `Groq LPU model (${m.id})`,
+            },
+            "groq"
+          )
+        );
       }
       return this.defaultModels;
     } catch {

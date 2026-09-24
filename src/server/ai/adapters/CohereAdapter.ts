@@ -12,37 +12,13 @@ import type {
   NormalizedAIError,
   TestResult,
 } from "../types.ts";
+import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
 
 export class CohereAdapter implements AIProviderAdapter {
   readonly id = "cohere";
   readonly name = "Cohere";
 
-  private defaultModels: ModelInfo[] = [
-    {
-      id: "command-r",
-      name: "Command R (Free Trial Key)",
-      contextWindow: 128000,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Optimized for enterprise reasoning, summarization, and LaTeX.",
-    },
-    {
-      id: "command-r-plus",
-      name: "Command R+",
-      contextWindow: 128000,
-      isFree: false,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Cohere flagship model for complex instructions.",
-    },
-    {
-      id: "command-light",
-      name: "Command Light",
-      contextWindow: 4096,
-      isFree: true,
-      capabilities: ["text", "math"],
-      description: "Fast lightweight model for basic text conversion.",
-    },
-  ];
+  private defaultModels: ModelInfo[] = CENTRAL_CATALOG.cohere;
 
   async getModels(apiKey?: string, options?: AdapterOptions): Promise<ModelInfo[]> {
     if (!apiKey?.trim()) return this.defaultModels;
@@ -60,18 +36,35 @@ export class CohereAdapter implements AIProviderAdapter {
 
       const chatModels = data.models.filter((m: any) => {
         const endpoints = m.endpoints || [];
-        return endpoints.includes("chat") || endpoints.includes("generate");
+        const name = m.name || m.id || "";
+        return (
+          (endpoints.includes("chat") || endpoints.includes("generate")) &&
+          !DEPRECATED_OR_RETIRED_MODELS[name]
+        );
       });
 
       if (chatModels.length > 0) {
-        return chatModels.map((m: any) => ({
-          id: m.name || m.id,
-          name: m.name || m.id,
-          contextWindow: m.context_length || 32768,
-          isFree: !m.name?.includes("plus"),
-          capabilities: ["text", "math", "long_context", "json", "code"],
-          description: `Cohere model (${m.name})`,
-        }));
+        return chatModels.map((m: any) => {
+          const modelId = m.name || m.id;
+          const isPaid = modelId.includes("plus");
+          return normalizeModelInfo(
+            {
+              id: modelId,
+              name: m.name || modelId,
+              status: "active",
+              free: !isPaid,
+              isFree: !isPaid,
+              apiAvailable: true,
+              deprecated: false,
+              retired: false,
+              freeTier: !isPaid ? "Free tier (Trial API key: 20 RPM, 1,000 calls/month)" : "Paid tier only",
+              contextWindow: m.context_length || 128000,
+              capabilities: ["text", "math", "long_context", "json", "code"],
+              description: `Cohere model (${modelId})`,
+            },
+            "cohere"
+          );
+        });
       }
       return this.defaultModels;
     } catch {

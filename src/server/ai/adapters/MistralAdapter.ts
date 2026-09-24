@@ -1,43 +1,11 @@
 import { OpenAICompatibleAdapter } from "./OpenAICompatibleAdapter.ts";
 import type { ModelInfo, NormalizedAIError } from "../types.ts";
 import type { AdapterOptions } from "./BaseAdapter.ts";
+import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
 
 export class MistralAdapter extends OpenAICompatibleAdapter {
   constructor() {
-    const defaultModels: ModelInfo[] = [
-      {
-        id: "mistral-small-latest",
-        name: "Mistral Small (Latest)",
-        contextWindow: 32768,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Balanced reasoning, math, and code on Mistral free/experiment tier.",
-      },
-      {
-        id: "open-mistral-7b",
-        name: "Open Mistral 7B",
-        contextWindow: 32768,
-        isFree: true,
-        capabilities: ["text", "math", "json", "code"],
-        description: "Fast base instruction model.",
-      },
-      {
-        id: "codestral-latest",
-        name: "Codestral (Latest / Math & Code)",
-        contextWindow: 32768,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "code"],
-        description: "Trained on programming languages & mathematical notation.",
-      },
-      {
-        id: "mistral-large-latest",
-        name: "Mistral Large (Paid)",
-        contextWindow: 128000,
-        isFree: false,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Top-tier flagship reasoning model.",
-      },
-    ];
+    const defaultModels: ModelInfo[] = CENTRAL_CATALOG.mistral;
 
     super({
       id: "mistral",
@@ -64,20 +32,33 @@ export class MistralAdapter extends OpenAICompatibleAdapter {
 
       const chatModels = data.data.filter((m: any) => {
         const id = (m.id || "").toLowerCase();
-        return !id.includes("embed") && !id.includes("moderation");
+        return (
+          !id.includes("embed") &&
+          !id.includes("moderation") &&
+          !DEPRECATED_OR_RETIRED_MODELS[m.id]
+        );
       });
 
       if (chatModels.length > 0) {
         return chatModels.map((m: any) => {
           const isPaid = m.id.includes("large") || m.id.includes("pixtral-large");
-          return {
-            id: m.id,
-            name: m.name || m.id,
-            contextWindow: m.max_context_length || 32768,
-            isFree: !isPaid,
-            capabilities: ["text", "math", "long_context", "json", "code"],
-            description: m.description?.slice(0, 140) || `Mistral model (${m.id})`,
-          };
+          return normalizeModelInfo(
+            {
+              id: m.id,
+              name: m.name || m.id,
+              status: "active",
+              free: !isPaid,
+              isFree: !isPaid,
+              apiAvailable: true,
+              deprecated: false,
+              retired: false,
+              freeTier: !isPaid ? "Free tier (La Plateforme experiment tier)" : "Paid tier only",
+              contextWindow: m.max_context_length || 32768,
+              capabilities: ["text", "math", "long_context", "json", "code"],
+              description: m.description?.slice(0, 140) || `Mistral model (${m.id})`,
+            },
+            "mistral"
+          );
         });
       }
       return this.defaultModels;

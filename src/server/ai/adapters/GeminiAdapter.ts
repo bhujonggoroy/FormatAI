@@ -13,45 +13,13 @@ import type {
   NormalizedAIError,
   TestResult,
 } from "../types.ts";
+import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
 
 export class GeminiAdapter implements AIProviderAdapter {
   readonly id = "gemini";
   readonly name = "Google Gemini";
 
-  private defaultModels: ModelInfo[] = [
-    {
-      id: "gemini-2.5-flash",
-      name: "Gemini 2.5 Flash (Fast & Recommended)",
-      contextWindow: 1048576,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Fast, versatile model for academic notes, LaTeX, and mathematical formatting.",
-    },
-    {
-      id: "gemini-2.5-pro",
-      name: "Gemini 2.5 Pro (Advanced Reasoning)",
-      contextWindow: 2097152,
-      isFree: false,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "State-of-the-art reasoning for complex STEM, multi-step math derivations.",
-    },
-    {
-      id: "gemini-2.0-flash",
-      name: "Gemini 2.0 Flash",
-      contextWindow: 1048576,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "High-speed multimodal generation with long context.",
-    },
-    {
-      id: "gemini-1.5-flash",
-      name: "Gemini 1.5 Flash",
-      contextWindow: 1048576,
-      isFree: true,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      description: "Lightweight, efficient generation for standard notes.",
-    },
-  ];
+  private defaultModels: ModelInfo[] = CENTRAL_CATALOG.gemini;
 
   async getModels(apiKey?: string, options?: AdapterOptions): Promise<ModelInfo[]> {
     const key = apiKey?.trim() || process.env.GEMINI_API_KEY?.trim();
@@ -70,24 +38,36 @@ export class GeminiAdapter implements AIProviderAdapter {
         .filter((m: any) => {
           const methods = m.supportedGenerationMethods || [];
           const name = m.name || "";
+          const rawId = name.replace(/^models\//, "");
           return (
             methods.includes("generateContent") &&
             !name.includes("embedding") &&
             !name.includes("aqa") &&
-            !name.includes("imagen")
+            !name.includes("imagen") &&
+            !rawId.includes("exp") && // No obsolete preview endpoints
+            !DEPRECATED_OR_RETIRED_MODELS[rawId]
           );
         })
         .map((m: any) => {
           const rawId = m.name.replace(/^models\//, "");
           const isPro = rawId.includes("pro");
-          return {
-            id: rawId,
-            name: m.displayName || rawId,
-            contextWindow: m.inputTokenLimit || 1048576,
-            isFree: !isPro,
-            capabilities: ["text", "math", "long_context", "json", "code"],
-            description: m.description?.slice(0, 140) || `Google Gemini model (${rawId})`,
-          };
+          return normalizeModelInfo(
+            {
+              id: rawId,
+              name: m.displayName || rawId,
+              status: "active",
+              free: !isPro,
+              isFree: !isPro,
+              apiAvailable: true,
+              deprecated: false,
+              retired: false,
+              freeTier: !isPro ? "Free tier (15 RPM, 1,500 RPD)" : "Paid only",
+              contextWindow: m.inputTokenLimit || 1048576,
+              capabilities: ["text", "math", "long_context", "json", "code"],
+              description: m.description?.slice(0, 140) || `Google Gemini model (${rawId})`,
+            },
+            "gemini"
+          );
         });
 
       return chatModels.length > 0 ? chatModels : this.defaultModels;
@@ -128,7 +108,7 @@ export class GeminiAdapter implements AIProviderAdapter {
         statusCode: status || 404,
         title: "❌ Model Unavailable on Gemini",
         message: `The requested Gemini model is not found or unsupported: ${message}`,
-        userFacingMessage: "The selected model is unavailable on Gemini. Click 'Refresh Models' or select an active model (e.g. gemini-2.5-flash).",
+        userFacingMessage: "The selected model is unavailable on Gemini. Click 'Refresh Models' or select an active model (e.g. gemini-3.8-flash).",
         retryable: false,
         rawError: error,
       };

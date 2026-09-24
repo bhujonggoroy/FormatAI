@@ -10,6 +10,13 @@ import {
   UserApiKeyItem,
   AIErrorCode,
 } from "../types/ai";
+import {
+  CENTRAL_CATALOG,
+  DEPRECATED_OR_RETIRED_MODELS,
+  getActiveReplacementModel,
+  isModelSelectable,
+} from "../shared/centralModelCatalog";
+import { getActiveModels } from "../config/modelRegistry";
 
 /**
  * FormatAI — STRICT USER-SPECIFIC LOCAL ISOLATION
@@ -42,7 +49,7 @@ export const STORAGE_KEYS = {
 export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
   mode: "automatic",
   activeProviderId: "gemini",
-  activeModel: "gemini-2.5-flash",
+  activeModel: "gemini-3.8-flash",
   enableFallback: true,
   freeOnlyMode: true,
   billingMode: "free_only",
@@ -121,28 +128,51 @@ export function healAndNormalizeProviders(
 
   return providers.map((provider) => {
     const tmpl = templateMap.get(provider.id);
-    const available = (provider.availableModels && provider.availableModels.length > 0)
-      ? provider.availableModels
-      : (tmpl?.availableModels || []);
+    const catalogModels = CENTRAL_CATALOG[provider.id.toLowerCase()];
+    const activeRegistryModels = getActiveModels(provider.id);
+
+    // Sanitize available models: prioritize active free models from getActiveModels
+    let available: ModelInfo[] = [];
+    if (activeRegistryModels && activeRegistryModels.length > 0) {
+      available = activeRegistryModels.map((m) => ({
+        id: m.id,
+        name: m.name,
+        provider: m.provider,
+        status: m.status,
+        free: m.free,
+        isFree: m.isFree,
+        apiAvailable: m.apiAvailable,
+        deprecated: false,
+        retired: false,
+        freeTier: m.freeTier,
+        contextWindow: m.contextWindow,
+        capabilities: m.capabilities as string[],
+        description: m.description,
+      }));
+    } else if (provider.availableModels && provider.availableModels.length > 0) {
+      available = provider.availableModels.filter(
+        (m) => !DEPRECATED_OR_RETIRED_MODELS[m.id] && !m.deprecated && !m.retired
+      );
+    } else {
+      available = tmpl?.availableModels || catalogModels || [];
+    }
+
+    if (available.length === 0 && catalogModels && catalogModels.length > 0) {
+      available = catalogModels;
+    }
 
     // 1. Stale model repair:
     let selectedModel = provider.selectedModel;
-    const isObsoleteGemini =
-      provider.id === "gemini" &&
-      (selectedModel === "gemini-3.6-flash" ||
-        selectedModel === "gemini-3.5-flash-lite" ||
-        selectedModel === "gemini-3.8-flash" ||
-        selectedModel === "gemini-1.5-flash-latest");
-
-    if (isObsoleteGemini) {
-      selectedModel = "gemini-2.5-flash";
+    if (DEPRECATED_OR_RETIRED_MODELS[selectedModel]) {
+      selectedModel = getActiveReplacementModel(provider.id, selectedModel);
     }
 
     // Check if selectedModel is valid in available list (except for custom provider)
     if (available.length > 0 && provider.id !== "custom") {
       const exists = available.some((m) => m.id === selectedModel);
       if (!exists) {
-        selectedModel = available[0].id;
+        const firstActive = available.find(isModelSelectable) || available[0];
+        selectedModel = firstActive.id;
       }
     }
 
@@ -187,10 +217,18 @@ export function loadUserAISettingsPackage(
       if (parsed && Array.isArray(parsed.providers)) {
         // Self-heal loaded settings
         const healedProviders = healAndNormalizeProviders(parsed.providers, templates);
+        const healedConfig = { ...DEFAULT_MANAGER_CONFIG, ...(parsed.config || {}) };
+        if (DEPRECATED_OR_RETIRED_MODELS[healedConfig.activeModel]) {
+          healedConfig.activeModel = getActiveReplacementModel(
+            healedConfig.activeProviderId || "gemini",
+            healedConfig.activeModel
+          );
+        }
+
         const healedPkg: UserAISettingsPackage = {
           version: STORAGE_VERSION,
           userId,
-          config: { ...DEFAULT_MANAGER_CONFIG, ...(parsed.config || {}) },
+          config: healedConfig,
           providers: healedProviders,
           modelsCache: parsed.modelsCache || {},
           lastUpdated: Date.now(),

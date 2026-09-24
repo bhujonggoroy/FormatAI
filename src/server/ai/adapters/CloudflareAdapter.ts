@@ -12,41 +12,9 @@ import type {
   NormalizedAIError,
   TestResult,
 } from "../types.ts";
+import { CENTRAL_CATALOG } from "../../../shared/centralModelCatalog.ts";
 
-export const CLOUDFLARE_DEFAULT_MODELS: ModelInfo[] = [
-  {
-    id: "@cf/meta/llama-3.3-70b-instruct",
-    name: "Llama 3.3 70B Instruct (Workers AI)",
-    contextWindow: 128000,
-    isFree: true,
-    capabilities: ["text", "math", "long_context", "json", "code"],
-    description: "Meta flagship 70B hosted on Cloudflare Workers AI edge.",
-  },
-  {
-    id: "@cf/meta/llama-3.1-8b-instruct",
-    name: "Llama 3.1 8B Instruct (Workers AI)",
-    contextWindow: 128000,
-    isFree: true,
-    capabilities: ["text", "math", "long_context", "json", "code"],
-    description: "Ultra-low latency edge model for fast transformations.",
-  },
-  {
-    id: "@cf/deepseek-ai/deepseek-r1-distill-qwen-32b",
-    name: "DeepSeek R1 Distill Qwen 32B (Workers AI)",
-    contextWindow: 64000,
-    isFree: true,
-    capabilities: ["text", "math", "long_context", "json", "code"],
-    description: "Reasoning model with deep mathematical and formula proofing.",
-  },
-  {
-    id: "@cf/mistral/mistral-7b-instruct-v0.2",
-    name: "Mistral 7B Instruct v0.2 (Workers AI)",
-    contextWindow: 32768,
-    isFree: true,
-    capabilities: ["text", "math", "json", "code"],
-    description: "Compact, dependable open instruction model.",
-  },
-];
+export const CLOUDFLARE_DEFAULT_MODELS: ModelInfo[] = CENTRAL_CATALOG.cloudflare;
 
 export class CloudflareAdapter implements AIProviderAdapter {
   readonly id = "cloudflare";

@@ -23,11 +23,20 @@ export type AIErrorKind =
   | "unsupported_capability" // Model lacks required capabilities
   | "unknown";
 
+export type ModelStatus = "active" | "preview" | "deprecated" | "retired" | "unavailable";
+
 export interface ModelInfo {
   id: string;
   name: string;
-  contextWindow: number;
+  provider?: string;
+  status?: ModelStatus;
+  free?: boolean;
   isFree: boolean;
+  apiAvailable?: boolean;
+  deprecated?: boolean;
+  retired?: boolean;
+  freeTier?: string;
+  contextWindow: number;
   capabilities: string[];
   description?: string;
 }

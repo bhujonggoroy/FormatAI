@@ -29,6 +29,8 @@ import {
   setCachedProviderModels,
   invalidateProviderModelCache,
 } from "../utils/userLocalStorage";
+import { isModelSelectable } from "../shared/centralModelCatalog";
+import { getActiveModels } from "../config/modelRegistry";
 import {
   X,
   Sparkles,
@@ -588,7 +590,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     recordAuditLogEntry({
       requestSummary: "Multi-Hop Failover Diagnostic Simulation",
       finalProvider: "Groq",
-      finalModel: "llama-3.3-70b-versatile",
+      finalModel: "openai/gpt-oss-120b",
       hopsCount: 2,
       totalLatencyMs: 284,
       success: true,
@@ -610,7 +612,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           providerName: "Google Gemini",
           keyMasked: "AIza************91B2",
           keyName: "Backup Key 2",
-          model: "gemini-2.5-flash",
+          model: "gemini-3.7-flash",
           status: "server_error",
           errorMessage: "Simulated 503 Model High Load",
           latencyMs: 82,
@@ -621,7 +623,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           providerName: "Groq LPU",
           keyMasked: "gsk_************19Xp",
           keyName: "Ultra-Fast Failover",
-          model: "llama-3.3-70b-versatile",
+          model: "openai/gpt-oss-120b",
           status: "success",
           latencyMs: 107,
           timestamp: Date.now(),
@@ -644,7 +646,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     (p) => p.id === (config?.activeProviderId || "gemini")
   ) || providers[0];
 
-  const currentAvailableModels = currentActiveProvider?.availableModels || [];
+  const isFreeOnly = Boolean(config?.freeOnlyMode || config?.billingMode === "free_only");
+  const rawAvailableModels = currentActiveProvider?.availableModels || [];
+  const activeRegistryModels = getActiveModels(currentActiveProvider?.id);
+  const currentAvailableModels = activeRegistryModels.length > 0
+    ? activeRegistryModels
+    : (isFreeOnly
+        ? rawAvailableModels.filter(isModelSelectable)
+        : rawAvailableModels.filter((m) => !m.deprecated && !m.retired && m.status !== "retired"));
   const currentProviderKeys = currentActiveProvider?.apiKeys || [];
 
   return (
@@ -1086,11 +1095,17 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       }}
                       className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
                     >
-                      {currentAvailableModels.map((m) => (
-                        <option key={m.id} value={m.id}>
-                          {m.name} {m.isFree ? "(Free)" : "(Paid)"}
+                      {currentAvailableModels.length === 0 ? (
+                        <option value="" disabled>
+                          No currently available free model
                         </option>
-                      ))}
+                      ) : (
+                        currentAvailableModels.map((m) => (
+                          <option key={m.id} value={m.id}>
+                            {m.name} {m.free ? "(Free tier)" : "(Paid tier)"}
+                          </option>
+                        ))
+                      )}
                     </select>
                   </div>
 
@@ -1317,11 +1332,24 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                 onChange={(e) => handleUpdateProvider(p.id, { selectedModel: e.target.value })}
                                 className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800 focus:ring-1 focus:ring-blue-500"
                               >
-                                {p.availableModels.map((m) => (
-                                  <option key={m.id} value={m.id}>
-                                    {m.name} {m.isFree ? "[Free]" : "[Paid]"}
-                                  </option>
-                                ))}
+                                {(() => {
+                                  const activeModels = getActiveModels(p.id);
+                                  const modelsToRender = activeModels.length > 0
+                                    ? activeModels
+                                    : p.availableModels.filter(isModelSelectable);
+                                  if (modelsToRender.length === 0) {
+                                    return (
+                                      <option value="" disabled>
+                                        No active free models
+                                      </option>
+                                    );
+                                  }
+                                  return modelsToRender.map((m) => (
+                                    <option key={m.id} value={m.id}>
+                                      {m.name} {m.free ? "(Free tier)" : "(Paid)"}
+                                    </option>
+                                  ));
+                                })()}
                               </select>
                             </div>
 

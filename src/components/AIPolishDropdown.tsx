@@ -25,6 +25,8 @@ import {
 import { UserProviderConfig, ManagerConfig, ProviderStats } from "../types/ai";
 import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
+import { isModelSelectable } from "../shared/centralModelCatalog";
+import { getActiveModels } from "../config/modelRegistry";
 
 export type AISignalType =
   | "available"     // 🟢 Available & Ready (green)
@@ -588,29 +590,42 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
 
           {showModelPicker ? (
             <div className="space-y-1 max-h-36 overflow-y-auto bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-              {selectedProvider.availableModels.map((m) => (
-                <div
-                  key={m.id}
-                  onClick={() => handleSelectModel(m.id)}
-                  className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors ${
-                    (selectedModelId || selectedProvider.selectedModel) === m.id
-                      ? "bg-blue-600 text-white shadow-2xs"
-                      : "bg-white hover:bg-slate-100 text-slate-800 border border-slate-200"
-                  }`}
-                >
-                  <div className="truncate">
-                    <span>{m.name}</span>
-                    {m.isFree && (
-                      <span className="ml-1 text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold">
-                        FREE
-                      </span>
+              {(() => {
+                const activeModels = getActiveModels(selectedProvider.id);
+                const selectableModels = activeModels.length > 0
+                  ? activeModels
+                  : selectedProvider.availableModels.filter(isModelSelectable);
+                if (selectableModels.length === 0) {
+                  return (
+                    <div className="p-2 text-center text-[11px] text-slate-500 font-medium italic">
+                      No currently available free model for this provider
+                    </div>
+                  );
+                }
+                return selectableModels.map((m) => (
+                  <div
+                    key={m.id}
+                    onClick={() => handleSelectModel(m.id)}
+                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors ${
+                      (selectedModelId || selectedProvider.selectedModel) === m.id
+                        ? "bg-blue-600 text-white shadow-2xs"
+                        : "bg-white hover:bg-slate-100 text-slate-800 border border-slate-200"
+                    }`}
+                  >
+                    <div className="truncate">
+                      <span>{m.name}</span>
+                      {m.free && (
+                        <span className="ml-1 text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold" title={m.freeTier || "Free tier — subject to provider limits"}>
+                          Free tier
+                        </span>
+                      )}
+                    </div>
+                    {(selectedModelId || selectedProvider.selectedModel) === m.id && (
+                      <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />
                     )}
                   </div>
-                  {(selectedModelId || selectedProvider.selectedModel) === m.id && (
-                    <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />
-                  )}
-                </div>
-              ))}
+                ));
+              })()}
             </div>
           ) : (
             <div className="px-2.5 py-1.5 rounded-lg bg-slate-100/80 border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between">

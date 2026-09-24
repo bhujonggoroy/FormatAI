@@ -1,59 +1,11 @@
 import { OpenAICompatibleAdapter } from "./OpenAICompatibleAdapter.ts";
 import type { ModelInfo, NormalizedAIError } from "../types.ts";
 import type { AdapterOptions } from "./BaseAdapter.ts";
+import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
 
 export class OpenRouterAdapter extends OpenAICompatibleAdapter {
   constructor() {
-    const defaultModels: ModelInfo[] = [
-      {
-        id: "meta-llama/llama-3.3-70b-instruct:free",
-        name: "Llama 3.3 70B Instruct (Free)",
-        contextWindow: 131072,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "High-capability free open model routed via OpenRouter.",
-      },
-      {
-        id: "google/gemini-2.0-flash-exp:free",
-        name: "Google Gemini 2.0 Flash Exp (Free)",
-        contextWindow: 1048576,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Google Gemini routed through OpenRouter's free tier.",
-      },
-      {
-        id: "deepseek/deepseek-r1:free",
-        name: "DeepSeek R1 (Free / Reasoning)",
-        contextWindow: 64000,
-        isFree: true,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "High-level mathematical & logical reasoning open model.",
-      },
-      {
-        id: "mistralai/mistral-7b-instruct:free",
-        name: "Mistral 7B Instruct (Free)",
-        contextWindow: 32768,
-        isFree: true,
-        capabilities: ["text", "math", "json", "code"],
-        description: "Efficient free tier Mistral model.",
-      },
-      {
-        id: "anthropic/claude-3.5-haiku",
-        name: "Anthropic Claude 3.5 Haiku",
-        contextWindow: 200000,
-        isFree: false,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Fast Anthropic model with exceptional markdown formatting (Paid).",
-      },
-      {
-        id: "openai/gpt-4o-mini",
-        name: "OpenAI GPT-4o Mini",
-        contextWindow: 128000,
-        isFree: false,
-        capabilities: ["text", "math", "long_context", "json", "code"],
-        description: "Cost-effective OpenAI model for standard formatting (Paid).",
-      },
-    ];
+    const defaultModels: ModelInfo[] = CENTRAL_CATALOG.openrouter;
 
     super({
       id: "openrouter",
@@ -68,7 +20,7 @@ export class OpenRouterAdapter extends OpenAICompatibleAdapter {
     });
   }
 
-  // Dynamic model fetching from OpenRouter /api/v1/models
+  // Dynamic model fetching from OpenRouter /api/v1/models with strict $0 free verification
   async getModels(apiKey?: string, options?: AdapterOptions): Promise<ModelInfo[]> {
     try {
       const headers: Record<string, string> = { ...this.customHeaders };
@@ -84,31 +36,35 @@ export class OpenRouterAdapter extends OpenAICompatibleAdapter {
       if (!Array.isArray(data?.data)) return this.defaultModels;
 
       const freeModels: ModelInfo[] = data.data
-        .filter((m: any) => m.id?.endsWith(":free"))
-        .slice(0, 15)
-        .map((m: any) => ({
-          id: m.id,
-          name: `${m.name || m.id} (Free)`,
-          contextWindow: m.context_length || 32768,
-          isFree: true,
-          capabilities: ["text", "math", "long_context", "json", "code"],
-          description: m.description?.slice(0, 140) || "OpenRouter free model",
-        }));
+        .filter((m: any) => {
+          const isFreeId = m.id?.endsWith(":free");
+          const promptPrice = parseFloat(m.pricing?.prompt || "1");
+          const completionPrice = parseFloat(m.pricing?.completion || "1");
+          const isZeroPrice = promptPrice === 0 && completionPrice === 0;
+          return (isFreeId || isZeroPrice) && !DEPRECATED_OR_RETIRED_MODELS[m.id];
+        })
+        .slice(0, 20)
+        .map((m: any) =>
+          normalizeModelInfo(
+            {
+              id: m.id,
+              name: `${m.name || m.id} (Free)`,
+              status: "active",
+              free: true,
+              isFree: true,
+              apiAvailable: true,
+              deprecated: false,
+              retired: false,
+              freeTier: "Free tier ($0 prompt / $0 completion)",
+              contextWindow: m.context_length || 32768,
+              capabilities: ["text", "math", "long_context", "json", "code"],
+              description: m.description?.slice(0, 140) || "OpenRouter verified $0 free model",
+            },
+            "openrouter"
+          )
+        );
 
-      const topPaidModels: ModelInfo[] = data.data
-        .filter((m: any) => !m.id?.endsWith(":free") && (m.id.includes("claude") || m.id.includes("gpt-4o") || m.id.includes("gemini") || m.id.includes("mistral")))
-        .slice(0, 15)
-        .map((m: any) => ({
-          id: m.id,
-          name: m.name || m.id,
-          contextWindow: m.context_length || 32768,
-          isFree: false,
-          capabilities: ["text", "math", "long_context", "json", "code"],
-          description: m.description?.slice(0, 140) || "OpenRouter paid model",
-        }));
-
-      const combined = [...freeModels, ...topPaidModels];
-      return combined.length > 0 ? combined : this.defaultModels;
+      return freeModels.length > 0 ? freeModels : this.defaultModels;
     } catch {
       return this.defaultModels;
     }
@@ -160,5 +116,33 @@ export class OpenRouterAdapter extends OpenAICompatibleAdapter {
     }
 
     return super.classifyError(error);
+  }
+
+  override async generate(
+    requestOrKey: any,
+    keyOrModelId?: string,
+    modelOrRequest?: any,
+    options?: AdapterOptions
+  ) {
+    // If user provides a model ID that matches one of our registered free models without :free, append :free
+    let modelToUse = typeof modelOrRequest === "string" ? modelOrRequest : (requestOrKey?.model || keyOrModelId || "");
+    if (typeof requestOrKey === "string" && keyOrModelId && !modelOrRequest) {
+      modelToUse = keyOrModelId;
+    }
+    if (modelToUse && !modelToUse.endsWith(":free")) {
+      const match = this.defaultModels.find(
+        (m) => m.id === `${modelToUse}:free` || m.id.replace(/:free$/, "") === modelToUse
+      );
+      if (match) {
+        if (typeof modelOrRequest === "string") {
+          modelOrRequest = match.id;
+        } else if (typeof requestOrKey !== "string" && requestOrKey) {
+          requestOrKey.model = match.id;
+        } else if (typeof requestOrKey === "string") {
+          keyOrModelId = match.id;
+        }
+      }
+    }
+    return super.generate(requestOrKey, keyOrModelId, modelOrRequest, options);
   }
 }
