@@ -13,6 +13,9 @@ import type {
   TestResult,
 } from "../types.ts";
 
+export const FORMATAI_DIAGNOSTIC_PROMPT =
+  "Format the following mathematical expression into standard LaTeX notation: Var(X) = E[X^2] - (E[X])^2. Respond ONLY with the formatted math notation.";
+
 export interface OpenAICompatibleAdapterConfig {
   id: string;
   name: string;
@@ -410,13 +413,13 @@ export class OpenAICompatibleAdapter implements AIProviderAdapter {
 
     try {
       const res = await this.generate(
-        { prompt: "Respond with the single word 'OK'." },
+        { prompt: FORMATAI_DIAGNOSTIC_PROMPT },
         apiKey,
         effectiveModel,
         {
           timeoutMs: options?.timeoutMs || 15000,
           customEndpoint: endpoint,
-          maxTokens: 10,
+          maxTokens: 50,
         }
       );
 

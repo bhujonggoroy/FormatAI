@@ -13,6 +13,7 @@ import type {
   TestResult,
 } from "../types.ts";
 import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
+import { FORMATAI_DIAGNOSTIC_PROMPT } from "./OpenAICompatibleAdapter.ts";
 
 export class CohereAdapter implements AIProviderAdapter {
   readonly id = "cohere";
@@ -283,7 +284,7 @@ export class CohereAdapter implements AIProviderAdapter {
 
     try {
       const res = await this.generate(
-        { prompt: "Reply with the single word OK." },
+        { prompt: FORMATAI_DIAGNOSTIC_PROMPT },
         apiKey,
         effectiveModel,
         { timeoutMs: options?.timeoutMs || 15000, customEndpoint: endpoint }

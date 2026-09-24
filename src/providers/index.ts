@@ -23,6 +23,8 @@ import { CohereAdapter } from "../server/ai/adapters/CohereAdapter.ts";
 import { HuggingFaceAdapter } from "../server/ai/adapters/HuggingFaceAdapter.ts";
 import { CloudflareAdapter } from "../server/ai/adapters/CloudflareAdapter.ts";
 import { CustomAdapter } from "../server/ai/adapters/CustomAdapter.ts";
+import { OpenAIAdapter } from "../server/ai/adapters/OpenAIAdapter.ts";
+import { AnthropicAdapter } from "../server/ai/adapters/AnthropicAdapter.ts";
 import { OpenAICompatibleAdapter } from "../server/ai/adapters/OpenAICompatibleAdapter.ts";
 
 export interface ProviderRegistry {
@@ -46,6 +48,8 @@ class CentralProviderRegistry implements ProviderRegistry {
   private registerDefaults() {
     const defaultAdapters: AIProviderAdapter[] = [
       new GeminiAdapter(),
+      new OpenAIAdapter(),
+      new AnthropicAdapter(),
       new GroqAdapter(),
       new OpenRouterAdapter(),
       new MistralAdapter(),
@@ -58,6 +62,9 @@ class CentralProviderRegistry implements ProviderRegistry {
     for (const adapter of defaultAdapters) {
       this.register(adapter);
     }
+    // Also register 'anthropic' as alias for 'claude'
+    const anthropicAdapter = new AnthropicAdapter();
+    this.adapters.set("anthropic", anthropicAdapter);
   }
 
   public register(adapter: AIProviderAdapter): void {

@@ -67,6 +67,7 @@ import { GetFreeApiKeyModal } from "./GetFreeApiKeyModal";
 import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
 import { StatusSignalGuide } from "./StatusSignalGuide";
 import { classifyAuditLogEntry } from "../utils/aiStatusClassifier";
+import { UniversalModelTesterPanel } from "./UniversalModelTesterPanel";
 
 interface AISettingsModalProps {
   isOpen: boolean;
@@ -1562,6 +1563,31 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                               )}
                             </div>
                           </div>
+
+                          {/* Universal Model Tester & Discovery Engine */}
+                          <UniversalModelTesterPanel
+                            providerId={p.id}
+                            providerName={p.name}
+                            apiKey={(() => {
+                              const userProvs = getUserProviders();
+                              const up = userProvs.find((u) => u.id === p.id);
+                              return (
+                                up?.apiKeys?.find((k) => k.enabled && k.key)?.key ||
+                                up?.apiKeys?.[0]?.key ||
+                                ""
+                              );
+                            })()}
+                            customEndpoint={p.customEndpoint}
+                            accountId={p.accountId}
+                            selectedModelId={p.selectedModel}
+                            onSelectModel={(newModelId) => {
+                              handleUpdateProvider(p.id, { selectedModel: newModelId });
+                              if (config?.activeProviderId === p.id) {
+                                handleUpdateConfig({ activeModel: newModelId });
+                              }
+                              showStatus(`Selected ${newModelId} for ${p.name}`);
+                            }}
+                          />
                         </div>
                       </div>
                     );

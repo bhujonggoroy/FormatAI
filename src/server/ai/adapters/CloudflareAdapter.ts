@@ -13,6 +13,7 @@ import type {
   TestResult,
 } from "../types.ts";
 import { CENTRAL_CATALOG } from "../../../shared/centralModelCatalog.ts";
+import { FORMATAI_DIAGNOSTIC_PROMPT } from "./OpenAICompatibleAdapter.ts";
 
 export const CLOUDFLARE_DEFAULT_MODELS: ModelInfo[] = CENTRAL_CATALOG.cloudflare;
 
@@ -267,8 +268,8 @@ export class CloudflareAdapter implements AIProviderAdapter {
     try {
       const result = await this.generate(
         {
-          prompt: "Respond with the single word 'OK'.",
-          maxTokens: 10,
+          prompt: FORMATAI_DIAGNOSTIC_PROMPT,
+          maxTokens: 50,
           temperature: 0.1,
         },
         apiKey,

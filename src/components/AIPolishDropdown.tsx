@@ -27,6 +27,7 @@ import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
 import { isModelSelectable } from "../shared/centralModelCatalog";
 import { getActiveModels } from "../config/modelRegistry";
+import { getCachedModelTestReport } from "../services/UniversalModelTester";
 
 export type AISignalType =
   | "available"     // 🟢 Available & Ready (green)
@@ -602,29 +603,38 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                     </div>
                   );
                 }
-                return selectableModels.map((m) => (
-                  <div
-                    key={m.id}
-                    onClick={() => handleSelectModel(m.id)}
-                    className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors ${
-                      (selectedModelId || selectedProvider.selectedModel) === m.id
-                        ? "bg-blue-600 text-white shadow-2xs"
-                        : "bg-white hover:bg-slate-100 text-slate-800 border border-slate-200"
-                    }`}
-                  >
-                    <div className="truncate">
-                      <span>{m.name}</span>
-                      {m.free && (
-                        <span className="ml-1 text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold" title={m.freeTier || "Free tier — subject to provider limits"}>
-                          Free tier
-                        </span>
+                const testReport = getCachedModelTestReport(selectedProvider.id);
+                return selectableModels.map((m) => {
+                  const isReady = testReport?.readyModels?.some((r) => r.id === m.id);
+                  return (
+                    <div
+                      key={m.id}
+                      onClick={() => handleSelectModel(m.id)}
+                      className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors ${
+                        (selectedModelId || selectedProvider.selectedModel) === m.id
+                          ? "bg-blue-600 text-white shadow-2xs"
+                          : "bg-white hover:bg-slate-100 text-slate-800 border border-slate-200"
+                      }`}
+                    >
+                      <div className="truncate flex items-center gap-1">
+                        <span>{m.name}</span>
+                        {isReady && (
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-600 text-white font-bold">
+                            ✓ Ready
+                          </span>
+                        )}
+                        {m.free && !isReady && (
+                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold" title={m.freeTier || "Free tier — subject to provider limits"}>
+                            Free tier
+                          </span>
+                        )}
+                      </div>
+                      {(selectedModelId || selectedProvider.selectedModel) === m.id && (
+                        <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />
                       )}
                     </div>
-                    {(selectedModelId || selectedProvider.selectedModel) === m.id && (
-                      <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />
-                    )}
-                  </div>
-                ));
+                  );
+                });
               })()}
             </div>
           ) : (

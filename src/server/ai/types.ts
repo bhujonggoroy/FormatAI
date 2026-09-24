@@ -3,6 +3,7 @@ export type AIErrorCode =
   | "MODEL_UNAVAILABLE"
   | "RATE_LIMIT"
   | "QUOTA_EXCEEDED"
+  | "BILLING_REQUIRED"
   | "BAD_REQUEST"
   | "UNAUTHORIZED"
   | "FORBIDDEN"
@@ -15,6 +16,7 @@ export type AIErrorKind =
   | "invalid_key"          // HTTP 401
   | "permission_denied"    // HTTP 403
   | "rate_limit"           // HTTP 429 / Quota exceeded
+  | "billing_required"     // HTTP 402 / Billing required
   | "timeout"              // HTTP 408 / Timeout
   | "server_error"         // HTTP 500, 502, 503
   | "token_limit"          // Context / token limit exceeded
