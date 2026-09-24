@@ -44,7 +44,7 @@ async function runTests() {
   // Test 4: Dynamic model catalog endpoint returns models for providers
   const modelsRes = await manager.fetchProviderModels("gemini");
   assert(modelsRes.success && modelsRes.models.length > 0, "Test 4: fetchProviderModels returns catalog for gemini");
-  assert(modelsRes.models.some((m) => m.id === "gemini-2.5-flash"), "Test 4: Gemini model list contains gemini-2.5-flash");
+  assert(modelsRes.models.some((m) => m.id === "gemini-3.8-flash"), "Test 4: Gemini model list contains gemini-3.8-flash");
 
   // Test 5: Self-healing migration updates obsolete/stale model IDs
   const staleProviders: UserProviderConfig[] = [
@@ -53,10 +53,10 @@ async function runTests() {
       name: "Google Gemini",
       enabled: true,
       priority: 1,
-      selectedModel: "gemini-3.6-flash", // Obsolete model ID
+      selectedModel: "gemini-1.5-flash", // Obsolete model ID
       availableModels: [
-        { id: "gemini-2.5-flash", name: "Gemini 2.5 Flash", isFree: true, contextWindow: 1048576, capabilities: ["text", "math"] },
-        { id: "gemini-2.5-pro", name: "Gemini 2.5 Pro", isFree: false, contextWindow: 2097152, capabilities: ["text", "math"] },
+        { id: "gemini-3.8-flash", name: "Gemini 3.8 Flash", isFree: true, contextWindow: 1048576, capabilities: ["text", "math"] },
+        { id: "gemini-3.1-pro-preview", name: "Gemini 3.1 Pro Preview", isFree: false, contextWindow: 2097152, capabilities: ["text", "math"] },
       ],
       apiKeys: [
         { id: "k1", name: "Key 1", key: "AIzaSyTestKey12345", maskedKey: "AIza************2345", enabled: false }, // OFF Key
@@ -69,7 +69,7 @@ async function runTests() {
   ];
 
   const healed = healAndNormalizeProviders(staleProviders);
-  assert(healed[0].selectedModel === "gemini-2.5-flash", "Test 5: Stale gemini-3.6-flash is self-healed to active gemini-2.5-flash");
+  assert(healed[0].selectedModel === "gemini-3.8-flash", "Test 5: Stale gemini-1.5-flash is self-healed to active gemini-3.8-flash");
   assert(healed[0].apiKeys[0].maskedKey.includes("************"), "Test 5: Healed keys receive safe masked keys");
 
   // Test 6: Normal generation strictly skips keys where enabled === false

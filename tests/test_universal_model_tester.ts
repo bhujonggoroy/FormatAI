@@ -21,7 +21,7 @@ async function runTests() {
   // Test 1: Categorize failure properly for 429 Quota Exceeded
   const quotaFail = categorizeFailure(
     { errorCode: "RATE_LIMIT", errorKind: "rate_limit", errorMessage: "429 Quota Exceeded" },
-    "gemini-2.5-flash"
+    "gemini-3.8-flash"
   );
   assert(quotaFail.category === "quota_exceeded", "Categorizes 429 as quota_exceeded");
   assert(quotaFail.reason.includes("Quota Exceeded"), "Reason includes Quota Exceeded");
@@ -36,9 +36,9 @@ async function runTests() {
   // Test 3: Categorize failure for Deprecated models
   const depFail = categorizeFailure(
     { errorCode: "MODEL_UNAVAILABLE", errorMessage: "deprecated" },
-    "gemini-3.8-flash"
+    "gemini-1.5-flash"
   );
-  assert(depFail.category === "deprecated", "Categorizes legacy gemini-3.8-flash as deprecated");
+  assert(depFail.category === "deprecated", "Categorizes legacy gemini-1.5-flash as deprecated");
 
   // Test 4: Categorize failure for Billing Required
   const billFail = categorizeFailure(
@@ -47,13 +47,13 @@ async function runTests() {
   );
   assert(billFail.category === "billing_required", "Categorizes billing errors as billing_required");
 
-  // Test 5: Verify Active Models for Gemini has gemini-2.5-flash as primary
+  // Test 5: Verify Active Models for Gemini has gemini-3.8-flash as primary
   const geminiModels = getActiveModels("gemini");
   assert(geminiModels.length > 0, "Gemini has active models");
-  assert(geminiModels[0].id === "gemini-2.5-flash", "Gemini primary active model is gemini-2.5-flash");
+  assert(geminiModels[0].id === "gemini-3.8-flash", "Gemini primary active model is gemini-3.8-flash");
   assert(
-    !geminiModels.some((m) => m.id === "gemini-3.8-flash"),
-    "Legacy gemini-3.8-flash is not in active models list"
+    !geminiModels.some((m) => m.id === "gemini-1.5-flash"),
+    "Legacy gemini-1.5-flash is not in active models list"
   );
 
   // Test 6: Verify Groq active models
@@ -113,8 +113,8 @@ async function runTests() {
     apiKeyMasked: "AIza...1234",
     readyModels: [
       {
-        id: "gemini-2.5-flash",
-        name: "Gemini 2.5 Flash",
+        id: "gemini-3.8-flash",
+        name: "Gemini 3.8 Flash",
         provider: "gemini",
         isReady: true,
         status: "ready",
@@ -127,8 +127,8 @@ async function runTests() {
     ],
     notReadyModels: [
       {
-        id: "gemini-3.8-flash",
-        name: "Gemini 3.8 Flash",
+        id: "gemini-1.5-flash",
+        name: "Gemini 1.5 Flash",
         provider: "gemini",
         isReady: false,
         status: "not_ready",
