@@ -93,6 +93,9 @@ export default function App() {
   const [skillsModalTab, setSkillsModalTab] = useState<SkillsModalTab>("skills");
   const [activeSkillsCount, setActiveSkillsCount] = useState<number>(() => skillRegistry.getEnabledSkillIds().length);
 
+  // Active in-flight AI Polish request sequence ID to eliminate race conditions
+  const activePolishRequestIdRef = useRef<number>(0);
+
   // PWA In-App Installation hook (Vanilla JS direct install system)
   const { hasNativePrompt, isInstalled, directInstall } = usePWAInstallPrompt();
 
@@ -292,6 +295,7 @@ export default function App() {
       return;
     }
 
+    activePolishRequestIdRef.current++;
     setIsConverting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -373,6 +377,7 @@ export default function App() {
     // Capture the current verified FormatAI Result before firing AI Polish
     const prePolishFormatAiResult = effectiveMarkdown;
     const reqStartTime = Date.now();
+    const reqId = ++activePolishRequestIdRef.current;
 
     try {
       const userConfig = getUserSettings();
@@ -396,6 +401,12 @@ export default function App() {
 
       const latencyMs = Math.max(1, Date.now() - reqStartTime);
       const data = await res.json();
+
+      // Guard against race condition: if user initiated a newer request or edited input in flight, discard stale response
+      if (reqId !== activePolishRequestIdRef.current) {
+        console.log("Discarding stale AI Polish response from superseded request.");
+        return;
+      }
       if (!res.ok) {
         // Record Telemetry Metric & Audit Log for failure
         recordProviderMetric(
@@ -558,6 +569,18 @@ export default function App() {
       }
 
       // ── VALIDATION PASSED ───────────────────────────────────────────────────────
+      // Requirement 2: Empty/null/partial output must NEVER overwrite existing content
+      if (!data.cleaned_markdown || typeof data.cleaned_markdown !== "string" || !data.cleaned_markdown.trim()) {
+        console.warn("Rejecting empty/null output to prevent overwriting existing content.");
+        setCleanedMarkdown(null);
+        return;
+      }
+      if (prePolishFormatAiResult && data.cleaned_markdown.trim().length < prePolishFormatAiResult.length * 0.7) {
+        console.warn("Rejecting partial/severely truncated output to prevent overwriting existing content.");
+        setCleanedMarkdown(null);
+        return;
+      }
+
       setValidationAlert(null);
       setCleanedMarkdown(data.cleaned_markdown);
 
@@ -1053,6 +1076,7 @@ export default function App() {
                 value={inputText}
                 onChange={(e) => {
                   const val = e.target.value;
+                  activePolishRequestIdRef.current++;
                   setInputText(val);
                   setDocTitle(getDisplayTitleFromContent(val));
                   if (cleanedMarkdown) setCleanedMarkdown(null);
@@ -1075,7 +1099,7 @@ export default function App() {
             </div>
 
             {/* Right Pane: Live Document Sheet */}
-            <div className="h-[520px] sm:h-[620px] lg:h-[680px] lg:sticky lg:top-[108px]">
+            <div className="h-[520px] sm:h-[620px] lg:h-[calc(100vh-140px)] min-h-[580px] max-h-[960px] lg:sticky lg:top-[108px] flex flex-col">
               <FormattedPreview
                 markdown={effectiveMarkdown}
                 docTitle={docTitle}

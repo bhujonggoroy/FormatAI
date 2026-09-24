@@ -19,6 +19,12 @@
  * Preview remains unchanged
  */
 
+import {
+  parseDocumentBlocks,
+  compareDocumentBlocks,
+  type BlockComparisonResult,
+} from "./blockIntegrity.ts";
+
 export interface ValidationDetail {
   check: string;
   passed: boolean;
@@ -31,6 +37,7 @@ export interface AIPolishValidationResult {
   errors: string[];
   warnings: string[];
   discardReason?: string;
+  blockComparison?: BlockComparisonResult;
   details: {
     nonEmpty: boolean;
     notSeverelyTruncated: boolean;
@@ -44,6 +51,8 @@ export interface AIPolishValidationResult {
     essentialMathPreserved: boolean;
     headingsPreserved: boolean;
     tablesPreserved: boolean;
+    blocksPreserved?: boolean;
+    charCountTolerancePassed?: boolean;
   };
 }
 
@@ -75,6 +84,8 @@ export function validateAIPolishOutput(
     essentialMathPreserved: true,
     headingsPreserved: true,
     tablesPreserved: true,
+    blocksPreserved: true,
+    charCountTolerancePassed: true,
   };
 
   // 1. Non-empty check
@@ -304,6 +315,32 @@ export function validateAIPolishOutput(
     }
   }
 
+  // 12. Block-level Integrity & ±2% Character Count Tolerance Check (Audit Requirements 3, 4, 5)
+  const sourceRefText = baselineText || inputText;
+  let blockComparison: BlockComparisonResult | undefined;
+
+  if (sourceRefText) {
+    const origBlocks = parseDocumentBlocks(sourceRefText);
+    const formBlocks = parseDocumentBlocks(outputText);
+    blockComparison = compareDocumentBlocks(origBlocks, formBlocks, 2.0);
+
+    details.blocksPreserved = blockComparison.missingBlocks.length === 0;
+    details.charCountTolerancePassed = blockComparison.tolerancePassed;
+
+    if (blockComparison.missingBlocks.length > 0) {
+      const missingCount = blockComparison.missingBlocks.length;
+      errors.push(
+        `Block integrity failure: ${missingCount} content block(s) dropped during formatting (${blockComparison.flags[0] || "missing content"}).`
+      );
+    }
+
+    if (!blockComparison.tolerancePassed) {
+      errors.push(
+        `Content preservation failure: Substantive character count drop exceeds ±2% tolerance (Original: ${blockComparison.originalSubstantiveChars}, Formatted: ${blockComparison.formattedSubstantiveChars}, Change: ${blockComparison.charCountDifferencePercent.toFixed(1)}%).`
+      );
+    }
+  }
+
   // Compute validation score
   const totalChecks = Object.keys(details).length;
   const passedChecks = Object.values(details).filter(Boolean).length;
@@ -323,6 +360,7 @@ export function validateAIPolishOutput(
     errors,
     warnings,
     discardReason,
+    blockComparison,
     details,
   };
 }

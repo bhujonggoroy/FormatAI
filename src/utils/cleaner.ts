@@ -630,7 +630,8 @@ export function cleanClientSideNotebookLM(
       processed.push("P(|\\hat{p} - P| < 0.05)");
       processed.push("$$");
       processed.push("");
-      break; // End reached cleanly!
+      i++;
+      continue;
     }
 
     // General math & typography normalization for any other line
@@ -638,7 +639,13 @@ export function cleanClientSideNotebookLM(
     i++;
   }
 
-  return processed.join("\n");
+  const finalOutput = processed.join("\n");
+  // Requirement 2: Empty/null/partial output never overwrites existing content
+  if (!finalOutput || !finalOutput.trim()) {
+    return text;
+  }
+
+  return finalOutput;
 }
 
 function extractBalancedBraceCleaner(str: string, startIndex: number): { content: string; endIndex: number } | null {

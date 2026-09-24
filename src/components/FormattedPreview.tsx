@@ -175,44 +175,45 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     );
   };
 
-  function renderInline(text: string) {
+  function renderInline(text: string, prefix = "inl") {
     // Splits by display math ($$...$$ or \[...\]), inline math ($...$ or \(...\)), bold (**...**), italic (*...*), and inline code (`...`)
     const parts = text.split(/(\$\$[\s\S]+?\$\$|(?:\\)+\[[^\n]+?(?:\\)+\]|\$[^$\n]+\$|(?:\\)+\([^\n]+?(?:\\)+\)|\*\*[^*]+\*\*|\*[^*]+\*|`[^`]+`)/g);
 
     return parts.map((part, i) => {
       if (!part) return null;
+      const key = `${prefix}-${i}`;
 
       // Inline LaTeX math: $...$
       if (part.startsWith("$") && part.endsWith("$") && part.length >= 3 && !part.startsWith("$$")) {
         const mathContent = part.slice(1, -1);
-        return <MathComponent key={i} math={mathContent} display={false} />;
+        return <MathComponent key={key} math={mathContent} display={false} />;
       }
 
       // Inline LaTeX math: \(...\) or \\(...\\)
       const inlineParenMatch = part.match(/^(?:\\)+\(\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\)$/);
       if (inlineParenMatch) {
         const mathContent = inlineParenMatch[1].trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
-        return <MathComponent key={i} math={mathContent} display={false} />;
+        return <MathComponent key={key} math={mathContent} display={false} />;
       }
 
       // Display LaTeX math if embedded: $$...$$
       if (part.startsWith("$$") && part.endsWith("$$") && part.length >= 4) {
         const mathContent = part.slice(2, -2).trim();
-        return <MathComponent key={i} math={mathContent} display={true} />;
+        return <MathComponent key={key} math={mathContent} display={true} />;
       }
 
       // Display bracket LaTeX math if embedded inline: \[...\]
       const inlineBracketMatch = part.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:(?:\\)+(?:quad|qquad|,|;|!|\s|newline)\s*)*(?:\\)+\]$/);
       if (inlineBracketMatch) {
         const mathContent = inlineBracketMatch[1].trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
-        return <MathComponent key={i} math={mathContent} display={true} />;
+        return <MathComponent key={key} math={mathContent} display={true} />;
       }
 
       // Bold: **...**
       if (part.startsWith("**") && part.endsWith("**") && part.length >= 4) {
         return (
-          <strong key={i} className="font-bold text-slate-900">
-            {renderInline(part.slice(2, -2))}
+          <strong key={key} className="font-bold text-slate-900">
+            {renderInline(part.slice(2, -2), `${key}-b`)}
           </strong>
         );
       }
@@ -220,8 +221,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       // Italic: *...*
       if (part.startsWith("*") && part.endsWith("*") && part.length >= 2) {
         return (
-          <em key={i} className="italic text-slate-800">
-            {renderInline(part.slice(1, -1))}
+          <em key={key} className="italic text-slate-800">
+            {renderInline(part.slice(1, -1), `${key}-i`)}
           </em>
         );
       }
@@ -230,7 +231,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       if (part.startsWith("`") && part.endsWith("`") && part.length >= 2) {
         return (
           <code
-            key={i}
+            key={key}
             className="px-1.5 py-0.5 rounded bg-slate-100 font-mono text-xs text-rose-700 border border-slate-200"
           >
             {part.slice(1, -1)}
@@ -238,25 +239,26 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         );
       }
 
-      return <span key={i}>{part}</span>;
+      return <span key={key}>{part}</span>;
     });
   }
 
-  // Parse lines into structured elements including tables, math blocks, headings, lists
-  const lines = markdown.split("\n");
+  // Parse lines into structured elements with useMemo to prevent re-parsing on scroll/zoom
+  const renderedElements = useMemo(() => {
+    let seq = 0;
+    const lines = markdown.split("\n");
+    const renderedElements: React.ReactNode[] = [];
+    let i = 0;
 
-  const renderedElements: React.ReactNode[] = [];
-  let i = 0;
+    while (i < lines.length) {
+      const rawLine = lines[i];
+      const trimmed = rawLine.trim();
 
-  while (i < lines.length) {
-    const rawLine = lines[i];
-    const trimmed = rawLine.trim();
-
-    if (!trimmed) {
-      renderedElements.push(<div key={`empty-${i}`} className="h-2.5" />);
-      i++;
-      continue;
-    }
+      if (!trimmed) {
+        renderedElements.push(<div key={`sp-${seq++}-${i}`} className="h-2.5" />);
+        i++;
+        continue;
+      }
 
     // Display equation block: $$...$$ (single or multi-line)
     if (trimmed.startsWith("$$")) {
@@ -744,20 +746,44 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       continue;
     }
 
-    // Code block marker
+    // Fenced Code block
     if (trimmed.startsWith("```")) {
+      const codeLines: string[] = [];
       i++;
+      while (i < lines.length && !lines[i].trim().startsWith("```")) {
+        codeLines.push(lines[i]);
+        i++;
+      }
+      if (i < lines.length && lines[i].trim().startsWith("```")) {
+        i++;
+      }
+      renderedElements.push(
+        <pre
+          key={`code-${seq++}-${i}`}
+          className="my-3 p-3.5 bg-slate-900 text-slate-100 rounded-lg font-mono text-xs overflow-x-auto select-text shadow-2xs leading-relaxed"
+          style={{ contentVisibility: "auto", containIntrinsicSize: "0 60px" }}
+        >
+          <code>{codeLines.join("\n")}</code>
+        </pre>
+      );
       continue;
     }
 
-    // Standard paragraph
+    // Standard paragraph with virtualization support for 100+ paragraphs
     renderedElements.push(
-      <p key={`p-${i}`} className="text-sm text-slate-800 my-2 leading-relaxed">
-        {renderInline(trimmed)}
+      <p
+        key={`p-${seq++}-${i}`}
+        className="text-sm text-slate-800 my-2 leading-relaxed"
+        style={{ contentVisibility: "auto", containIntrinsicSize: "0 28px" }}
+      >
+        {renderInline(trimmed, `p-${i}`)}
       </p>
     );
     i++;
   }
+
+  return renderedElements;
+}, [markdown, fontFamily, accentColor, equationFormat]);
 
   const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
   const mathFormulaCount = (markdown.match(/\$[^$]+\$/g) || []).length;
@@ -998,10 +1024,10 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           <div
             id="academic-document-sheet"
             data-testid="preview-document-sheet"
-            className="academic-paper-sheet w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-300/80 p-4 sm:p-8 md:p-12 text-slate-800 relative transition-transform duration-150 origin-top overflow-x-hidden"
+            className="academic-paper-sheet w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-300/80 p-4 sm:p-8 md:p-12 text-slate-800 relative transition-transform duration-150 origin-top overflow-x-auto"
             style={{
               fontFamily: getCssFontFamily(fontFamily),
-              transform: zoomLevel !== 100 ? `scale(${zoomLevel / 100})` : undefined,
+              zoom: zoomLevel !== 100 ? `${zoomLevel}%` : undefined,
             }}
           >
             {/* Word Document Running Header */}
