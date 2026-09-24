@@ -139,7 +139,21 @@ export function cleanClientSideNotebookLM(
   }
   if (buffer) mergedLines.push(buffer);
 
-  // 3. Process lines and systematically recognize Document Title, Sections, Tables, Formulas
+  // 3. Detect if Exam Bank mode or Question Paper content
+  const isExamBankDoc =
+    formatMode === "exam_bank" ||
+    (formatMode === "auto" &&
+      !/^STT251 Sampling Distributions/i.test(s) &&
+      /(?:Question\s*\d+|Q\d+\.|\b20\d\d\s*(?:Final|Midterm|Exam)|\[\d+\s*Marks\]|Repeated\s*(?:question|in)|Side\s*note)/i.test(
+        s
+      ));
+
+  if (isExamBankDoc) {
+    const examBankResult = formatAcademicExamBankDocument(mergedLines);
+    return normalizeMatrixSyntax(examBankResult.join("\n"));
+  }
+
+  // 4. Process lines and systematically recognize Document Title, Sections, Tables, Formulas
   const processed: string[] = [];
   let i = 0;
 
@@ -747,6 +761,20 @@ function normalizeLineMath(line: string): string {
   // 8. Common statistical square variables: S^2, s^2
   s = s.replace(/\b([Ss])\^2\b/g, (m) => putPh(`$${m}$`));
 
+  // 9. Standard operators: \operatorname{rank}(A), \operatorname{Var}(X), \operatorname{Cov}(X, Y)
+  s = s.replace(/\b(?:\\operatorname\{rank\}|\\text\{rank\}|rank)\s*\(([A-Za-z0-9_]+)\)/g, (_, arg) =>
+    putPh(`$\\operatorname{rank}(${arg})$`)
+  );
+  s = s.replace(/\b(?:\\operatorname\{Var\}|\\text\{Var\}|Var)\s*\(([A-Za-z0-9_\\^]+)\)/g, (_, arg) =>
+    putPh(`$\\operatorname{Var}(${arg})$`)
+  );
+  s = s.replace(/\b(?:\\operatorname\{Cov\}|\\text\{Cov\}|Cov)\s*\(([^)]+)\)/g, (_, arg) =>
+    putPh(`$\\operatorname{Cov}(${arg})$`)
+  );
+
+  // 10. Chi-square distribution: \chi^2_r
+  s = s.replace(/\\chi\^2(?!\s*[_0-9{])/g, putPh(`$\\chi^2_r$`));
+
   // Restore all protected math placeholders
   s = s.replace(/__MATH_PH_(\d+)__/g, (_, id) => mathPlaceholders[parseInt(id, 10)] || "");
 
@@ -754,4 +782,170 @@ function normalizeLineMath(line: string): string {
   s = s.replace(/\s+([,.;:?)\]])/g, "$1");
 
   return s;
+}
+
+/**
+ * Normalizes matrix syntax to publication standard LaTeX \begin{bmatrix} ... \end{bmatrix}.
+ * Converts raw array notations, pmatrix/vmatrix, and ensures valid row breaks (\\) and separators (&).
+ */
+export function normalizeMatrixSyntax(text: string): string {
+  if (!text) return "";
+  let s = text;
+
+  // 1. Standardize matrix environments to bmatrix: \begin{matrix}, \begin{pmatrix}, \begin{vmatrix} -> \begin{bmatrix}
+  s = s.replace(
+    /\\begin\{(?:matrix|pmatrix|vmatrix|smallmatrix)\}([\s\S]*?)\\end\{(?:matrix|pmatrix|vmatrix|smallmatrix)\}/g,
+    (_, content) => {
+      const cleaned = content
+        .trim()
+        .replace(/;+/g, " \\\\ ")
+        .replace(/\\\\\s*\\\\/g, "\\\\");
+      return `\\begin{bmatrix}\n${cleaned}\n\\end{bmatrix}`;
+    }
+  );
+
+  // 2. Detect bracketed matrix notation e.g. A = [1 2; 3 4] or [1, 2; 3, 4]
+  s = s.replace(
+    /(\b[A-Za-z]\s*=\s*)?\[\s*([0-9a-zA-Z\\_+\-*^.\s,]+;[0-9a-zA-Z\\_+\-*^.\s,;]+)\s*\]/g,
+    (match, prefix, inner) => {
+      const rows = inner.split(";").map((r: string) => {
+        const trimmed = r.trim();
+        const elements = trimmed.includes(",")
+          ? trimmed.split(",").map((e: string) => e.trim())
+          : trimmed.split(/\s+/).filter(Boolean);
+        return elements.join(" & ");
+      });
+      const bmatrix = `\\begin{bmatrix}\n${rows.join(" \\\\\n")}\n\\end{bmatrix}`;
+      return prefix ? `${prefix}${bmatrix}` : bmatrix;
+    }
+  );
+
+  return s;
+}
+
+/**
+ * Formats an academic question bank or examination paper according to the 10-step Academic Workflow:
+ * 1. Input Document
+ * 2. Content Preservation
+ * 3. Year-wise Classification
+ * 4. Exam-wise Classification
+ * 5. Section and Question Formatting
+ * 6. LaTeX Detection and Correction
+ * 7. Table and Matrix Formatting (\begin{bmatrix} ... \end{bmatrix})
+ * 8. Side-note Standardization (preserving repeated-question notes)
+ * 9. Final Quality Check
+ * 10. Editable Standard Output
+ */
+export function formatAcademicExamBankDocument(lines: string[]): string[] {
+  const processed: string[] = [];
+  let i = 0;
+
+  while (i < lines.length) {
+    const rawLine = lines[i];
+    const line = rawLine.trim();
+
+    if (!line) {
+      processed.push("");
+      i++;
+      continue;
+    }
+
+    // Preserve existing display equations
+    if (line.startsWith("$$") || line.startsWith("\\[")) {
+      const closeDelim = line.startsWith("\\[") ? "\\]" : "$$";
+      if (line.length >= 4 && line.endsWith(closeDelim)) {
+        processed.push(normalizeMatrixSyntax(line));
+        i++;
+        continue;
+      }
+      const mathLines: string[] = [line];
+      i++;
+      while (i < lines.length) {
+        const cur = lines[i];
+        mathLines.push(cur);
+        if (cur.trim().endsWith(closeDelim)) {
+          i++;
+          break;
+        }
+        i++;
+      }
+      processed.push(normalizeMatrixSyntax(mathLines.join("\n")));
+      continue;
+    }
+
+    // 1. Course Header / Main Document Title: # Course Code: Course Name
+    if (i <= 3 && /^([A-Z]{2,6}\s*\d{2,4})\s*(.*?):?\s*(.+)?$/i.test(line) && !line.toLowerCase().includes("question")) {
+      const match = line.match(/^([A-Z]{2,6}\s*\d{2,4})\s*(.*?):?\s*(.+)?$/i);
+      if (match) {
+        const coursePart = `${match[1].trim()}${match[2] ? ": " + match[2].trim() : ""}`;
+        processed.push(`# ${coursePart}`);
+        if (match[3] && match[3].trim()) {
+          processed.push(`## ${match[3].trim()}`);
+        }
+        processed.push("");
+        i++;
+        continue;
+      }
+    }
+
+    // 2. Year-wise and Exam-wise classification:
+    // e.g. "2025 Final Examination", "Examination Year: 2024", "2018 Midterm"
+    const examYearMatch = line.match(/^(?:##\s*)?(?:Examination\s*Year\s*:?\s*|Year\s*:?\s*)?(\d{4})\s*[-–:]?\s*(Final|Midterm|In-course|Annual|Comprehensive)?\s*(?:Exam(?:ination)?)?/i);
+    if (examYearMatch && (examYearMatch[1] || examYearMatch[2]) && !line.toLowerCase().includes("question") && line.length < 80) {
+      const year = examYearMatch[1] || "";
+      const term = examYearMatch[2] ? `${examYearMatch[2]} ` : "";
+      processed.push(`## ${year} ${term}Examination`.trim());
+      processed.push("");
+      i++;
+      continue;
+    }
+
+    // 3. Section and Part classification:
+    // e.g. "Section A: Descriptive Statistics", "Part I"
+    const secMatch = line.match(/^(?:###\s*)?(?:Section|Part)\s+([A-Z0-9]+)\s*[:\-–]?\s*(.*)$/i);
+    if (secMatch && line.length < 90) {
+      const secTitle = secMatch[2] ? `: ${secMatch[2].trim()}` : "";
+      processed.push(`### Section ${secMatch[1]}${secTitle}`);
+      processed.push("");
+      i++;
+      continue;
+    }
+
+    // 4. Question headers:
+    // e.g. "Question 1.", "Q1.", "1. (a)..."
+    const qMatch = line.match(/^(?:###\s*|####\s*)?(?:Question|Q)\s*(\d+)[\.\:]?\s*(.*)$/i);
+    if (qMatch) {
+      processed.push(`### Question ${qMatch[1]}`);
+      processed.push("");
+      if (qMatch[2] && qMatch[2].trim()) {
+        processed.push(normalizeLineMath(normalizeMatrixSyntax(qMatch[2].trim())));
+      }
+      i++;
+      continue;
+    }
+
+    // 5. Sub-question labels: (a), a., (i), i.
+    let formattedLine = line;
+    formattedLine = formattedLine.replace(/(?:^|\s)\(?([a-hA-H])\)\s+/g, "\n\n**($1)** ");
+    formattedLine = formattedLine.replace(/(?:^|\s)\(?([ivxIVX]+)\)\s+/g, "\n\n**($1)** ");
+
+    // 6. Marks formatting: [4 Marks], [2 + 3 = 5 Marks]
+    formattedLine = formattedLine.replace(/\((\d+(?:\s*\+\s*\d+)?)\s*(?:marks?|pts?)\)/gi, "[$1 Marks]");
+    formattedLine = formattedLine.replace(/\[(\d+(?:\s*\+\s*\d+)?)\s*(?:marks?|pts?)\]/gi, "[$1 Marks]");
+
+    // 7. Side-note & Repeated-question note standardization:
+    formattedLine = formattedLine.replace(/(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi, "**Repeated Question:** $1");
+    formattedLine = formattedLine.replace(/(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi, "**Side Note:** $1");
+
+    // 8. Matrix formatting:
+    formattedLine = normalizeMatrixSyntax(formattedLine);
+
+    // 9. LaTeX math correction:
+    formattedLine = normalizeLineMath(formattedLine);
+
+    processed.push(formattedLine);
+    i++;
+  }
+
+  return processed;
 }

@@ -30,12 +30,26 @@ import {
   getCombinedSkillPromptInstructions,
   executeSkillPipeline,
 } from "./src/skills/index.ts";
+import {
+  ACADEMIC_SYSTEM_WORKFLOW,
+  FORMATTING_ORDER_COMMANDS,
+  RECOMMENDED_ACADEMIC_SYSTEM_PROMPT,
+} from "./src/server/academicPrompt.ts";
 
 const PORT = 3000;
 
 export function createServerApp(): express.Express {
   const app = express();
   app.use(express.json({ limit: "10mb" }));
+
+  // Academic System Workflow and Recommended Prompt API
+  app.get("/api/academic-workflow", (req, res) => {
+    res.json({
+      workflow: ACADEMIC_SYSTEM_WORKFLOW,
+      commands: FORMATTING_ORDER_COMMANDS,
+      recommendedSystemPrompt: RECOMMENDED_ACADEMIC_SYSTEM_PROMPT,
+    });
+  });
 
   // PWA Manifest and Service Worker routes
   app.get("/manifest.json", (req, res) => {
@@ -280,28 +294,55 @@ export function createServerApp(): express.Express {
     discardReason?: string;
   }
 
-  const ACADEMIC_MATH_SYSTEM_INSTRUCTION = `You are an expert academic mathematical editor, LaTeX typesetter, and technical document formatter.
+  const ACADEMIC_MATH_SYSTEM_INSTRUCTION = `You are an academic document formatting assistant, expert mathematical editor, and LaTeX typesetter.
 
-Your task is to transform the user's raw academic notes, mathematical text, or broken equations into a clean, standard, publication-ready format.
+Correct formatting only. Do not solve, summarize, reinterpret, or modify the content of the questions.
 
-Follow these rules strictly:
+SYSTEM WORK FLOW:
+Input Document
+      ↓
+Content Preservation
+      ↓
+Year-wise Classification
+      ↓
+Exam-wise Classification
+      ↓
+Section and Question Formatting
+      ↓
+LaTeX Detection and Correction
+      ↓
+Table and Matrix Formatting
+      ↓
+Side-note Standardization
+      ↓
+Final Quality Check
+      ↓
+Editable Standard Output
 
-1. Preserve the original mathematical meaning, facts, formulas, examples, and section order unless the user explicitly asks for correction of content.
+Formatting Order or Commands:
+- Do not solve the questions.
+- Do not change the mathematical meaning.
+- Do not remove repeated-question notes.
+- Do not invent missing information.
+- Correct only formatting, grammar, notation, and LaTeX syntax.
+- Preserve the original marks and question numbering.
 
-2. Correct broken, incomplete, or invalid LaTeX code.
-
-3. Use standard LaTeX notation:
+Tasks & Rules:
+1. Preserve all original questions, marks, years, examinations, sections, and side notes.
+2. Arrange the content year-wise and examination-wise.
+3. Standardize headings, section names, question numbers, and sub-question labels.
+4. Correct LaTeX syntax without changing mathematical meaning.
+5. Standard LaTeX Notation:
    - Use \\(...\\) for inline mathematics.
    - Use \\[...\\] for displayed equations.
    - Use \\frac{}{} for fractions.
    - Use \\sqrt{} for square roots.
    - Use \\sum, \\prod, \\int, \\lim, \\infty, \\leq, \\geq, \\neq, \\approx, and \\sim correctly.
-   - Use \\operatorname{} for operators such as Var, Cov, rank, mode, and M.D.
+   - Use \\operatorname{} for operators such as \\operatorname{Var}, \\operatorname{Cov}, \\operatorname{rank}, \\operatorname{mode}, and \\operatorname{M.D.}
    - Use \\mathbb{} for standard number sets when necessary.
    - Use \\mathsf{} or \\mathrm{} only when mathematically appropriate.
    - Use \\text{} only for explanatory words inside equations.
-
-4. Standardize mathematical notation:
+6. Standardize Mathematical Notation:
    - Use \\(\\hat{p}\\) for the sample proportion.
    - Use \\(\\bar{X}\\) for the sample mean.
    - Use \\(S^2\\) for the sample variance.
@@ -311,46 +352,18 @@ Follow these rules strictly:
    - Use \\(\\operatorname{Var}\\), \\(\\operatorname{Cov}\\), and \\(\\operatorname{rank}\\).
    - Use \\(A^{\\mathsf T}\\) for the transpose of a matrix.
    - Use \\(\\overset{d}{\\longrightarrow}\\) for convergence in distribution.
-   - Use \\(\\sim\\) for “is distributed as” and \\(\\approx\\) for approximation.
+   - Use \\(\\chi^2_r\\) for Chi-square with degrees of freedom.
+   - Use \\(\\sim N(\\mu, \\sigma^2)\\) for normal distribution.
+   - Use \\(\\sum_{i=1}^{n}\\) for summation over sample size.
+7. Correct Matrix Syntax:
+   Use \\begin{bmatrix} ... \\end{bmatrix} for all matrices.
+   Ensure proper row breaks (\\\\) and element alignment (&).
+8. Standardize tables using Markdown table format.
+9. Preserve all side notes and repeat information (e.g. repeated-question notes: **Repeated Question:** ...).
+10. Do not create solutions or answer keys.
+11. Before final output, check numbering, LaTeX delimiters, matrix row breaks, brackets, and duplicated or missing questions.
+12. Return only the corrected, standard-formatted document directly.`;
 
-5. Repair incorrect or inconsistent notation without changing the intended result. For example:
-   - Replace a sample proportion written as p with \\(\\hat{p}\\) when the context clearly refers to a sample proportion.
-   - Replace informal expressions such as Var(X) with \\(\\operatorname{Var}(X)\\).
-   - Replace unclear summation notation with \\(\\sum_{i=1}^{n}\\).
-   - Add missing braces in LaTeX commands such as \\frac, \\sqrt, \\Gamma, and \\chi^2.
-
-6. Organize the output using:
-   - Numbered main sections.
-   - Numbered or titled subsections.
-   - Clear definitions and Markdown tables where appropriate.
-   - Displayed equations for important formulas.
-   - Bullet points for properties.
-   - Short explanatory paragraphs.
-
-7. Use Markdown headings:
-   - Main sections: # or ##.
-   - Subsections: ###.
-   - Do not use excessive heading levels.
-
-8. Make every important equation readable and properly spaced. Do not place long mathematical derivations in a single paragraph.
-
-9. Keep all equations mathematically aligned and visually consistent.
-
-10. If an equation is ambiguous, make the smallest reasonable correction and preserve the original intention. Do not invent new assumptions. If the ambiguity affects the result, mention it briefly after the corrected material.
-
-11. Do not provide unnecessary commentary about the editing process. Return the corrected and formatted academic content directly.
-
-12. When the user asks for “format only” or “correct the formats only”:
-   - Do not change the conceptual content.
-   - Do not add new theories or examples.
-   - Correct only grammar, formatting, notation, section structure, punctuation, and LaTeX.
-   - Preserve the original facts and formulas as much as possible.
-
-13. When the user asks for an explanation, provide a clear explanation after the formatted result.
-
-14. Match the user's language. If the source is English, keep the academic content in English. If the user asks in Bengali, explain the instructions or process in Bengali.
-
-15. Output only the final polished result unless the user asks for a comparison, explanation, or list of corrections.`;
 
   async function cleanNotesWithMultiProviderAI(
     rawText: string,

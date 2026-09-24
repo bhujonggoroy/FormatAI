@@ -30,6 +30,7 @@ import {
   getUserProviders,
   saveUserProviders,
   getUserPreferences,
+  saveUserPreferences,
   recordProviderMetric,
   recordAuditLogEntry,
 } from "./utils/userLocalStorage";
@@ -71,6 +72,13 @@ export default function App() {
   } | null>(null);
 
   const [cleanedMarkdown, setCleanedMarkdown] = useState<string | null>(null);
+  const [customPrompt, setCustomPrompt] = useState<string>(() => getUserPreferences().customPrompt || "");
+
+  const handleCustomPromptChange = (newPrompt: string) => {
+    setCustomPrompt(newPrompt);
+    saveUserPreferences({ customPrompt: newPrompt });
+  };
+
   const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">(() => {
     if (typeof window !== "undefined" && window.innerWidth >= 1024) {
       return "split";
@@ -354,7 +362,7 @@ export default function App() {
           equationFormat,
           formatMode,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
-          customPrompt: userPrefs.customPrompt,
+          customPrompt: customPrompt.trim() || userPrefs.customPrompt,
           aiConfig: userConfig,
           userProviders: userProvs,
         }),
@@ -678,7 +686,7 @@ export default function App() {
           formatMode,
           format,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
-          customPrompt: userPrefs.customPrompt,
+          customPrompt: customPrompt.trim() || userPrefs.customPrompt,
           aiConfig: userConfig,
           userProviders: userProvs,
         }),
@@ -722,7 +730,7 @@ export default function App() {
             equationFormat,
             formatMode,
             enabledSkillIds: skillRegistry.getEnabledSkillIds(),
-            customPrompt: userPrefs.customPrompt,
+            customPrompt: customPrompt.trim() || userPrefs.customPrompt,
             aiConfig: userConfig,
             userProviders: userProvs,
           }),
@@ -1283,6 +1291,8 @@ export default function App() {
         }}
         charCount={charCount}
         wordCount={wordCount}
+        customPrompt={customPrompt}
+        onCustomPromptChange={handleCustomPromptChange}
         isInstalled={isInstalled}
         hasNativePrompt={hasNativePrompt}
         onInstallApp={handleInstallApp}

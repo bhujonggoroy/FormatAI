@@ -506,5 +506,33 @@ $$
 when Z ~ N(0,1) and \\chi^2 ~ \\chi^2_\\nu are independent random variables.
 • Symmetry & Moments: Symmetric about 0 (all odd moments vanish). Mean = 0 (for \\nu > 1), Variance = \\frac{\\nu}{\\nu - 2} (for \\nu > 2).
 `
+  },
+  {
+    id: "academic-exam-bank-sample",
+    title: "6. University Exam Question Bank (Year-wise, Matrices & Notes)",
+    category: "Exam Question Bank",
+    text: `Course Code: MAT301: Linear Algebra and Multivariate Statistics
+Topic-wise All Questions Bank
+
+2025-Final Examination
+Section A: Matrix Operations and Linear Systems
+
+Q1. (a) Define the rank of a matrix A. State whether rank(A) = rank(A^T). [3 marks]
+(b) Given the coefficient matrix:
+A = [ 2  1  -1 ; -3  -1  2 ; -2  1  2 ]
+Find the determinant and compute the inverse matrix using row operations. [5 marks]
+Repeated question: Identical matrix structure appeared in 2018 Final Q1 with altered constant vector.
+
+Q2. (a) State the Central Limit Theorem. If X_i are i.i.d. with mean \\mu and variance \\sigma^2, show that \\bar{X} \\sim N(\\mu, \\sigma^2/n) as n -> \\infty. [4 marks]
+(b) For sample size n = 100, calculate Var(X) and find the standard error. [3 marks]
+Side note: In 2019 Midterm, question 2(a) had a required proof for finite population correction.
+
+2024-Midterm Examination
+Section B: Statistical Inference and Chi-Square Tests
+
+Question 1: (a) Show that the sample variance S^2 is an unbiased estimator of \\sigma^2. [4 marks]
+(b) Let X have a Chi-square distribution with r degrees of freedom (chi^2_r). Derive its moment generating function. [4 marks]
+Repeated in: 2021 Annual Examination Q3.
+`
   }
 ];
