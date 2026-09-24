@@ -761,7 +761,7 @@ function normalizeLineMath(line: string): string {
   // 8. Common statistical square variables: S^2, s^2
   s = s.replace(/\b([Ss])\^2\b/g, (m) => putPh(`$${m}$`));
 
-  // 9. Standard operators: \operatorname{rank}(A), \operatorname{Var}(X), \operatorname{Cov}(X, Y)
+  // 9. Standard operators: \operatorname{rank}(A), \operatorname{Var}(X), \operatorname{Cov}(X, Y), \operatorname{mode}(X), \operatorname{M.D.}(X)
   s = s.replace(/\b(?:\\operatorname\{rank\}|\\text\{rank\}|rank)\s*\(([A-Za-z0-9_]+)\)/g, (_, arg) =>
     putPh(`$\\operatorname{rank}(${arg})$`)
   );
@@ -771,9 +771,29 @@ function normalizeLineMath(line: string): string {
   s = s.replace(/\b(?:\\operatorname\{Cov\}|\\text\{Cov\}|Cov)\s*\(([^)]+)\)/g, (_, arg) =>
     putPh(`$\\operatorname{Cov}(${arg})$`)
   );
+  s = s.replace(/\b(?:\\operatorname\{mode\}|\\text\{mode\}|mode)\s*\(([A-Za-z0-9_]+)\)/gi, (_, arg) =>
+    putPh(`$\\operatorname{mode}(${arg})$`)
+  );
+  s = s.replace(/\b(?:\\operatorname\{M\.D\.\}|\\text\{M\.D\.\}|M\.D\.|MD)\s*\(([A-Za-z0-9_]+)\)/gi, (_, arg) =>
+    putPh(`$\\operatorname{M.D.}(${arg})$`)
+  );
 
-  // 10. Chi-square distribution: \chi^2_r
-  s = s.replace(/\\chi\^2(?!\s*[_0-9{])/g, putPh(`$\\chi^2_r$`));
+  // 10. Matrix Transpose: A^T or A^{\mathsf T}
+  s = s.replace(/\b([A-Z])\s*\^\s*(?:\{\s*(?:\\mathsf\s*\{?\s*T\s*\}?|T|top)\s*\}|T|t)\b/g, (_, mat) =>
+    putPh(`$${mat}^{\\mathsf T}$`)
+  );
+
+  // 11. Convergence in distribution: \overset{d}{\longrightarrow}
+  s = s.replace(/(?:\\overset\{d\}\{\\longrightarrow\}|\\xrightarrow\{d\}|\\to\^d|->\s*d)\b/g, () =>
+    putPh(`$\\overset{d}{\\longrightarrow}$`)
+  );
+
+  // 12. Chi-square distribution: \chi^2_r
+  s = s.replace(/(?:\\chi|chi)\^2(?!\s*[_0-9{])/g, putPh(`$\\chi^2_r$`));
+
+  // 13. Contextual sample proportion notation repair: 'p' -> '\hat{p}' when referring to sample proportion
+  s = s.replace(/\b(sample\s*proportion)\s+p\b/gi, "$1 $\\hat{p}$");
+  s = s.replace(/\bshow\s*that\s+p\s+is\s+(an\s+)?unbiased\s*estimator/gi, "show that $\\hat{p}$ is $1unbiased estimator");
 
   // Restore all protected math placeholders
   s = s.replace(/__MATH_PH_(\d+)__/g, (_, id) => mathPlaceholders[parseInt(id, 10)] || "");
@@ -873,14 +893,33 @@ export function formatAcademicExamBankDocument(lines: string[]): string[] {
       continue;
     }
 
-    // 1. Course Header / Main Document Title: # Course Code: Course Name
-    if (i <= 3 && /^([A-Z]{2,6}\s*\d{2,4})\s*(.*?):?\s*(.+)?$/i.test(line) && !line.toLowerCase().includes("question")) {
-      const match = line.match(/^([A-Z]{2,6}\s*\d{2,4})\s*(.*?):?\s*(.+)?$/i);
+    // 1. Institution / University / Department Header:
+    // e.g. "Hajee Mohammad Danesh Science and Technology University", "HSTU", "Department of Statistics"
+    if (
+      i <= 5 &&
+      /(?:University|College|Institute|Department\s+of|Faculty\s+of|HSTU)\b/i.test(line) &&
+      !line.toLowerCase().includes("question") &&
+      line.length < 100
+    ) {
+      processed.push(`# ${line.replace(/^#+\s*/, "").trim()}`);
+      processed.push("");
+      i++;
+      continue;
+    }
+
+    // 2. Course Header / Main Document Title: # Course Code: Course Name
+    if (
+      i <= 6 &&
+      /^(?:Course\s*(?:Code|No|Number)?\s*[:\-–]?\s*)?([A-Z]{2,6}[\s\-]*\d{2,4})\s*(.*?):?\s*(.+)?$/i.test(line) &&
+      !line.toLowerCase().includes("question") &&
+      !/\b(?:Final|Midterm|In-course|Semester|Exam)\b/i.test(line)
+    ) {
+      const match = line.match(/^(?:Course\s*(?:Code|No|Number)?\s*[:\-–]?\s*)?([A-Z]{2,6}[\s\-]*\d{2,4})\s*(.*?):?\s*(.+)?$/i);
       if (match) {
         const coursePart = `${match[1].trim()}${match[2] ? ": " + match[2].trim() : ""}`;
-        processed.push(`# ${coursePart}`);
+        processed.push(`## Course: ${coursePart}`);
         if (match[3] && match[3].trim()) {
-          processed.push(`## ${match[3].trim()}`);
+          processed.push(`### ${match[3].trim()}`);
         }
         processed.push("");
         i++;
@@ -888,19 +927,40 @@ export function formatAcademicExamBankDocument(lines: string[]): string[] {
       }
     }
 
-    // 2. Year-wise and Exam-wise classification:
-    // e.g. "2025 Final Examination", "Examination Year: 2024", "2018 Midterm"
-    const examYearMatch = line.match(/^(?:##\s*)?(?:Examination\s*Year\s*:?\s*|Year\s*:?\s*)?(\d{4})\s*[-–:]?\s*(Final|Midterm|In-course|Annual|Comprehensive)?\s*(?:Exam(?:ination)?)?/i);
-    if (examYearMatch && (examYearMatch[1] || examYearMatch[2]) && !line.toLowerCase().includes("question") && line.length < 80) {
-      const year = examYearMatch[1] || "";
-      const term = examYearMatch[2] ? `${examYearMatch[2]} ` : "";
+    // 3. Year-wise and Exam-wise classification:
+    // e.g. "2025 Final Examination", "Examination Year: 2024", "2018 Midterm", "2016 (Held in 2017)", "2016 Final"
+    const examYearMatch = line.match(
+      /^(?:##\s*)?(?:Examination\s*(?:Year)?\s*[:\-–]?\s*|Year\s*[:\-–]?\s*|Exam(?:ination)?\s*[-–:]?\s*)?(\d{4}(?:\s*[-–]\s*\d{2,4})?)\s*[-–:]?\s*(Final|Midterm|In-course|Annual|Comprehensive|Semester)?\s*(?:Exam(?:ination)?)?(?:\s*\([^)]+\))?/i
+    );
+    if (
+      examYearMatch &&
+      examYearMatch[1] &&
+      !line.toLowerCase().includes("question") &&
+      !line.includes("|") &&
+      line.length < 90
+    ) {
+      const year = examYearMatch[1].trim();
+      const term = examYearMatch[2] ? `${examYearMatch[2]} ` : "Final ";
       processed.push(`## ${year} ${term}Examination`.trim());
       processed.push("");
       i++;
       continue;
     }
 
-    // 3. Section and Part classification:
+    // 4. Examination instructions / metadata:
+    // e.g. "Time: 3 Hours, Full Marks: 40", "Answer any FOUR questions", Bengali instructions
+    if (
+      /^(?:Time\s*[:\-–]|Full\s*Marks\s*[:\-–]|Marks\s*[:\-–]|Credit\s*[:\-–]|Answer\s+any|Figures\s+in\s+the|যেকোনো|বি\.দ্র\.)/i.test(
+        line
+      )
+    ) {
+      processed.push(`> *${line}*`);
+      processed.push("");
+      i++;
+      continue;
+    }
+
+    // 5. Section and Part classification:
     // e.g. "Section A: Descriptive Statistics", "Part I"
     const secMatch = line.match(/^(?:###\s*)?(?:Section|Part)\s+([A-Z0-9]+)\s*[:\-–]?\s*(.*)$/i);
     if (secMatch && line.length < 90) {
@@ -911,36 +971,81 @@ export function formatAcademicExamBankDocument(lines: string[]): string[] {
       continue;
     }
 
-    // 4. Question headers:
-    // e.g. "Question 1.", "Q1.", "1. (a)..."
-    const qMatch = line.match(/^(?:###\s*|####\s*)?(?:Question|Q)\s*(\d+)[\.\:]?\s*(.*)$/i);
+    // 6. Question headers:
+    // e.g. "Question 1.", "Q1.", "1. (a)...", "1.", "1(a)"
+    const qMatch = line.match(/^(?:###\s*|####\s*)?(?:(?:Question|Q\.?|Q)\s*(\d+)|(\d+)[\.\:])\s*(.*)$/i);
     if (qMatch) {
-      processed.push(`### Question ${qMatch[1]}`);
+      const qNum = qMatch[1] || qMatch[2];
+      const remainder = (qMatch[3] || "").trim();
+
+      processed.push(`### Question ${qNum}`);
       processed.push("");
-      if (qMatch[2] && qMatch[2].trim()) {
-        processed.push(normalizeLineMath(normalizeMatrixSyntax(qMatch[2].trim())));
+
+      if (remainder) {
+        let formattedRemainder = remainder;
+
+        // Marks formatting: [4 Marks], [2 + 3 = 5 Marks]
+        formattedRemainder = formattedRemainder.replace(
+          /\((\d+(?:\s*[\+\-]\s*\d+)?)\s*(?:marks?|pts?)?\)/gi,
+          (m, val) => (/\d/.test(val) ? `[${val.trim()} Marks]` : m)
+        );
+        formattedRemainder = formattedRemainder.replace(
+          /\[(\d+(?:\s*[\+\-]\s*\d+)?)\s*(?:marks?|pts?)?\]/gi,
+          (m, val) => (/\d/.test(val) ? `[${val.trim()} Marks]` : m)
+        );
+
+        // Sub-question labels: (a), a., (i), i.
+        formattedRemainder = formattedRemainder.replace(/(?:^|\s)\(?([a-hA-H])\)\s+/g, "\n\n**($1)** ");
+        formattedRemainder = formattedRemainder.replace(/(?:^|\s)\(?([ivxIVX]+)\)\s+/g, "\n\n**($1)** ");
+
+        // Repeated question & side note
+        formattedRemainder = formattedRemainder.replace(
+          /(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi,
+          "\n\n**Repeated Question:** $1"
+        );
+        formattedRemainder = formattedRemainder.replace(
+          /(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi,
+          "\n\n**Side Note:** $1"
+        );
+
+        formattedRemainder = normalizeMatrixSyntax(formattedRemainder);
+        formattedRemainder = normalizeLineMath(formattedRemainder);
+
+        processed.push(formattedRemainder);
       }
+
       i++;
       continue;
     }
 
-    // 5. Sub-question labels: (a), a., (i), i.
+    // 7. Standalone Sub-question labels: (a), (b), (c)
     let formattedLine = line;
+    formattedLine = formattedLine.replace(/^(?:\*\*)?\(?([a-hA-H])\)(?:\*\*)?\s+/g, "**($1)** ");
     formattedLine = formattedLine.replace(/(?:^|\s)\(?([a-hA-H])\)\s+/g, "\n\n**($1)** ");
     formattedLine = formattedLine.replace(/(?:^|\s)\(?([ivxIVX]+)\)\s+/g, "\n\n**($1)** ");
 
-    // 6. Marks formatting: [4 Marks], [2 + 3 = 5 Marks]
-    formattedLine = formattedLine.replace(/\((\d+(?:\s*\+\s*\d+)?)\s*(?:marks?|pts?)\)/gi, "[$1 Marks]");
-    formattedLine = formattedLine.replace(/\[(\d+(?:\s*\+\s*\d+)?)\s*(?:marks?|pts?)\]/gi, "[$1 Marks]");
+    // 8. Marks formatting: [4 Marks], [2 + 3 = 5 Marks]
+    formattedLine = formattedLine.replace(/\((\d+(?:\s*[\+\-]\s*\d+)?)\s*(?:marks?|pts?)?\)/gi, (m, val) =>
+      /\d/.test(val) ? `[${val.trim()} Marks]` : m
+    );
+    formattedLine = formattedLine.replace(/\[(\d+(?:\s*[\+\-]\s*\d+)?)\s*(?:marks?|pts?)?\]/gi, (m, val) =>
+      /\d/.test(val) ? `[${val.trim()} Marks]` : m
+    );
 
-    // 7. Side-note & Repeated-question note standardization:
-    formattedLine = formattedLine.replace(/(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi, "**Repeated Question:** $1");
-    formattedLine = formattedLine.replace(/(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi, "**Side Note:** $1");
+    // 9. Side-note & Repeated-question note standardization:
+    formattedLine = formattedLine.replace(
+      /(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi,
+      "**Repeated Question:** $1"
+    );
+    formattedLine = formattedLine.replace(
+      /(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi,
+      "**Side Note:** $1"
+    );
 
-    // 8. Matrix formatting:
+    // 10. Matrix formatting:
     formattedLine = normalizeMatrixSyntax(formattedLine);
 
-    // 9. LaTeX math correction:
+    // 11. LaTeX math correction:
     formattedLine = normalizeLineMath(formattedLine);
 
     processed.push(formattedLine);

@@ -1,4 +1,4 @@
-import React, { useState, useMemo, useEffect } from "react";
+import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Header } from "./components/Header";
 import { FormattedPreview } from "./components/FormattedPreview";
 import { AISettingsModal } from "./components/AISettingsModal";
@@ -49,6 +49,7 @@ import {
   X,
   FileDown,
   ShieldAlert,
+  Upload,
 } from "lucide-react";
 
 export default function App() {
@@ -230,6 +231,31 @@ export default function App() {
     } catch {
       setErrorMessage("Please use Ctrl+V / Cmd+V to paste directly into the box.");
     }
+  };
+
+  // File upload input ref and handler (PDF / TXT / Markdown / DOCX)
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const handleFileUpload = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const file = e.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (event) => {
+      const text = event.target?.result;
+      if (typeof text === "string" && text.trim()) {
+        setInputText(text);
+        const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
+        setDocTitle(titleWithoutExt);
+        setCleanedMarkdown(null);
+        setErrorMessage(null);
+        setSuccessMessage(`Loaded "${file.name}" (${(file.size / 1024).toFixed(1)} KB) into FormatAI.`);
+      }
+    };
+    reader.onerror = () => {
+      setErrorMessage(`Failed to read "${file.name}". Please ensure it is a valid text/markdown/document file.`);
+    };
+    reader.readAsText(file);
+    e.target.value = "";
   };
 
   // Active AI provider ID state (synced with user settings and dropdown)
@@ -981,6 +1007,21 @@ export default function App() {
                 </span>
 
                 <div className="flex items-center gap-2">
+                  <input
+                    type="file"
+                    ref={fileInputRef}
+                    onChange={handleFileUpload}
+                    accept=".txt,.md,.markdown,.tex,.json,.csv,.latex,.docx,.pdf"
+                    className="hidden"
+                  />
+                  <button
+                    onClick={() => fileInputRef.current?.click()}
+                    className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                    title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
+                  >
+                    <Upload className="w-3.5 h-3.5 text-slate-600" />
+                    <span>Upload</span>
+                  </button>
                   <button
                     onClick={handlePasteClipboard}
                     className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-extrabold text-white px-3 py-1.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
@@ -1062,6 +1103,14 @@ export default function App() {
                 Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
               </span>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                  title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
+                >
+                  <Upload className="w-3.5 h-3.5 text-slate-600" />
+                  <span>Upload</span>
+                </button>
                 <button
                   onClick={handlePasteClipboard}
                   className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"

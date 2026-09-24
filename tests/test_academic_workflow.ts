@@ -74,7 +74,36 @@ assert.ok(cleaned.includes("\\begin{bmatrix}"), "Normalized matrix to bmatrix");
 assert.ok(cleaned.includes("**Repeated Question:**"), "Preserved repeated-question note");
 console.log("✓ Exam Bank Workflow execution verified");
 
-// 6. Verify Academic Document Validation
+// 6. Verify 2016-2025 Multi-Year Exam Bank Normalization & Notation Repairs
+const raw2016Exam = `Hajee Mohammad Danesh Science and Technology University
+Course: STT-251: Sampling Distributions
+2016 Final Examination
+Time: 3 Hours, Full Marks: 40
+1. (a) Define sampling distribution. Show that sample mean is unbiased: E(\\bar{X}) = \\mu. (4)
+(b) Derive Var(X) and show that rank(A) = rank(A^T). [6 marks]
+Repeated question: 2014 Final Q2.
+Side note: Important theorem for CLT.
+2. (a) Show that as n -> \\infty, X_n -> d X, and calculate mode(X) and M.D.(X). (5)
+(b) Given matrix A = [1 0; 0 1], show chi^2 distribution properties. [5]
+`;
+
+const cleaned2016 = cleanClientSideNotebookLM(raw2016Exam, "exam_bank");
+assert.ok(cleaned2016.includes("# Hajee Mohammad Danesh Science and Technology University"), "University title preserved");
+assert.ok(cleaned2016.includes("## 2016 Final Examination"), "2016 examination header preserved");
+assert.ok(cleaned2016.includes("### Question 1"), "Question 1 extracted from '1. (a)'");
+assert.ok(cleaned2016.includes("**(a)**"), "Sub-question (a) formatted");
+assert.ok(cleaned2016.includes("\\operatorname{Var}(X)"), "Var normalized to operatorname");
+assert.ok(cleaned2016.includes("A^{\\mathsf T}"), "Matrix transpose normalized to A^{\\mathsf T}");
+assert.ok(cleaned2016.includes("\\operatorname{mode}(X)"), "mode normalized to operatorname");
+assert.ok(cleaned2016.includes("\\operatorname{M.D.}(X)"), "M.D. normalized to operatorname");
+assert.ok(cleaned2016.includes("\\overset{d}{\\longrightarrow}"), "Convergence in distribution normalized");
+assert.ok(cleaned2016.includes("\\chi^2_r"), "Chi-square normalized to \\chi^2_r");
+assert.ok(cleaned2016.includes("[4 Marks]"), "Marks (4) normalized to [4 Marks]");
+assert.ok(cleaned2016.includes("**Repeated Question:**"), "Repeated question standardized");
+assert.ok(cleaned2016.includes("**Side Note:**"), "Side note standardized");
+console.log("✓ 2016-2025 Multi-Year Exam Bank Normalization & Notation Repairs verified");
+
+// 7. Verify Academic Document Validation
 const validDoc = `# Mathematics Exam Bank
 ## 2025 Final Examination
 ### Question 1

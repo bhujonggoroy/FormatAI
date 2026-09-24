@@ -534,5 +534,64 @@ Question 1: (a) Show that the sample variance S^2 is an unbiased estimator of \\
 (b) Let X have a Chi-square distribution with r degrees of freedom (chi^2_r). Derive its moment generating function. [4 marks]
 Repeated in: 2021 Annual Examination Q3.
 `
+  },
+  {
+    id: "hstu-stt251-question-bank",
+    title: "7. HSTU STT-251 Sampling Distributions Exam Question Bank (2016–2025)",
+    category: "Exam Question Bank",
+    text: `Hajee Mohammad Danesh Science and Technology University
+Department of Statistics
+Course Code: STT-251: Sampling Distributions
+All Previous Year Exam Questions Bank (2016–2025)
+
+2025 Final Examination
+Time: 3 Hours, Full Marks: 40
+[Answer any FOUR questions including Question No. 1]
+
+1. (a) Define sampling distribution of a statistic. Distinguish between parameter and statistic with examples. (4)
+(b) What is sampling error? Show that the sample mean \\bar{X} is an unbiased estimator of the population mean \\mu. [6 marks]
+Repeated question: Identical to 2021 Final Q1(a) and 2017 Final Q1.
+
+2. (a) State and prove the Central Limit Theorem (CLT) for independent and identically distributed random variables. Show that as n -> \\infty, \\bar{X} \\sim N(\\mu, \\sigma^2/n). (6)
+(b) For a sample proportion p from a binomial population, show that E(\\hat{p}) = \\pi and find Var(\\hat{p}). (4)
+Side note: In 2019 Midterm, finite population correction factor was required.
+
+3. (a) If X_1, X_2, ..., X_n are random samples from N(\\mu, \\sigma^2), prove that \\frac{(n-1)S^2}{\\sigma^2} \\sim \\chi^2_{n-1}. [6 marks]
+(b) Given matrix:
+A = [ 3  1  -1 ; 1  2  0 ; -1  0  2 ]
+Compute determinant and find the rank of matrix A. Verify that rank(A) = rank(A^T). (4)
+
+2024 Final Examination
+Time: 3 Hours, Full Marks: 40
+
+1. (a) Define Student's t-distribution. Derive its probability density function (p.d.f.). [6 marks]
+(b) State the chief properties of the t-distribution and discuss its relation to the standard normal distribution. (4)
+Repeated question: Appeared in 2020 Final Q2 and 2016 Final Q3.
+
+2. (a) Define Snedecor's F-distribution. Show that if X ~ F(n_1, n_2), then 1/X ~ F(n_2, n_1). (5)
+(b) What are the conditions under which a Chi-square distribution with r degrees of freedom (chi^2_r) tends to a normal distribution? (5)
+Side note: Prove using moment generating function (MGF).
+
+2023 Final Examination
+Time: 3 Hours, Full Marks: 40
+
+1. (a) Define sampling with replacement (SRSWR) and sampling without replacement (SRSWOR). (4)
+(b) In SRSWOR, prove that Var(\\bar{X}) = \\frac{\\sigma^2}{n} \\left(\\frac{N-n}{N-1}\\right). [6 marks]
+Repeated question: See 2018 Final Q1(b).
+
+2. (a) Define sample variance S^2. Prove that S^2 = \\frac{1}{n-1}\\sum_{i=1}^n (X_i - \\bar{X})^2 is an unbiased estimator of \\sigma^2. (5)
+(b) Explain convergence in distribution: X_n -> d X. State Slutsky's theorem. (5)
+
+2016 Final Examination
+Time: 3 Hours, Full Marks: 40
+
+1. (a) What is meant by a sampling distribution? Why is standard error important in statistical inference? (4)
+(b) Distinguish between standard deviation and standard error with suitable examples. (6)
+Repeated question: 2013 Final Q1.
+
+2. (a) Define Chi-square distribution. Derive the mean, variance, mode(X), and M.D.(X) of chi^2_r. [6 marks]
+(b) State and prove the additive (reproductive) property of independent Chi-square variates. (4)
+Side note: Used extensively in ANOVA and testing of hypotheses.
+`
   }
 ];
