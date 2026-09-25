@@ -312,6 +312,99 @@ export function classifyErrorDetails(
 }
 
 /**
+ * Classifies an AI failure using the most informative step from fallbackChain
+ * rather than blindly using the last unconfigured fallback step.
+ */
+export function classifyFallbackChain(
+  chain?: FallbackStep[],
+  fallbackErrorMessage?: string,
+  statusCode?: number
+): ReturnType<typeof classifyErrorDetails> & {
+  informativeStep?: FallbackStep;
+  providerName?: string;
+  modelName?: string;
+} {
+  if (!chain || chain.length === 0) {
+    return classifyErrorDetails(fallbackErrorMessage, statusCode);
+  }
+
+  // Filter out unconfigured dummy failures (e.g. Cloudflare or providers without keys)
+  // if there are real providers that actually attempted to run
+  const executedSteps = chain.filter(
+    (s) =>
+      s.keyMasked !== "none" &&
+      !s.errorMessage?.toLowerCase().includes("no enabled api key") &&
+      s.providerId !== "cloudflare"
+  );
+
+  const candidatePool = executedSteps.length > 0 ? executedSteps : chain.filter((s) => s.providerId !== "cloudflare");
+  const effectivePool = candidatePool.length > 0 ? candidatePool : chain;
+
+  // Priority order for informative error classification:
+  // 1. rate_limited (429 or quota exceeded)
+  // 2. invalid_key / permission_denied (auth failure on configured key)
+  // 3. timeout
+  // 4. network_error
+  // 5. server_error / token_limit / capability_mismatch
+  const rateLimitStep = effectivePool.find(
+    (s) =>
+      s.status === "rate_limited" ||
+      s.errorMessage?.toLowerCase().includes("quota") ||
+      s.errorMessage?.toLowerCase().includes("rate limit") ||
+      s.errorMessage?.toLowerCase().includes("429") ||
+      s.errorMessage?.toLowerCase().includes("resource_exhausted")
+  );
+
+  const authStep = effectivePool.find(
+    (s) =>
+      (s.status === "invalid_key" && !s.errorMessage?.toLowerCase().includes("no enabled api key")) ||
+      s.status === "permission_denied" ||
+      s.errorMessage?.toLowerCase().includes("invalid api key") ||
+      s.errorMessage?.toLowerCase().includes("unauthorized")
+  );
+
+  const timeoutStep = effectivePool.find(
+    (s) => s.status === "timeout" || s.errorMessage?.toLowerCase().includes("timeout")
+  );
+
+  const networkStep = effectivePool.find(
+    (s) => s.status === "network_error" || s.errorMessage?.toLowerCase().includes("connection")
+  );
+
+  const serverErrorStep = effectivePool.find(
+    (s) => s.status === "server_error" || s.status === "token_limit" || s.status === "capability_mismatch"
+  );
+
+  const informativeStep =
+    rateLimitStep ||
+    authStep ||
+    timeoutStep ||
+    networkStep ||
+    serverErrorStep ||
+    effectivePool[0];
+
+  const errorMsg = informativeStep.errorMessage || fallbackErrorMessage || "";
+  let explicitCat: AIErrorCategory | undefined;
+  if (informativeStep.status === "rate_limited") explicitCat = "rate_limit";
+  else if (informativeStep.status === "timeout") explicitCat = "timeout";
+  else if (informativeStep.status === "network_error") explicitCat = "network";
+  else if (informativeStep.status === "invalid_key") {
+    explicitCat = informativeStep.errorMessage?.toLowerCase().includes("no enabled api key")
+      ? "key_missing"
+      : "invalid_key";
+  }
+
+  const baseClassification = classifyErrorDetails(errorMsg, statusCode, explicitCat);
+
+  return {
+    ...baseClassification,
+    informativeStep,
+    providerName: informativeStep.providerName,
+    modelName: informativeStep.model,
+  };
+}
+
+/**
  * Creates a pristine, strictly truthful status notification for local deterministic formatting.
  * Guaranteed to NEVER claim AI was used.
  */

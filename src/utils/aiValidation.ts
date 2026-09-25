@@ -176,10 +176,13 @@ export function validateAIPolishOutput(
   if (expectedBlockIds && expectedBlockIds.length > 0) {
     const formattedBlocks = parseDocumentBlocks(outputText);
     const formattedBlockIds = new Set(formattedBlocks.map((b) => b.id));
+    const formattedBaseIds = new Set(formattedBlocks.map((b) => b.id.replace(/-\d+$/, "")));
     
     // Also check substantive content matching in case IDs shifted
     const substantiveMatches = expectedBlockIds.filter((id) => {
       if (formattedBlockIds.has(id)) return true;
+      const baseExpected = id.replace(/-\d+$/, "");
+      if (formattedBaseIds.has(baseExpected)) return true;
       // Check if the substantive text of that block is still retained in outputText
       return outputText.includes(id);
     });

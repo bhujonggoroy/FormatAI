@@ -30,9 +30,10 @@ import {
   detectBlockFormattingIssue,
   extractSubstantiveText,
   type DocumentBlock,
+  type BrokenFragment,
 } from "./src/utils/blockIntegrity.ts";
 import { logPipelineDebug } from "./src/utils/debugLogger.ts";
-import { classifyErrorDetails } from "./src/utils/aiStatusClassifier.ts";
+import { classifyErrorDetails, classifyFallbackChain } from "./src/utils/aiStatusClassifier.ts";
 import { NO_IMPROVEMENT_MESSAGE, computeDocumentDiff } from "./src/utils/diffUtils.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";
 import {
@@ -1426,11 +1427,12 @@ ${originalText}`;
       });
     } catch (err: any) {
       console.error("Preview error:", err);
-      const classified = classifyErrorDetails(err.message, err.statusCode || 500);
+      const fallbackChain = (err as any).fallbackChain || [];
+      const classified = classifyFallbackChain(fallbackChain, err.message, err.statusCode || 500);
       res.status(err.statusCode || 500).json({
         error: err.message || "Failed to process notes.",
         error_category: classified.errorCategory,
-        fallback_chain: err.fallbackChain || [],
+        fallback_chain: fallbackChain,
       });
     }
   });
@@ -1474,21 +1476,24 @@ ${originalText}`;
       });
     } catch (err: any) {
       console.error("Polish endpoint error:", err);
-      const classified = classifyErrorDetails(err.message, err.statusCode || 500);
+      const fallbackChain = (err as any).fallbackChain || [];
+      const classified = classifyFallbackChain(fallbackChain, err.message, err.statusCode || 500);
       res.status(err.statusCode || 500).json({
         error: err.message || "Failed to polish text with AI.",
         error_category: classified.errorCategory,
-        fallback_chain: (err as any).fallbackChain || [],
+        fallback_chain: fallbackChain,
       });
     }
   });
 
-  // Targeted Single-Block Repair Endpoint
-  // Solves: "Fix flagged only" — strictly touches only the requested failed block
-  app.post("/api/repair-block", async (req, res) => {
+  // Targeted Single-Block / Fragment Repair Endpoint
+  // Solves: "Fix flagged only" — strictly repairs only the broken fragment or target block
+  const handleRepairRequest = async (req: express.Request, res: express.Response) => {
     try {
       const {
         targetBlock,
+        brokenFragment,
+        fragment,
         prevBlockText,
         nextBlockText,
         equationFormat = "native",
@@ -1500,6 +1505,8 @@ ${originalText}`;
         return res.status(400).json({ error: "Missing or empty targetBlock in request." });
       }
 
+      const targetFrag: BrokenFragment | undefined = brokenFragment || fragment;
+
       // Check if running in No AI / FormatAI mode
       if (
         aiConfig?.activeProviderId === "formatai" ||
@@ -1507,6 +1514,22 @@ ${originalText}`;
         aiConfig?.mode === "no_ai" ||
         aiConfig?.mode === "formatai"
       ) {
+        if (targetFrag) {
+          let candidate = cleanClientSideNotebookLM(targetFrag.brokenText, "auto");
+          candidate = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(candidate));
+          return res.json({
+            success: true,
+            blockId: targetBlock.id,
+            fragmentId: targetFrag.id,
+            startOffset: targetFrag.startOffset,
+            endOffset: targetFrag.endOffset,
+            repairedFragment: candidate,
+            repairedText: candidate,
+            providerName: "FormatAI Native Typesetter",
+            model: "deterministic-engine",
+          });
+        }
+
         const candidate = cleanClientSideNotebookLM(targetBlock.rawText, "auto");
         const tempBlock: DocumentBlock = {
           id: targetBlock.id,
@@ -1535,7 +1558,89 @@ ${originalText}`;
         });
       }
 
-      // AI-assisted targeted block repair
+      // =========================================================================
+      // CASE A: Targeted FRAGMENT-LEVEL Repair (Fine-grained)
+      // =========================================================================
+      if (targetFrag) {
+        const ctxBefore = targetFrag.contextBefore || prevBlockText || "";
+        const ctxAfter = targetFrag.contextAfter || nextBlockText || "";
+
+        const fragmentRepairPrompt = `You are an academic mathematical editor and LaTeX typesetter.
+Your task is to REPAIR and format ONLY the specified BROKEN FRAGMENT.
+
+RULES:
+1. Fix all broken LaTeX math syntax, unclosed braces ({, }), unmatched delimiters ($$, \\[, \\], \\(, \\)), and incorrect notation in this fragment.
+2. Standardize KaTeX notation: inline \\(...\\), display \\[...\\] or $$...$$.
+3. Preserve all original numbers, variables, formulas, and mathematical meaning.
+4. Output ONLY the repaired fragment text. Do NOT output commentary, explanations, introductions, apologies, or markdown fences.
+5. Do NOT include, repeat, or wrap the surrounding context text. Output only the replacement for the broken fragment.
+6. Return the raw repaired fragment directly.
+
+${ctxBefore ? `---
+CONTEXT IMMEDIATELY BEFORE FRAGMENT (FOR REFERENCE ONLY, DO NOT REPEAT IN OUTPUT):
+${ctxBefore}
+` : ""}
+---
+BROKEN FRAGMENT TO REPAIR:
+${targetFrag.brokenText}
+
+${ctxAfter ? `---
+CONTEXT IMMEDIATELY AFTER FRAGMENT (FOR REFERENCE ONLY, DO NOT REPEAT IN OUTPUT):
+${ctxAfter}
+` : ""}`;
+
+        const systemInstruction = `You are an academic document formatting repair engine. Repair ONLY the broken fragment. Return raw text without markdown code blocks, backticks, or conversational commentary. Do not repeat context.`;
+
+        const aiRes = await aiRequestManager.executeRequestScoped(
+          {
+            prompt: fragmentRepairPrompt,
+            systemPrompt: systemInstruction,
+            temperature: 0.1,
+            capabilities: ["text", "math"],
+          },
+          aiConfig,
+          userProviders
+        );
+
+        let candidate = (aiRes.text || "").trim();
+        if (candidate.startsWith("```markdown")) {
+          candidate = candidate.slice(11).trim();
+        } else if (candidate.startsWith("```latex")) {
+          candidate = candidate.slice(8).trim();
+        } else if (candidate.startsWith("```")) {
+          candidate = candidate.slice(3).trim();
+        }
+        if (candidate.endsWith("```")) {
+          candidate = candidate.slice(0, -3).trim();
+        }
+        candidate = cleanNotebookLMTreeArtifacts(candidate);
+
+        // Validation on single fragment response
+        if (!candidate || !candidate.trim()) {
+          return res.json({
+            success: false,
+            error: "AI produced empty response for this fragment.",
+            blockId: targetBlock.id,
+            fragmentId: targetFrag.id,
+          });
+        }
+
+        return res.json({
+          success: true,
+          blockId: targetBlock.id,
+          fragmentId: targetFrag.id,
+          startOffset: targetFrag.startOffset,
+          endOffset: targetFrag.endOffset,
+          repairedFragment: candidate,
+          repairedText: candidate,
+          providerName: aiRes.providerName,
+          model: aiRes.model,
+        });
+      }
+
+      // =========================================================================
+      // CASE B: Whole TARGET BLOCK Repair (Fallback / Block-level)
+      // =========================================================================
       const repairPrompt = `You are an academic mathematical editor and LaTeX typesetter.
 Your task is to REPAIR and format ONLY the TARGET BLOCK below.
 
@@ -1635,13 +1740,20 @@ ${nextBlockText}
         model: aiRes.model,
       });
     } catch (err: any) {
-      console.error("Block repair error:", err);
+      console.error("Block/Fragment repair error:", err);
+      const fallbackChain = (err as any).fallbackChain || [];
+      const classified = classifyFallbackChain(fallbackChain, err.message, 500);
       return res.status(500).json({
         success: false,
-        error: err.message || "Failed to repair block.",
+        error: err.message || "Failed to repair block or fragment.",
+        error_category: classified.errorCategory,
+        fallback_chain: fallbackChain,
       });
     }
-  });
+  };
+
+  app.post("/api/repair-block", handleRepairRequest);
+  app.post("/api/repair-fragment", handleRepairRequest);
 
   // Main export & conversion endpoint: Supports docx, pdf, tex, md, txt
   const handleExport = async (req: express.Request, res: express.Response) => {

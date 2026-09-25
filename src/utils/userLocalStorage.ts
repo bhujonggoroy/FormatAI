@@ -192,8 +192,18 @@ export function healAndNormalizeProviders(
       cooldownUntil: keyItem.cooldownUntil,
     }));
 
+    // 3. Ensure unconfigured providers without keys are not accidentally enabled by stale legacy defaults
+    let isEnabled = provider.enabled;
+    if (provider.id === "cloudflare") {
+      const hasCloudflareCredentials = apiKeys.some((k) => k.enabled && k.key && k.key.trim().length > 0);
+      if (!hasCloudflareCredentials) {
+        isEnabled = false;
+      }
+    }
+
     return {
       ...provider,
+      enabled: isEnabled,
       selectedModel,
       availableModels: available,
       apiKeys,

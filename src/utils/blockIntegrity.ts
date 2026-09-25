@@ -327,6 +327,19 @@ export function parseDocumentBlocks(text: string): DocumentBlock[] {
     });
   }
 
+  // Guarantee 100% unique IDs across the entire document:
+  // If duplicate IDs occur (e.g. repeated section headings or identical equations/paragraphs),
+  // append an occurrence suffix (-2, -3, etc.) to 2nd, 3rd... occurrences.
+  const idCounts = new Map<string, number>();
+  for (const block of blocks) {
+    const baseId = block.id;
+    const count = (idCounts.get(baseId) || 0) + 1;
+    idCounts.set(baseId, count);
+    if (count > 1) {
+      block.id = `${baseId}-${count}`;
+    }
+  }
+
   return blocks;
 }
 
@@ -348,12 +361,20 @@ export function compareDocumentBlocks(
 
   // Build lookup index for formatted blocks
   const formattedIdSet = new Set(formattedBlocks.map((b) => b.id));
+  const formattedBaseIdSet = new Set(formattedBlocks.map((b) => b.id.replace(/-\d+$/, "")));
   const formattedSubstantiveList = formattedBlocks.map((b) => b.substantiveText).filter(Boolean);
   const combinedFormattedSubstantive = formattedSubstantiveList.join(" ");
 
   for (const origBlock of originalBlocks) {
     // 1. Direct Stable ID Match
     if (formattedIdSet.has(origBlock.id)) {
+      matchedCount++;
+      continue;
+    }
+
+    // 1b. Base ID Match (handling minor duplicate suffix shifts across operations)
+    const baseOrigId = origBlock.id.replace(/-\d+$/, "");
+    if (formattedBaseIdSet.has(baseOrigId)) {
       matchedCount++;
       continue;
     }
@@ -429,6 +450,24 @@ export function compareDocumentBlocks(
   };
 }
 
+export interface BrokenFragment {
+  id: string;
+  blockId: string;
+  startOffset: number;
+  endOffset: number;
+  brokenText: string;
+  reason: string;
+  category:
+    | "katex_error"
+    | "unbalanced_delimiters"
+    | "broken_command"
+    | "unclosed_fence"
+    | "tree_artifact"
+    | "raw_math_unwrapped";
+  contextBefore?: string;
+  contextAfter?: string;
+}
+
 export interface BlockFormattingIssue {
   blockId: string;
   type: BlockType;
@@ -440,6 +479,7 @@ export interface BlockFormattingIssue {
     | "unclosed_fence"
     | "tree_artifact"
     | "raw_math_unwrapped";
+  fragments?: BrokenFragment[];
 }
 
 /**
@@ -632,24 +672,435 @@ export function detectBlockFormattingIssue(block: DocumentBlock): BlockFormattin
 }
 
 /**
+ * Fine-grained detection of exact broken spans (fragments) inside a document block.
+ * Locates character startOffset and endOffset for:
+ * - Unbalanced/unclosed $$, \[, \], \(, \), $
+ * - Unclosed curly braces { } inside math formulas
+ * - Mismatched \begin{}...\end{} environments
+ * - Broken LaTeX syntax causing KaTeX render errors
+ * - Leftover tree-drawing artifacts (├──, └──)
+ * - Raw unwrapped LaTeX formulas outside math delimiters
+ */
+export function findBrokenFragmentsInBlock(block: DocumentBlock): BrokenFragment[] {
+  const text = block.rawText;
+  if (!text || !text.trim()) return [];
+
+  const fragments: BrokenFragment[] = [];
+  const coveredRanges: Array<{ start: number; end: number }> = [];
+
+  const isCovered = (start: number, end: number) => {
+    return coveredRanges.some((r) => Math.max(r.start, start) < Math.min(r.end, end));
+  };
+
+  // 1. Tree-drawing artifacts
+  const treeRegex = /(?:\|{2,}|├─|└─|├──|└──|\+---)[^\n]*/g;
+  let treeMatch: RegExpExecArray | null;
+  while ((treeMatch = treeRegex.exec(text)) !== null) {
+    const start = treeMatch.index;
+    const end = start + treeMatch[0].length;
+    fragments.push({
+      id: `${block.id}-frag-${fragments.length + 1}`,
+      blockId: block.id,
+      startOffset: start,
+      endOffset: end,
+      brokenText: treeMatch[0],
+      reason: "Contains uncleaned tree-drawing artifacts",
+      category: "tree_artifact",
+      contextBefore: text.slice(Math.max(0, start - 80), start),
+      contextAfter: text.slice(end, Math.min(text.length, end + 80)),
+    });
+    coveredRanges.push({ start, end });
+  }
+
+  // 2. Unclosed code fence
+  if (block.type === "code" && !text.trim().endsWith("```")) {
+    fragments.push({
+      id: `${block.id}-frag-${fragments.length + 1}`,
+      blockId: block.id,
+      startOffset: 0,
+      endOffset: text.length,
+      brokenText: text,
+      reason: "Unclosed code fence",
+      category: "unclosed_fence",
+      contextBefore: "",
+      contextAfter: "",
+    });
+    return fragments;
+  }
+
+  // 3. Helper to test math content for KaTeX / brace / environment errors
+  const testMathContent = (
+    mathContent: string,
+    isDisplay: boolean,
+    spanStart: number,
+    spanEnd: number,
+    fullMatchText: string
+  ) => {
+    const trimmedMath = mathContent.trim();
+    if (!trimmedMath) return;
+
+    // Check curly braces balance inside math formula
+    let braceDepth = 0;
+    for (let i = 0; i < trimmedMath.length; i++) {
+      if (trimmedMath[i] === "{" && (i === 0 || trimmedMath[i - 1] !== "\\")) {
+        braceDepth++;
+      } else if (trimmedMath[i] === "}" && (i === 0 || trimmedMath[i - 1] !== "\\")) {
+        braceDepth--;
+      }
+      if (braceDepth < 0) break;
+    }
+    if (braceDepth !== 0) {
+      fragments.push({
+        id: `${block.id}-frag-${fragments.length + 1}`,
+        blockId: block.id,
+        startOffset: spanStart,
+        endOffset: spanEnd,
+        brokenText: fullMatchText,
+        reason: "Unbalanced curly braces '{ }' in LaTeX formula",
+        category: "broken_command",
+        contextBefore: text.slice(Math.max(0, spanStart - 80), spanStart),
+        contextAfter: text.slice(spanEnd, Math.min(text.length, spanEnd + 80)),
+      });
+      coveredRanges.push({ start: spanStart, end: spanEnd });
+      return;
+    }
+
+    // Check environment begin/end match
+    const begins = (trimmedMath.match(/\\begin\{([^}]+)\}/g) || []).map((m) =>
+      m.replace(/\\begin\{([^}]+)\}/, "$1")
+    );
+    const ends = (trimmedMath.match(/\\end\{([^}]+)\}/g) || []).map((m) =>
+      m.replace(/\\end\{([^}]+)\}/, "$1")
+    );
+    if (begins.length !== ends.length) {
+      fragments.push({
+        id: `${block.id}-frag-${fragments.length + 1}`,
+        blockId: block.id,
+        startOffset: spanStart,
+        endOffset: spanEnd,
+        brokenText: fullMatchText,
+        reason: `Mismatched LaTeX environments (${begins.join(", ")} vs ${ends.join(", ")})`,
+        category: "broken_command",
+        contextBefore: text.slice(Math.max(0, spanStart - 80), spanStart),
+        contextAfter: text.slice(spanEnd, Math.min(text.length, spanEnd + 80)),
+      });
+      coveredRanges.push({ start: spanStart, end: spanEnd });
+      return;
+    }
+
+    // Test with KaTeX renderer
+    try {
+      katex.renderToString(trimmedMath, {
+        displayMode: isDisplay,
+        throwOnError: true,
+        strict: "ignore",
+      });
+      coveredRanges.push({ start: spanStart, end: spanEnd });
+    } catch (err: any) {
+      const msg = (err.message || "")
+        .replace(/^KaTeX parse error:\s*/i, "")
+        .slice(0, 75);
+      fragments.push({
+        id: `${block.id}-frag-${fragments.length + 1}`,
+        blockId: block.id,
+        startOffset: spanStart,
+        endOffset: spanEnd,
+        brokenText: fullMatchText,
+        reason: `KaTeX syntax error: ${msg}`,
+        category: "katex_error",
+        contextBefore: text.slice(Math.max(0, spanStart - 80), spanStart),
+        contextAfter: text.slice(spanEnd, Math.min(text.length, spanEnd + 80)),
+      });
+      coveredRanges.push({ start: spanStart, end: spanEnd });
+    }
+  };
+
+  // 3A. Display math $$ ... $$
+  const ddRegex = /\$\$([\s\S]*?)\$\$/g;
+  let match: RegExpExecArray | null;
+  while ((match = ddRegex.exec(text)) !== null) {
+    testMathContent(match[1], true, match.index, match.index + match[0].length, match[0]);
+  }
+
+  // 3B. Display math \[ ... \]
+  const brkRegex = /(?:\\)+\[([\s\S]*?)(?:\\)+\]/g;
+  while ((match = brkRegex.exec(text)) !== null) {
+    testMathContent(match[1], true, match.index, match.index + match[0].length, match[0]);
+  }
+
+  // 3C. Inline math \( ... \)
+  const prnRegex = /(?:\\)+\(([\s\S]*?)(?:\\)+\)/g;
+  while ((match = prnRegex.exec(text)) !== null) {
+    testMathContent(match[1], false, match.index, match.index + match[0].length, match[0]);
+  }
+
+  // 3D. Inline math $ ... $ (excluding $$)
+  const sdRegex = /(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g;
+  while ((match = sdRegex.exec(text)) !== null) {
+    if (!isCovered(match.index, match.index + match[0].length)) {
+      testMathContent(match[1], false, match.index, match.index + match[0].length, match[0]);
+    }
+  }
+
+  // 3E. Unclosed delimiters: double dollar $$
+  const allDoubleDollarIndices: number[] = [];
+  const ddFindRegex = /(?<!\\)\$\$/g;
+  while ((match = ddFindRegex.exec(text)) !== null) {
+    allDoubleDollarIndices.push(match.index);
+  }
+  if (allDoubleDollarIndices.length % 2 !== 0) {
+    const unclosedIdx = allDoubleDollarIndices[allDoubleDollarIndices.length - 1];
+    const spanEnd = text.length;
+    const broken = text.slice(unclosedIdx, spanEnd);
+    if (!isCovered(unclosedIdx, spanEnd)) {
+      fragments.push({
+        id: `${block.id}-frag-${fragments.length + 1}`,
+        blockId: block.id,
+        startOffset: unclosedIdx,
+        endOffset: spanEnd,
+        brokenText: broken,
+        reason: "Unmatched display math delimiter '$$'",
+        category: "unbalanced_delimiters",
+        contextBefore: text.slice(Math.max(0, unclosedIdx - 80), unclosedIdx),
+        contextAfter: "",
+      });
+      coveredRanges.push({ start: unclosedIdx, end: spanEnd });
+    }
+  }
+
+  // 3F. Unclosed brackets \[ vs \]
+  const openBracketIndices: number[] = [];
+  const closeBracketIndices: number[] = [];
+  const openBrkRegex = /(?:\\)+\[/g;
+  const closeBrkRegex = /(?:\\)+\]/g;
+  while ((match = openBrkRegex.exec(text)) !== null) openBracketIndices.push(match.index);
+  while ((match = closeBrkRegex.exec(text)) !== null) closeBracketIndices.push(match.index);
+  if (openBracketIndices.length !== closeBracketIndices.length) {
+    const startIdx =
+      openBracketIndices.length > closeBracketIndices.length
+        ? openBracketIndices[closeBracketIndices.length]
+        : closeBracketIndices[openBracketIndices.length];
+    const spanEnd = text.length;
+    const broken = text.slice(startIdx, spanEnd);
+    if (!isCovered(startIdx, spanEnd)) {
+      fragments.push({
+        id: `${block.id}-frag-${fragments.length + 1}`,
+        blockId: block.id,
+        startOffset: startIdx,
+        endOffset: spanEnd,
+        brokenText: broken,
+        reason: "Unmatched display brackets '\[' vs '\]'",
+        category: "unbalanced_delimiters",
+        contextBefore: text.slice(Math.max(0, startIdx - 80), startIdx),
+        contextAfter: "",
+      });
+      coveredRanges.push({ start: startIdx, end: spanEnd });
+    }
+  }
+
+  // 3G. Unclosed parens \( vs \)
+  const openParenIndices: number[] = [];
+  const closeParenIndices: number[] = [];
+  const openPrnRegex = /(?:\\)+\(/g;
+  const closePrnRegex = /(?:\\)+\)/g;
+  while ((match = openPrnRegex.exec(text)) !== null) openParenIndices.push(match.index);
+  while ((match = closePrnRegex.exec(text)) !== null) closeParenIndices.push(match.index);
+  if (openParenIndices.length !== closeParenIndices.length) {
+    const startIdx =
+      openParenIndices.length > closeParenIndices.length
+        ? openParenIndices[closeParenIndices.length]
+        : closeParenIndices[openParenIndices.length];
+    const spanEnd = text.length;
+    const broken = text.slice(startIdx, spanEnd);
+    if (!isCovered(startIdx, spanEnd)) {
+      fragments.push({
+        id: `${block.id}-frag-${fragments.length + 1}`,
+        blockId: block.id,
+        startOffset: startIdx,
+        endOffset: spanEnd,
+        brokenText: broken,
+        reason: "Unmatched inline math parens '\(' vs '\)'",
+        category: "unbalanced_delimiters",
+        contextBefore: text.slice(Math.max(0, startIdx - 80), startIdx),
+        contextAfter: "",
+      });
+      coveredRanges.push({ start: startIdx, end: spanEnd });
+    }
+  }
+
+  // Pure equation block without explicit outer delimiters
+  if (block.type === "equation" && coveredRanges.length === 0) {
+    testMathContent(text, true, 0, text.length, text);
+  }
+
+  // 4. Raw unwrapped LaTeX command outside math mode in paragraphs/lists
+  if (block.type === "paragraph" || block.type === "list") {
+    const rawCmdRegex = /\\(?:frac|sqrt|sum|int|prod)\s*\{[^{}]*(?:\{[^{}]*\}[^{}]*)?\}/g;
+    while ((match = rawCmdRegex.exec(text)) !== null) {
+      if (!isCovered(match.index, match.index + match[0].length)) {
+        const start = match.index;
+        const end = start + match[0].length;
+        fragments.push({
+          id: `${block.id}-frag-${fragments.length + 1}`,
+          blockId: block.id,
+          startOffset: start,
+          endOffset: end,
+          brokenText: match[0],
+          reason: "LaTeX formula found outside math delimiters ($$ or $)",
+          category: "raw_math_unwrapped",
+          contextBefore: text.slice(Math.max(0, start - 80), start),
+          contextAfter: text.slice(end, Math.min(text.length, end + 80)),
+        });
+        coveredRanges.push({ start, end });
+      }
+    }
+  }
+
+  // Fallback: If detectBlockFormattingIssue found an issue but sub-fragment was not isolated
+  if (fragments.length === 0) {
+    const issue = detectBlockFormattingIssue(block);
+    if (issue) {
+      fragments.push({
+        id: `${block.id}-frag-1`,
+        blockId: block.id,
+        startOffset: 0,
+        endOffset: text.length,
+        brokenText: text,
+        reason: issue.reason,
+        category: issue.category,
+        contextBefore: "",
+        contextAfter: "",
+      });
+    }
+  }
+
+  return fragments;
+}
+
+export interface FlaggedFragmentsCollection {
+  fragments: BrokenFragment[];
+  failedBlockIds: string[];
+  issuesMap: Record<string, BlockFormattingIssue>;
+  blockFragmentsMap: Record<string, BrokenFragment[]>;
+}
+
+/**
+ * Collects all broken fragments across document blocks.
+ */
+export function collectFailedFragments(blocks: DocumentBlock[]): FlaggedFragmentsCollection {
+  const fragments: BrokenFragment[] = [];
+  const failedBlockIds: string[] = [];
+  const issuesMap: Record<string, BlockFormattingIssue> = {};
+  const blockFragmentsMap: Record<string, BrokenFragment[]> = {};
+
+  for (const block of blocks) {
+    const blockFrags = findBrokenFragmentsInBlock(block);
+    if (blockFrags.length > 0) {
+      fragments.push(...blockFrags);
+      failedBlockIds.push(block.id);
+      blockFragmentsMap[block.id] = blockFrags;
+      issuesMap[block.id] = {
+        blockId: block.id,
+        type: block.type,
+        reason: blockFrags[0].reason,
+        category: blockFrags[0].category,
+        fragments: blockFrags,
+      };
+    }
+  }
+
+  return { fragments, failedBlockIds, issuesMap, blockFragmentsMap };
+}
+
+/**
  * Collects all failed/flagged block IDs and their issue details from a list of blocks.
  */
 export function collectFailedBlocks(blocks: DocumentBlock[]): {
   failedBlockIds: string[];
   issuesMap: Record<string, BlockFormattingIssue>;
 } {
-  const failedBlockIds: string[] = [];
-  const issuesMap: Record<string, BlockFormattingIssue> = {};
+  const { failedBlockIds, issuesMap } = collectFailedFragments(blocks);
+  return { failedBlockIds, issuesMap };
+}
 
-  for (const block of blocks) {
-    const issue = detectBlockFormattingIssue(block);
-    if (issue) {
-      failedBlockIds.push(block.id);
-      issuesMap[block.id] = issue;
+/**
+ * Splices a repaired fragment into a block's raw text at exact character offsets.
+ * Guarantees that everything before startOffset and after endOffset is byte-for-byte untouched.
+ */
+export function replaceFragmentInBlock(
+  rawText: string,
+  startOffset: number,
+  endOffset: number,
+  repairedFragment: string
+): string {
+  const safeStart = Math.max(0, Math.min(startOffset, rawText.length));
+  const safeEnd = Math.max(safeStart, Math.min(endOffset, rawText.length));
+  const before = rawText.slice(0, safeStart);
+  const after = rawText.slice(safeEnd);
+  return before + repairedFragment + after;
+}
+
+/**
+ * Asserts that only the specified [startOffset, endOffset] region was altered,
+ * and the surrounding text before and after is 100% byte-for-byte identical.
+ */
+export function assertFragmentSurgicallyReplaced(
+  originalRawText: string,
+  updatedRawText: string,
+  startOffset: number,
+  endOffset: number,
+  repairedFragment: string
+): boolean {
+  const safeStart = Math.max(0, Math.min(startOffset, originalRawText.length));
+  const safeEnd = Math.max(safeStart, Math.min(endOffset, originalRawText.length));
+
+  const expectedBefore = originalRawText.slice(0, safeStart);
+  const expectedAfter = originalRawText.slice(safeEnd);
+
+  const actualBefore = updatedRawText.slice(0, safeStart);
+  const actualAfter = updatedRawText.slice(safeStart + repairedFragment.length);
+
+  return actualBefore === expectedBefore && actualAfter === expectedAfter;
+}
+
+/**
+ * Replaces a fragment within a specific block in the markdown document.
+ */
+export function replaceFragmentInDocument(
+  markdown: string,
+  targetBlockId: string,
+  startOffset: number,
+  endOffset: number,
+  repairedFragment: string
+): string {
+  const blocks = parseDocumentBlocks(markdown);
+  let targetIdx = blocks.findIndex((b) => b.id === targetBlockId);
+
+  if (targetIdx === -1) {
+    const baseTargetId = targetBlockId.replace(/-\d+$/, "");
+    targetIdx = blocks.findIndex(
+      (b) =>
+        (b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId) &&
+        detectBlockFormattingIssue(b) !== null
+    );
+    if (targetIdx === -1) {
+      targetIdx = blocks.findIndex(
+        (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
+      );
     }
   }
 
-  return { failedBlockIds, issuesMap };
+  if (targetIdx === -1) return markdown;
+
+  const targetBlock = blocks[targetIdx];
+  const updatedRawText = replaceFragmentInBlock(
+    targetBlock.rawText,
+    startOffset,
+    endOffset,
+    repairedFragment
+  );
+  blocks[targetIdx].rawText = updatedRawText;
+  return blocks.map((b) => b.rawText).join("\n\n");
 }
 
 /**
@@ -661,7 +1112,24 @@ export function replaceSingleBlockInDocument(
   repairedText: string
 ): string {
   const blocks = parseDocumentBlocks(markdown);
-  const targetIdx = blocks.findIndex((b) => b.id === targetBlockId);
+  let targetIdx = blocks.findIndex((b) => b.id === targetBlockId);
+
+  // Fallback: If exact duplicate suffix shifted due to prior sequential repairs,
+  // find matching base ID that still has a formatting issue
+  if (targetIdx === -1) {
+    const baseTargetId = targetBlockId.replace(/-\d+$/, "");
+    targetIdx = blocks.findIndex(
+      (b) =>
+        (b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId) &&
+        detectBlockFormattingIssue(b) !== null
+    );
+    if (targetIdx === -1) {
+      targetIdx = blocks.findIndex(
+        (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
+      );
+    }
+  }
+
   if (targetIdx === -1) return markdown;
 
   blocks[targetIdx].rawText = repairedText.trim();

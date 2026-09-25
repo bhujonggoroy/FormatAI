@@ -395,6 +395,16 @@ export class AIRequestManager {
         .sort((a, b) => a.priority - b.priority);
     }
 
+    // Exclude providers that have no enabled keys and no server env fallback
+    // In particular, Cloudflare Workers AI must NEVER be included in fallback chain if it has no configured key/credentials
+    candidateProviders = candidateProviders.filter((p) => {
+      if (p.id === "cloudflare") {
+        const hasKey = (p.apiKeys || []).some((k) => k.enabled && k.key && k.key.trim().length > 0);
+        if (!hasKey) return false;
+      }
+      return true;
+    });
+
     if (candidateProviders.length === 0) {
       throw new Error(
         "All enabled AI providers are currently unavailable. Please turn ON at least one provider and active API key in AI Settings."
@@ -651,13 +661,42 @@ export class AIRequestManager {
       }
     }
 
-    const lastStep = fallbackChain[fallbackChain.length - 1];
-    const errorMessage = lastStep
-      ? `All configured AI providers failed. Last failure (${lastStep.providerName} / ${lastStep.model}): ${lastStep.errorMessage}`
-      : "All configured AI providers failed. All enabled AI providers are currently unavailable.";
+    // Build aggregated error message showing every step in the fallbackChain
+    let errorMessage: string;
+    if (fallbackChain.length === 0) {
+      errorMessage = "All configured AI providers failed. All enabled AI providers are currently unavailable.";
+    } else if (fallbackChain.length === 1) {
+      const step = fallbackChain[0];
+      errorMessage = `AI request failed on ${step.providerName} (${step.model}): ${step.errorMessage}`;
+    } else {
+      const stepLines = fallbackChain.map((step, idx) => {
+        const masked = step.keyMasked && step.keyMasked !== "none" ? ` [key: ${step.keyMasked}]` : "";
+        return `  ${idx + 1}. ${step.providerName} (${step.model}${masked}): ${step.errorMessage}`;
+      });
+      errorMessage = `All providers failed (${fallbackChain.length} steps attempted):\n${stepLines.join("\n")}`;
+    }
+
+    // Determine the most informative failure step for classification and badge assignment
+    // Prioritize actual remote API responses (rate_limit, invalid_key, timeout, etc.) over unconfigured fallbacks
+    const informativeStep =
+      fallbackChain.find(
+        (s) =>
+          s.status !== "invalid_key" &&
+          !s.errorMessage?.toLowerCase().includes("no enabled api key") &&
+          s.providerId !== "cloudflare"
+      ) ||
+      fallbackChain.find(
+        (s) =>
+          !s.errorMessage?.toLowerCase().includes("no enabled api key") &&
+          s.providerId !== "cloudflare"
+      ) ||
+      fallbackChain.find((s) => s.providerId !== "cloudflare") ||
+      fallbackChain[0];
 
     const error = new Error(errorMessage);
     (error as any).fallbackChain = fallbackChain;
+    (error as any).informativeStep = informativeStep;
+    (error as any).errorCategory = informativeStep?.status || "server_error";
     throw error;
   }
 

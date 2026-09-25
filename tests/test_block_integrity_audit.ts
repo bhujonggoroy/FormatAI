@@ -4,6 +4,8 @@ import {
   compareDocumentBlocks,
   extractSubstantiveText,
   fnv1aHash,
+  collectFailedBlocks,
+  replaceSingleBlockInDocument,
   type DocumentBlock,
 } from "../src/utils/blockIntegrity.ts";
 import { validateAIPolishOutput } from "../src/utils/aiValidation.ts";
@@ -210,5 +212,82 @@ assert.ok(
   "Content beyond Section 6 must be preserved"
 );
 console.log("✓ Large Document Test Passed: Content beyond Section 6 is fully preserved.");
+
+// --------------------------------------------------------------------------------
+// 7. Duplicate/Repeated Content Unique ID Verification & Surgical Replacement
+// --------------------------------------------------------------------------------
+console.log("\nTest 7: Duplicate/repeated content unique IDs & surgical replacement...");
+const repeatedContentDoc = `### SECTION A
+
+Intro paragraph for first section.
+
+$$
+\\frac{1}{2
+$$
+
+### SECTION A
+
+Second section intro with identical heading.
+
+$$
+\\frac{1}{2
+$$
+
+### SECTION A
+
+Third section notes.
+
+- Important note
+
+- Important note`;
+
+const dupBlocks = parseDocumentBlocks(repeatedContentDoc);
+
+// Verify total block count
+assert.strictEqual(dupBlocks.length, 10, "Document should parse into 10 atomic blocks");
+
+// Verify strict uniqueness of all block IDs
+const dupIdSet = new Set(dupBlocks.map((b) => b.id));
+assert.strictEqual(
+  dupIdSet.size,
+  dupBlocks.length,
+  `All block IDs must be strictly unique! Found ${dupIdSet.size} unique IDs out of ${dupBlocks.length} blocks.`
+);
+
+// Verify occurrence suffixes on repeated headings
+const headingBlocks = dupBlocks.filter((b) => b.type === "heading");
+assert.strictEqual(headingBlocks.length, 3, "There should be 3 heading blocks");
+const baseHeadingId = headingBlocks[0].id;
+assert.strictEqual(headingBlocks[1].id, `${baseHeadingId}-2`, "2nd heading must have suffix -2");
+assert.strictEqual(headingBlocks[2].id, `${baseHeadingId}-3`, "3rd heading must have suffix -3");
+
+// Verify occurrence suffixes on repeated broken equations
+const eqBlocks = dupBlocks.filter((b) => b.type === "equation");
+assert.strictEqual(eqBlocks.length, 2, "There should be 2 equation blocks");
+const baseEqId = eqBlocks[0].id;
+assert.strictEqual(eqBlocks[1].id, `${baseEqId}-2`, "2nd equation must have suffix -2");
+
+// Verify collectFailedBlocks captures both with distinct unique IDs
+const { failedBlockIds } = collectFailedBlocks(dupBlocks);
+assert.strictEqual(failedBlockIds.length, 2, "Both broken equations must be flagged");
+assert.ok(failedBlockIds.includes(baseEqId), "First equation must be flagged");
+assert.ok(failedBlockIds.includes(`${baseEqId}-2`), "Second equation must be flagged with its unique -2 ID");
+
+// Verify surgical replacement targeting ONLY the 2nd instance
+const repairedEq2 = "$$\n\\frac{1}{2} + \\frac{1}{2} = 1\n$$";
+const updatedDocAfterEq2 = replaceSingleBlockInDocument(repeatedContentDoc, `${baseEqId}-2`, repairedEq2);
+const updatedBlocksAfterEq2 = parseDocumentBlocks(updatedDocAfterEq2);
+
+// Block 0 must still be 1st heading
+assert.strictEqual(updatedBlocksAfterEq2[0].rawText, "### SECTION A");
+// Block 2 must still be the FIRST UNCHANGED broken equation
+assert.strictEqual(updatedBlocksAfterEq2[2].rawText, "$$\n\\frac{1}{2\n$$", "First equation must remain untouched");
+// Block 5 must be the REPAIRED second equation
+assert.strictEqual(updatedBlocksAfterEq2[5].rawText, repairedEq2, "Second equation must be replaced");
+// Headings 1 and 3 must remain intact
+assert.strictEqual(updatedBlocksAfterEq2[3].rawText, "### SECTION A");
+assert.strictEqual(updatedBlocksAfterEq2[6].rawText, "### SECTION A");
+
+console.log("✓ Requirement 7 Passed: Duplicate content receives unique occurrence-suffixed IDs and targeted replacement affects only the specified instance.");
 
 console.log("\n=== ALL BLOCK INTEGRITY & AUDIT REQUIREMENTS PASSED ===");

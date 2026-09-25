@@ -26,7 +26,7 @@ import {
 import katex from "katex";
 import { downloadPreviewAsPdf, generateDocumentPdf } from "../utils/pdfGenerator";
 import { TextDiffViewer } from "./TextDiffViewer";
-import { parseDocumentBlocks, type BlockFormattingIssue } from "../utils/blockIntegrity";
+import { parseDocumentBlocks, type BlockFormattingIssue, type BrokenFragment } from "../utils/blockIntegrity";
 
 export interface ValidationAlertState {
   failed: boolean;
@@ -64,7 +64,10 @@ interface FormattedPreviewProps {
   onViewModeChange?: (mode: "rendered" | "source" | "diff") => void;
   failedBlockIds?: string[];
   blockIssuesMap?: Record<string, BlockFormattingIssue>;
+  fragments?: BrokenFragment[];
+  blockFragmentsMap?: Record<string, BrokenFragment[]>;
   onRepairSingleBlock?: (blockId: string) => void;
+  onRepairFragment?: (fragment: BrokenFragment) => void;
   onRepairAllFlagged?: () => void;
   isRepairing?: boolean;
   repairProgress?: { current: number; total: number; currentBlockId?: string } | null;
@@ -108,7 +111,10 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   onViewModeChange,
   failedBlockIds = [],
   blockIssuesMap,
+  fragments = [],
+  blockFragmentsMap,
   onRepairSingleBlock,
+  onRepairFragment,
   onRepairAllFlagged,
   isRepairing = false,
   repairProgress = null,
@@ -283,8 +289,74 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     });
   }
 
+  // Helper function to render text with fine-grained broken fragments highlighted inline
+  function renderTextWithFragments(
+    text: string,
+    prefix: string,
+    blockFrags: BrokenFragment[] = []
+  ): React.ReactNode {
+    if (!blockFrags || blockFrags.length === 0) {
+      return renderInline(text, prefix);
+    }
+
+    const matchedFrags = blockFrags.filter((f) => f.brokenText && text.includes(f.brokenText));
+    if (matchedFrags.length === 0) {
+      return renderInline(text, prefix);
+    }
+
+    let currentRemaining = text;
+    const nodes: React.ReactNode[] = [];
+    let partIdx = 0;
+
+    for (const frag of matchedFrags) {
+      const idx = currentRemaining.indexOf(frag.brokenText);
+      if (idx !== -1) {
+        const beforeText = currentRemaining.slice(0, idx);
+        if (beforeText) {
+          nodes.push(renderInline(beforeText, `${prefix}-pre-${partIdx}`));
+        }
+        nodes.push(
+          <mark
+            key={`${prefix}-frag-${frag.id}-${partIdx}`}
+            className="bg-rose-100 text-rose-900 border border-rose-400 rounded px-1.5 py-0.5 mx-0.5 inline-flex items-center gap-1 font-mono text-xs select-text shadow-2xs group relative cursor-help"
+            title={`Flagged issue: ${frag.reason}`}
+          >
+            <AlertTriangle className="w-3 h-3 text-rose-600 inline shrink-0" />
+            <span className="font-semibold text-rose-900">{frag.brokenText}</span>
+            {onRepairFragment && (
+              <button
+                type="button"
+                onClick={(e) => {
+                  e.stopPropagation();
+                  onRepairFragment(frag);
+                }}
+                disabled={isRepairing}
+                className="ml-1 px-1.5 py-0.5 rounded text-[10px] bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-sans font-bold cursor-pointer transition-colors shadow-2xs"
+                title={`Repair fragment ${frag.id}`}
+              >
+                Fix
+              </button>
+            )}
+          </mark>
+        );
+        currentRemaining = currentRemaining.slice(idx + frag.brokenText.length);
+        partIdx++;
+      }
+    }
+
+    if (currentRemaining) {
+      nodes.push(renderInline(currentRemaining, `${prefix}-post-${partIdx}`));
+    }
+
+    return <>{nodes}</>;
+  }
+
   // Helper function to render a list of lines within a block into structured React elements
-  function renderLinesToElements(lines: string[], blockIdPrefix: string): React.ReactNode[] {
+  function renderLinesToElements(
+    lines: string[],
+    blockIdPrefix: string,
+    blockFrags: BrokenFragment[] = []
+  ): React.ReactNode[] {
     let seq = 0;
     const elements: React.ReactNode[] = [];
     let i = 0;
@@ -632,7 +704,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             <span className="font-bold text-slate-900 shrink-0 select-none min-w-[20px]">
               {prefix}
             </span>
-            <div className="flex-1">{renderInline(subContent, `${blockId}-inl`)}</div>
+            <div className="flex-1">{renderTextWithFragments(subContent, `${blockId}-inl`, blockFrags)}</div>
           </div>
         );
         i++;
@@ -656,7 +728,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             <span className={isSideNote ? 'italic text-slate-500' : 'font-semibold text-slate-600'}>
               {label}{' '}
             </span>
-            <span>{renderInline(noteContent, `${blockId}-inl`)}</span>
+            <span>{renderTextWithFragments(noteContent, `${blockId}-inl`, blockFrags)}</span>
           </div>
         );
         i++;
@@ -742,7 +814,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             className="my-3 p-3.5 bg-blue-50/50 border-l-4 rounded-r-lg text-sm text-slate-800 font-medium shadow-2xs leading-relaxed"
             style={{ borderColor: accentColor }}
           >
-            {renderInline(trimmed.slice(2), `${blockId}-inl`)}
+            {renderTextWithFragments(trimmed.slice(2), `${blockId}-inl`, blockFrags)}
           </blockquote>
         );
         i++;
@@ -762,7 +834,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             className={`flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ${marginClass} leading-relaxed`}
           >
             <span className="text-slate-400 mt-1 select-none text-xs leading-none">○</span>
-            <div className="flex-1">{renderInline(strippedBullet, `${blockId}-inl`)}</div>
+            <div className="flex-1">{renderTextWithFragments(strippedBullet, `${blockId}-inl`, blockFrags)}</div>
           </div>
         );
         i++;
@@ -780,7 +852,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             <span className="font-bold text-sm select-none" style={{ color: accentColor }}>
               {match[1]}
             </span>
-            <div className="flex-1 font-normal">{renderInline(match[2].trim(), `${blockId}-inl`)}</div>
+            <div className="flex-1 font-normal">{renderTextWithFragments(match[2].trim(), `${blockId}-inl`, blockFrags)}</div>
           </div>
         );
         i++;
@@ -816,7 +888,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           key={blockId}
           className="text-sm text-slate-800 my-2 leading-relaxed"
         >
-          {renderInline(trimmed, `${blockId}-p`)}
+          {renderTextWithFragments(trimmed, `${blockId}-p`, blockFrags)}
         </p>
       );
       i++;
@@ -826,7 +898,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   }
 
   // Parse document into atomic blocks with deterministic stable IDs
-  // Blocks with formatting/KaTeX issues are highlighted with red border and "Fix this block" action
+  // Blocks with formatting/KaTeX issues have fine-grained fragments highlighted inline
   const renderedElements = useMemo(() => {
     if (!markdown || !markdown.trim()) return [];
 
@@ -836,31 +908,32 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     blocks.forEach((block) => {
       const isFailed = failedBlockIds.includes(block.id);
       const issue = isFailed ? blockIssuesMap?.[block.id] : null;
+      const blockFrags = blockFragmentsMap?.[block.id] || issue?.fragments || [];
       const blockLines = block.rawText.split("\n");
-      const blockContent = renderLinesToElements(blockLines, block.id);
+      const blockContent = renderLinesToElements(blockLines, block.id, blockFrags);
 
-      if (isFailed) {
-        elements.push(
-          <div
-            key={block.id}
-            id={`flagged-block-${block.id}`}
-            data-block-id={block.id}
-            data-flagged="true"
-            className="my-3 p-3.5 rounded-xl border-2 border-rose-400 bg-rose-50/75 shadow-xs relative group transition-all"
-          >
-            {/* Flagged Block Header Badge & Action */}
-            <div className="flex items-center justify-between text-xs text-rose-950 pb-2 mb-2.5 border-b border-rose-200">
-              <div className="flex items-center gap-1.5 font-bold flex-wrap">
-                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
-                <span className="font-extrabold text-rose-950">
-                  Flagged: {issue?.reason || "Formatting or LaTeX syntax error"}
-                </span>
-                <span className="font-mono text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 font-semibold">
+      elements.push(
+        <div
+          key={block.id}
+          id={`block-${block.id}`}
+          data-block-id={block.id}
+          data-flagged={isFailed ? "true" : undefined}
+          className="my-1 relative"
+        >
+          {/* Subtle compact badge if block has flagged fragments */}
+          {isFailed && (
+            <div className="flex items-center justify-between text-xs text-rose-800 py-1 px-2.5 mb-1.5 bg-rose-50/70 rounded-lg border border-rose-200">
+              <div className="flex items-center gap-1.5 font-semibold text-[11px] flex-wrap">
+                <AlertTriangle className="w-3.5 h-3.5 text-rose-600 shrink-0" />
+                <span>Flagged: {issue?.reason || "Formatting or LaTeX syntax error"}</span>
+                <span className="font-mono text-[9px] text-rose-700 bg-rose-100 px-1 py-0.5 rounded border border-rose-300 font-semibold">
                   {block.id}
                 </span>
-                <span className="text-[10px] text-rose-600 bg-white/80 px-1.5 py-0.5 rounded font-mono border border-rose-200">
-                  {block.type}
-                </span>
+                {blockFrags.length > 0 && (
+                  <span className="text-[10px] text-rose-600 bg-white/80 px-1.5 py-0.5 rounded font-mono border border-rose-200">
+                    {blockFrags.length} fragment{blockFrags.length === 1 ? "" : "s"}
+                  </span>
+                )}
               </div>
               {onRepairSingleBlock && (
                 <button
@@ -868,31 +941,25 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
                   onClick={() => onRepairSingleBlock(block.id)}
                   disabled={isRepairing}
                   className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-50 cursor-pointer shadow-2xs transition-colors shrink-0"
-                  title={`Repair only block ${block.id}`}
+                  title={`Repair flagged fragments in block ${block.id}`}
                 >
-                  <Wrench className="w-3.5 h-3.5" />
-                  <span>Fix this block</span>
+                  <Wrench className="w-3 h-3" />
+                  <span>Fix block</span>
                 </button>
               )}
             </div>
+          )}
 
-            {/* Block Body Content */}
-            <div className="text-slate-900 overflow-x-auto">
-              {blockContent}
-            </div>
-          </div>
-        );
-      } else {
-        elements.push(
-          <div key={block.id} data-block-id={block.id} className="my-0.5">
+          {/* Block Body Content with exact broken fragments highlighted inline */}
+          <div className="text-slate-900 overflow-x-auto">
             {blockContent}
           </div>
-        );
-      }
+        </div>
+      );
     });
 
     return elements;
-  }, [markdown, fontFamily, accentColor, equationFormat, failedBlockIds, blockIssuesMap, isRepairing, onRepairSingleBlock]);
+  }, [markdown, fontFamily, accentColor, equationFormat, failedBlockIds, blockIssuesMap, blockFragmentsMap, fragments, isRepairing, onRepairSingleBlock, onRepairFragment]);
 
   const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
   const mathFormulaCount = (markdown.match(/\$[^$]+\$/g) || []).length;

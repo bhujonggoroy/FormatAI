@@ -36,6 +36,7 @@ export interface PipelineDebugTrace {
     errorMessage?: string;
     stage?: string;
     blockId?: string;
+    fragmentId?: string;
     repairedLength?: number;
   };
 }

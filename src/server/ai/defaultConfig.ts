@@ -180,7 +180,7 @@ export function getInitialProviders(): ProviderConfig[] {
     {
       id: "cloudflare",
       name: "Cloudflare Workers AI",
-      enabled: true,
+      enabled: false, // Explicitly OFF by default (requires Account ID and API token)
       priority: 7,
       apiKeys: [],
       selectedModel: "@cf/zai-org/glm-5.3",

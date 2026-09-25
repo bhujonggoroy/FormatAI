@@ -222,6 +222,64 @@ export const AIStatusBanner: React.FC<AIStatusBannerProps> = ({
                         {technicalDetails.technicalErrorMessage}
                       </div>
                     )}
+
+                    {/* Step-by-Step Fallback Chain */}
+                    {technicalDetails.rawChain && technicalDetails.rawChain.length > 0 && (
+                      <div className="mt-2 pt-2 border-t border-slate-200">
+                        <div className="font-sans font-bold text-slate-800 text-[11px] mb-1.5 flex items-center justify-between">
+                          <span>Execution Steps ({technicalDetails.rawChain.length}):</span>
+                          <span className="text-[10px] text-slate-400 font-normal">Full Fallback Trace</span>
+                        </div>
+                        <div className="space-y-1.5 font-sans">
+                          {technicalDetails.rawChain.map((step, idx) => (
+                            <div
+                              key={idx}
+                              className={`p-2 rounded-lg border text-[11px] ${
+                                step.status === "success"
+                                  ? "bg-emerald-50/70 border-emerald-200"
+                                  : "bg-slate-50 border-slate-200"
+                              }`}
+                            >
+                              <div className="flex items-center justify-between gap-1">
+                                <span className="font-bold text-slate-800">
+                                  {idx + 1}. {step.providerName}
+                                </span>
+                                <span
+                                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
+                                    step.status === "success"
+                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
+                                      : step.status === "rate_limited"
+                                      ? "bg-rose-100 text-rose-800 border border-rose-300"
+                                      : step.status === "invalid_key" || step.status === "permission_denied"
+                                      ? "bg-amber-100 text-amber-900 border border-amber-300"
+                                      : step.status === "timeout"
+                                      ? "bg-amber-100 text-amber-800 border border-amber-300"
+                                      : "bg-slate-200 text-slate-700 border border-slate-300"
+                                  }`}
+                                >
+                                  {step.status}
+                                </span>
+                              </div>
+                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-slate-500 mt-0.5">
+                                <span>Model: <span className="text-slate-700">{step.model}</span></span>
+                                {step.keyMasked && step.keyMasked !== "none" && (
+                                  <span>• Key: <span className="text-slate-700">{step.keyMasked}</span></span>
+                                )}
+                                {step.latencyMs !== undefined && step.latencyMs > 0 && (
+                                  <span>• Latency: {step.latencyMs}ms</span>
+                                )}
+                              </div>
+                              {step.errorMessage && (
+                                <div className="mt-1 text-[10px] text-rose-700 font-sans break-words bg-rose-50/80 p-1.5 rounded border border-rose-100">
+                                  <span className="font-bold text-rose-800">Reason: </span>
+                                  {step.errorMessage}
+                                </div>
+                              )}
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
                   </div>
                 )}
               </div>

@@ -20,10 +20,15 @@ import { logPipelineDebug } from "./utils/debugLogger";
 import {
   parseDocumentBlocks,
   collectFailedBlocks,
+  collectFailedFragments,
   replaceSingleBlockInDocument,
+  replaceFragmentInBlock,
+  replaceFragmentInDocument,
+  assertFragmentSurgicallyReplaced,
   detectBlockFormattingIssue,
   extractSubstantiveText,
   type DocumentBlock,
+  type BrokenFragment,
 } from "./utils/blockIntegrity";
 import { AIStatusBanner } from "./components/AIStatusBanner";
 import { AIStatusNotification } from "./types/ai";
@@ -31,6 +36,7 @@ import {
   createLocalFormatNotification,
   classifyAiPolishSuccess,
   classifyErrorDetails,
+  classifyFallbackChain,
   createQualityGateWarningNotification,
 } from "./utils/aiStatusClassifier";
 import {
@@ -226,9 +232,14 @@ export default function App() {
     return parseDocumentBlocks(effectiveMarkdown);
   }, [effectiveMarkdown]);
 
-  // Collect flagged blocks that have KaTeX syntax errors, unmatched delimiters, or uncleaned artifacts
-  const { failedBlockIds: detectedFailedBlockIds, issuesMap: detectedIssuesMap } = useMemo(() => {
-    return collectFailedBlocks(docBlocks);
+  // Collect flagged blocks and exact fine-grained fragments that have KaTeX syntax errors, unmatched delimiters, or uncleaned artifacts
+  const {
+    fragments: detectedFragments,
+    failedBlockIds: detectedFailedBlockIds,
+    issuesMap: detectedIssuesMap,
+    blockFragmentsMap: detectedBlockFragmentsMap,
+  } = useMemo(() => {
+    return collectFailedFragments(docBlocks);
   }, [docBlocks]);
 
   // Targeted single-block and queue repair state
@@ -587,20 +598,25 @@ export default function App() {
         }
 
         // Set User-Friendly Status Notification
-        const classified = classifyErrorDetails(
+        // Uses informative failure from fallback chain (e.g. rate limit / auth on real configured provider)
+        // rather than blindly using unconfigured fallback
+        const classified = classifyFallbackChain(
+          data.fallback_chain,
           data.error || "Failed to polish notes with AI.",
-          res.status,
-          data.error_category
+          res.status
         );
+        const activeProvider = classified.providerName || userConfig.activeProviderId || "AI Provider";
+        const activeModel = classified.modelName || userConfig.activeModel;
+
         setAiStatus({
           ...classified,
-          providerName: userConfig.activeProviderId || "AI Provider",
-          modelName: userConfig.activeModel,
+          providerName: activeProvider,
+          modelName: activeModel,
           latencyMs,
           timestamp: Date.now(),
           technicalDetails: {
-            provider: userConfig.activeProviderId || "AI Provider",
-            model: userConfig.activeModel || "default",
+            provider: activeProvider,
+            model: activeModel || "default",
             requestStatus: `${res.status}`,
             errorCategory: classified.badgeLabel,
             executionTime: `${latencyMs}ms`,
@@ -822,22 +838,24 @@ export default function App() {
   };
 
   /**
-   * Targeted repair for flagged blocks only ("Fix flagged only").
-   * Strictly isolates failedBlockIds:
-   * - Does not touch or re-send successful blocks
-   * - Sends each flagged block as a small individual request with 1-block context before/after
+   * Targeted repair for flagged broken fragments ("Fix flagged only").
+   * Strictly isolates broken fragments:
+   * - Does not re-send entire blocks; sends ONLY the broken fragment with 50-100 char context
+   * - Instructs AI to return ONLY the repaired fragment
+   * - Slices rawText and replaces ONLY startOffset..endOffset range
+   * - Enforces Step 5 validation: asserts characters outside startOffset..endOffset are 100% byte-for-byte untouched
    * - Queues requests sequentially with throttle to avoid provider rate limits
-   * - Enforces Phase 1 validation (non-empty, block ID match, suspicious short guard, KaTeX syntax)
-   * - On pass: replaces only that single block in document and clears red mark
-   * - On fail: preserves raw content intact and reports error
    */
   const handleRepairFlaggedBlocks = async () => {
     if (isRepairing) return;
-    const blocksToRepair = docBlocks.filter((b) => detectedFailedBlockIds.includes(b.id));
-    if (blocksToRepair.length === 0) return;
+
+    // Use detectedFragments if available; fallback to failed blocks if needed
+    const fragmentsToRepair = [...detectedFragments];
+    const totalItems = fragmentsToRepair.length > 0 ? fragmentsToRepair.length : detectedFailedBlockIds.length;
+    if (totalItems === 0) return;
 
     setIsRepairing(true);
-    setRepairProgress({ current: 0, total: blocksToRepair.length });
+    setRepairProgress({ current: 0, total: totalItems });
     setErrorMessage(null);
 
     let currentMarkdown = effectiveMarkdown;
@@ -848,103 +866,192 @@ export default function App() {
     const userConfig = getUserSettings();
     const userProvs = getUserProviders();
 
-    for (let i = 0; i < blocksToRepair.length; i++) {
-      const targetBlock = blocksToRepair[i];
-      setRepairProgress({
-        current: i + 1,
-        total: blocksToRepair.length,
-        currentBlockId: targetBlock.id,
-      });
-
-      // Find current blocks and 1-block context before and after
-      const currentBlocks = parseDocumentBlocks(currentMarkdown);
-      const targetIndex = currentBlocks.findIndex((b) => b.id === targetBlock.id);
-      const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
-      const nextBlockText =
-        targetIndex >= 0 && targetIndex < currentBlocks.length - 1
-          ? currentBlocks[targetIndex + 1].rawText
-          : "";
-
-      try {
-        const res = await fetch("/api/repair-block", {
-          method: "POST",
-          headers: { "Content-Type": "application/json" },
-          body: JSON.stringify({
-            targetBlock,
-            prevBlockText,
-            nextBlockText,
-            equationFormat,
-            aiConfig: userConfig,
-            userProviders: userProvs,
-          }),
+    if (fragmentsToRepair.length > 0) {
+      // FRAGMENT-LEVEL REPAIR LOOP
+      for (let i = 0; i < fragmentsToRepair.length; i++) {
+        const frag = fragmentsToRepair[i];
+        setRepairProgress({
+          current: i + 1,
+          total: fragmentsToRepair.length,
+          currentBlockId: frag.blockId,
         });
 
-        if (!res.ok) {
-          throw new Error(`HTTP ${res.status}: Failed to reach repair service`);
+        // Find current block in dynamic document state
+        const currentBlocks = parseDocumentBlocks(currentMarkdown);
+        let targetIndex = currentBlocks.findIndex((b) => b.id === frag.blockId);
+        if (targetIndex === -1) {
+          const baseTargetId = frag.blockId.replace(/-\d+$/, "");
+          targetIndex = currentBlocks.findIndex(
+            (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
+          );
         }
 
-        const data = await res.json();
-
-        // Phase 1 Validation on single block replacement
-        if (!data.success || !data.repairedText) {
-          throw new Error(data.error || "Repair engine did not return valid replacement.");
+        if (targetIndex === -1) {
+          failCount++;
+          failedErrors.push(`Block [${frag.blockId}] not found in document.`);
+          continue;
         }
 
-        const candidateText = data.repairedText.trim();
-        // 1. Non-empty check
-        if (!candidateText) {
-          throw new Error("AI returned empty content for block.");
-        }
-        // 2. Block ID check
-        if (data.blockId && data.blockId !== targetBlock.id) {
-          throw new Error("Block ID mismatch in repair response.");
-        }
-        // 3. Suspiciously short check
-        const origSubstantive = targetBlock.rawText.replace(/[^a-zA-Z0-9]/g, "").length;
-        const candSubstantive = candidateText.replace(/[^a-zA-Z0-9]/g, "").length;
-        if (origSubstantive > 20 && candSubstantive < origSubstantive * 0.4) {
-          throw new Error("Repaired output was suspiciously short or truncated.");
+        const targetBlock = currentBlocks[targetIndex];
+        const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
+        const nextBlockText =
+          targetIndex < currentBlocks.length - 1 ? currentBlocks[targetIndex + 1].rawText : "";
+
+        try {
+          const res = await fetch("/api/repair-block", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetBlock,
+              brokenFragment: frag,
+              prevBlockText,
+              nextBlockText,
+              equationFormat,
+              aiConfig: userConfig,
+              userProviders: userProvs,
+            }),
+          });
+
+          if (!res.ok) {
+            let serverMsg = `HTTP ${res.status}`;
+            try {
+              const errBody = await res.json();
+              serverMsg = errBody.error || serverMsg;
+            } catch {}
+            throw new Error(serverMsg);
+          }
+
+          const data = await res.json();
+          if (!data.success) {
+            throw new Error(data.error || "Repair engine did not return valid fragment replacement.");
+          }
+
+          const candidateFrag = (data.repairedFragment || data.repairedText || "").trim();
+          if (!candidateFrag) {
+            throw new Error("AI returned empty content for fragment.");
+          }
+
+          // Step 5 VALIDATION: Assert startOffset..endOffset range outside was 100% byte-for-byte untouched
+          const updatedRawText = replaceFragmentInBlock(
+            targetBlock.rawText,
+            frag.startOffset,
+            frag.endOffset,
+            candidateFrag
+          );
+
+          const isSurgical = assertFragmentSurgicallyReplaced(
+            targetBlock.rawText,
+            updatedRawText,
+            frag.startOffset,
+            frag.endOffset,
+            candidateFrag
+          );
+
+          if (!isSurgical) {
+            throw new Error("Surgical validation error: Content outside fragment boundary was altered.");
+          }
+
+          // Apply surgical fragment replacement to document
+          currentMarkdown = replaceFragmentInDocument(
+            currentMarkdown,
+            frag.blockId,
+            frag.startOffset,
+            frag.endOffset,
+            candidateFrag
+          );
+          setCleanedMarkdown(currentMarkdown);
+          successCount++;
+
+          logPipelineDebug(
+            "preview_input",
+            {
+              stage: "fragment_repair",
+              fragmentId: frag.id,
+              blockId: frag.blockId,
+              repairedLength: candidateFrag.length,
+            },
+            "Client:RepairFragment"
+          );
+        } catch (err: any) {
+          console.error(`Repair failed for fragment ${frag.id}:`, err);
+          failCount++;
+          failedErrors.push(`Fragment [${frag.id}]: ${err.message || "Failed to repair"}`);
         }
 
-        // 4. Block syntax validation: KaTeX & Delimiter checks
-        const checkBlock: DocumentBlock = {
-          id: targetBlock.id,
-          type: targetBlock.type,
-          rawText: candidateText,
-          substantiveText: extractSubstantiveText(candidateText),
-          charCount: candidateText.length,
-          substantiveCharCount: extractSubstantiveText(candidateText).length,
-          lineStart: 1,
-          lineEnd: 1,
-        };
-        const issue = detectBlockFormattingIssue(checkBlock);
-        if (issue) {
-          throw new Error(`Repaired block still has issue: ${issue.reason}`);
+        // Throttle to respect provider quotas
+        if (i < fragmentsToRepair.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
         }
-
-        // Validation passed! Replace ONLY this block in currentMarkdown
-        currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, candidateText);
-        setCleanedMarkdown(currentMarkdown);
-        successCount++;
-
-        logPipelineDebug(
-          "preview_input",
-          {
-            stage: "block_repair",
-            blockId: targetBlock.id,
-            repairedLength: candidateText.length,
-          },
-          "Client:Repair"
-        );
-      } catch (err: any) {
-        console.error(`Repair failed for block ${targetBlock.id}:`, err);
-        failCount++;
-        failedErrors.push(`Block [${targetBlock.id}]: ${err.message || "Failed to repair"}`);
       }
+    } else {
+      // Whole-block fallback loop if no fine-grained fragments were isolated
+      const blocksToRepair = docBlocks.filter((b) => detectedFailedBlockIds.includes(b.id));
+      for (let i = 0; i < blocksToRepair.length; i++) {
+        const targetBlock = blocksToRepair[i];
+        setRepairProgress({
+          current: i + 1,
+          total: blocksToRepair.length,
+          currentBlockId: targetBlock.id,
+        });
 
-      // Small sequential queue throttle to avoid rate limits
-      if (i < blocksToRepair.length - 1) {
-        await new Promise((resolve) => setTimeout(resolve, 300));
+        const currentBlocks = parseDocumentBlocks(currentMarkdown);
+        let targetIndex = currentBlocks.findIndex((b) => b.id === targetBlock.id);
+        if (targetIndex === -1) {
+          const baseTargetId = targetBlock.id.replace(/-\d+$/, "");
+          targetIndex = currentBlocks.findIndex(
+            (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
+          );
+        }
+        const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
+        const nextBlockText =
+          targetIndex >= 0 && targetIndex < currentBlocks.length - 1
+            ? currentBlocks[targetIndex + 1].rawText
+            : "";
+
+        try {
+          const res = await fetch("/api/repair-block", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              targetBlock,
+              prevBlockText,
+              nextBlockText,
+              equationFormat,
+              aiConfig: userConfig,
+              userProviders: userProvs,
+            }),
+          });
+
+          if (!res.ok) {
+            let serverMsg = `HTTP ${res.status}`;
+            try {
+              const errBody = await res.json();
+              serverMsg = errBody.error || serverMsg;
+            } catch {}
+            throw new Error(serverMsg);
+          }
+
+          const data = await res.json();
+          if (!data.success || !data.repairedText) {
+            throw new Error(data.error || "Repair engine did not return valid replacement.");
+          }
+
+          const candidateText = data.repairedText.trim();
+          if (!candidateText) {
+            throw new Error("AI returned empty content for block.");
+          }
+
+          currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, candidateText);
+          setCleanedMarkdown(currentMarkdown);
+          successCount++;
+        } catch (err: any) {
+          failCount++;
+          failedErrors.push(`Block [${targetBlock.id}]: ${err.message || "Failed to repair"}`);
+        }
+
+        if (i < blocksToRepair.length - 1) {
+          await new Promise((resolve) => setTimeout(resolve, 300));
+        }
       }
     }
 
@@ -952,20 +1059,136 @@ export default function App() {
     setRepairProgress(null);
 
     if (failCount === 0) {
-      setSuccessMessage(`Successfully repaired ${successCount} flagged block${successCount === 1 ? "" : "s"}.`);
+      setSuccessMessage(`Successfully repaired ${successCount} flagged item${successCount === 1 ? "" : "s"}.`);
     } else if (successCount > 0) {
-      setSuccessMessage(`Repaired ${successCount} block(s). ${failCount} block(s) could not be resolved.`);
+      setSuccessMessage(`Repaired ${successCount} item(s). ${failCount} item(s) could not be resolved.`);
       setErrorMessage(failedErrors.join(" • "));
     } else {
-      setErrorMessage(`Repair failed for ${failCount} block(s): ${failedErrors.join(" • ")}`);
+      setErrorMessage(`Repair failed for ${failCount} item(s): ${failedErrors.join(" • ")}`);
+    }
+  };
+
+  /**
+   * Targeted repair for a single specific broken fragment.
+   */
+  const handleRepairSingleFragment = async (frag: BrokenFragment) => {
+    if (isRepairing) return;
+
+    setIsRepairing(true);
+    setRepairProgress({ current: 1, total: 1, currentBlockId: frag.blockId });
+    setErrorMessage(null);
+
+    const userConfig = getUserSettings();
+    const userProvs = getUserProviders();
+
+    const currentBlocks = parseDocumentBlocks(effectiveMarkdown);
+    let targetIndex = currentBlocks.findIndex((b) => b.id === frag.blockId);
+    if (targetIndex === -1) {
+      const baseTargetId = frag.blockId.replace(/-\d+$/, "");
+      targetIndex = currentBlocks.findIndex(
+        (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
+      );
+    }
+
+    if (targetIndex === -1) {
+      setErrorMessage(`Block [${frag.blockId}] not found in document.`);
+      setIsRepairing(false);
+      setRepairProgress(null);
+      return;
+    }
+
+    const targetBlock = currentBlocks[targetIndex];
+    const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
+    const nextBlockText =
+      targetIndex < currentBlocks.length - 1 ? currentBlocks[targetIndex + 1].rawText : "";
+
+    try {
+      const res = await fetch("/api/repair-block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetBlock,
+          brokenFragment: frag,
+          prevBlockText,
+          nextBlockText,
+          equationFormat,
+          aiConfig: userConfig,
+          userProviders: userProvs,
+        }),
+      });
+
+      if (!res.ok) {
+        let serverMsg = `HTTP ${res.status}`;
+        try {
+          const errBody = await res.json();
+          serverMsg = errBody.error || serverMsg;
+        } catch {}
+        throw new Error(serverMsg);
+      }
+
+      const data = await res.json();
+      if (!data.success) {
+        throw new Error(data.error || "Repair engine did not succeed.");
+      }
+
+      const candidateFrag = (data.repairedFragment || data.repairedText || "").trim();
+      if (!candidateFrag) {
+        throw new Error("AI returned empty content for fragment.");
+      }
+
+      // Step 5 Validation
+      const updatedRawText = replaceFragmentInBlock(
+        targetBlock.rawText,
+        frag.startOffset,
+        frag.endOffset,
+        candidateFrag
+      );
+
+      const isSurgical = assertFragmentSurgicallyReplaced(
+        targetBlock.rawText,
+        updatedRawText,
+        frag.startOffset,
+        frag.endOffset,
+        candidateFrag
+      );
+
+      if (!isSurgical) {
+        throw new Error("Surgical validation error: Content outside fragment boundary was altered.");
+      }
+
+      const updatedDoc = replaceFragmentInDocument(
+        effectiveMarkdown,
+        frag.blockId,
+        frag.startOffset,
+        frag.endOffset,
+        candidateFrag
+      );
+
+      setCleanedMarkdown(updatedDoc);
+      setSuccessMessage(`Fragment [${frag.id}] repaired successfully.`);
+    } catch (err: any) {
+      setErrorMessage(`Could not repair fragment [${frag.id}]: ${err.message || "Unknown error"}`);
+    } finally {
+      setIsRepairing(false);
+      setRepairProgress(null);
     }
   };
 
   /**
    * Targeted repair for a single specific block.
+   * If the block has fine-grained broken fragments, repairs them surgically.
    */
   const handleRepairSingleBlock = async (blockId: string) => {
     if (isRepairing) return;
+    const blockFrags = detectedBlockFragmentsMap[blockId] || [];
+
+    if (blockFrags.length > 0) {
+      for (const frag of blockFrags) {
+        await handleRepairSingleFragment(frag);
+      }
+      return;
+    }
+
     const targetBlock = docBlocks.find((b) => b.id === blockId);
     if (!targetBlock) return;
 
@@ -976,9 +1199,15 @@ export default function App() {
     const userConfig = getUserSettings();
     const userProvs = getUserProviders();
 
-    const targetIndex = docBlocks.findIndex((b) => b.id === blockId);
+    let targetIndex = docBlocks.findIndex((b) => b.id === blockId);
+    if (targetIndex === -1) {
+      const baseTargetId = blockId.replace(/-\d+$/, "");
+      targetIndex = docBlocks.findIndex(
+        (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
+      );
+    }
     const prevBlockText = targetIndex > 0 ? docBlocks[targetIndex - 1].rawText : "";
-    const nextBlockText = targetIndex < docBlocks.length - 1 ? docBlocks[targetIndex + 1].rawText : "";
+    const nextBlockText = targetIndex >= 0 && targetIndex < docBlocks.length - 1 ? docBlocks[targetIndex + 1].rawText : "";
 
     try {
       const res = await fetch("/api/repair-block", {
@@ -995,7 +1224,12 @@ export default function App() {
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}: Failed to reach repair service`);
+        let serverMsg = `HTTP ${res.status}`;
+        try {
+          const errBody = await res.json();
+          serverMsg = errBody.error || serverMsg;
+        } catch {}
+        throw new Error(serverMsg);
       }
 
       const data = await res.json();
@@ -1483,7 +1717,10 @@ export default function App() {
                 isDownloading={isConverting}
                 failedBlockIds={detectedFailedBlockIds}
                 blockIssuesMap={detectedIssuesMap}
+                fragments={detectedFragments}
+                blockFragmentsMap={detectedBlockFragmentsMap}
                 onRepairSingleBlock={handleRepairSingleBlock}
+                onRepairFragment={handleRepairSingleFragment}
                 onRepairAllFlagged={handleRepairFlaggedBlocks}
                 isRepairing={isRepairing}
                 repairProgress={repairProgress}
@@ -1571,7 +1808,10 @@ export default function App() {
               isDownloading={isConverting}
               failedBlockIds={detectedFailedBlockIds}
               blockIssuesMap={detectedIssuesMap}
+              fragments={detectedFragments}
+              blockFragmentsMap={detectedBlockFragmentsMap}
               onRepairSingleBlock={handleRepairSingleBlock}
+              onRepairFragment={handleRepairSingleFragment}
               onRepairAllFlagged={handleRepairFlaggedBlocks}
               isRepairing={isRepairing}
               repairProgress={repairProgress}

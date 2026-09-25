@@ -209,6 +209,61 @@ Final Examination - Section A
     console.warn("Test 5 warning (server not running or port occupied):", err.message);
   }
 
+  // TEST 6: Exam document with identical repeated broken blocks sequentially repaired
+  console.log("Test 6: Repeated identical broken equations in Exam document...");
+  const examWithRepeatedBroken = `# STAT-201: Probability & Statistics
+
+### SECTION A: Descriptive Statistics
+
+Question 1: Define Variance.
+
+$$
+\\frac{1}{2
+$$
+
+### SECTION A: Descriptive Statistics
+
+Question 2: Define Standard Error.
+
+$$
+\\frac{1}{2
+$$
+
+Question 3: End of paper.`;
+
+  const examBlocks = parseDocumentBlocks(examWithRepeatedBroken);
+  assert.strictEqual(examBlocks.length, 8, "Exam document must have 8 blocks");
+  
+  // Verify block IDs are unique even though Section A and the broken formula repeat identically
+  const examIdSet = new Set(examBlocks.map((b) => b.id));
+  assert.strictEqual(examIdSet.size, 8, "All 8 blocks must have unique IDs");
+
+  const { failedBlockIds: examFailed } = collectFailedBlocks(examBlocks);
+  assert.strictEqual(examFailed.length, 2, "Both identical broken formulas must be flagged");
+  assert.notStrictEqual(examFailed[0], examFailed[1], "Flagged IDs must be distinct");
+
+  // Simulate sequential Fix Flagged loop
+  let currentDoc = examWithRepeatedBroken;
+  const blocksToFix = examBlocks.filter((b) => examFailed.includes(b.id));
+
+  for (let i = 0; i < blocksToFix.length; i++) {
+    const target = blocksToFix[i];
+    const repairedContent = `\\[ \\frac{1}{2} = 0.5 \\text{ (Repaired ${i + 1})} \\]`;
+    currentDoc = replaceSingleBlockInDocument(currentDoc, target.id, repairedContent);
+  }
+
+  const finalExamBlocks = parseDocumentBlocks(currentDoc);
+  assert.strictEqual(finalExamBlocks.length, 8, "Final block count must remain 8");
+
+  // Verify that Instance 1 was replaced with Repaired 1 and Instance 2 with Repaired 2
+  assert.ok(finalExamBlocks[3].rawText.includes("Repaired 1"), "First instance was replaced with Repaired 1");
+  assert.ok(finalExamBlocks[6].rawText.includes("Repaired 2"), "Second instance was replaced with Repaired 2");
+  
+  // Verify 0 flags remain
+  const { failedBlockIds: finalExamFailed } = collectFailedBlocks(finalExamBlocks);
+  assert.strictEqual(finalExamFailed.length, 0, "All duplicate flagged blocks successfully repaired without collision");
+  console.log("✔ Test 6 Passed: Sequential repair cleanly fixes each distinct instance of repeated broken blocks.\n");
+
   console.log("=================================================");
   console.log("ALL TARGETED FLAGGED REPAIR TESTS PASSED SUCCESSFULLY!");
   console.log("=================================================");
