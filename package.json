@@ -1,7 +1,9 @@
 {
-  "name": "react-example",
+  "name": "formatai",
+  "version": "1.0.0",
+  "license": "MIT",
+  "author": "Bhujonggo Roy <bhujonggoroy@gmail.com>",
   "private": true,
-  "version": "0.0.0",
   "type": "module",
   "scripts": {
     "dev": "tsx server.ts",

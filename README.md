@@ -204,4 +204,6 @@ All upstream licenses have been reviewed and are 100% compliant under permissive
 ---
 
 ## License
-Released under the [MIT License](LICENSE). 100% free and open-source for students, researchers, and educators.
+Released under the [MIT License](LICENSE).  
+Copyright (c) 2025–2026 **Bhujonggo Roy** (<bhujonggoroy@gmail.com>) and **FormatAI Contributors**.  
+100% free and open-source for students, researchers, and educators worldwide.
