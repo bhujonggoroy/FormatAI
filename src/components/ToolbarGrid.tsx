@@ -16,6 +16,7 @@ import {
   Download,
   FileCode,
   CheckCircle2,
+  Wrench,
 } from "lucide-react";
 import { SAMPLE_NOTES, SampleNote } from "../data/samples";
 import { skillRegistry } from "../skills";
@@ -54,6 +55,10 @@ interface ToolbarGridProps {
   onSelectSample: (sample: SampleNote) => void;
   // AI Settings Modal trigger
   onOpenAISettings?: () => void;
+  // Flagged Blocks Repair
+  failedBlockCount?: number;
+  onRepairFlagged?: () => void;
+  isRepairing?: boolean;
 }
 
 export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
@@ -80,6 +85,9 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   onSkillsChanged,
   onSelectSample,
   onOpenAISettings,
+  failedBlockCount = 0,
+  onRepairFlagged,
+  isRepairing = false,
 }) => {
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [isMobileExpanded, setIsMobileExpanded] = useState<boolean>(false);
@@ -171,6 +179,24 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
       >
         {/* Mobile-Friendly Quick Header (Visible on small screens) */}
         <div className="sm:hidden mb-2.5 pb-2.5 border-b-2 border-slate-200 flex items-center justify-between gap-2">
+          {/* Quick Fix Flagged on Mobile if any */}
+          {failedBlockCount > 0 && onRepairFlagged && (
+            <button
+              type="button"
+              onClick={onRepairFlagged}
+              disabled={isRepairing}
+              className="flex-1 min-h-[48px] px-2.5 py-2 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 text-white font-extrabold text-xs flex items-center justify-center gap-1 shadow-sm transition-all active:scale-95 disabled:opacity-50 cursor-pointer"
+              title={`Fix ${failedBlockCount} flagged blocks`}
+            >
+              {isRepairing ? (
+                <Loader2 className="w-3.5 h-3.5 animate-spin shrink-0" />
+              ) : (
+                <Wrench className="w-3.5 h-3.5 shrink-0" />
+              )}
+              <span>Fix ({failedBlockCount})</span>
+            </button>
+          )}
+
           {/* Quick FormatAI or AI Polish on Mobile */}
           <button
             type="button"
@@ -666,6 +692,30 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 onClose={() => setOpenCard(null)}
                 onOpenAISettings={onOpenAISettings}
               />
+            )}
+
+            {/* Quick Action Button for Flagged Blocks */}
+            {failedBlockCount > 0 && onRepairFlagged && (
+              <button
+                type="button"
+                id="btn-toolbar-fix-flagged"
+                onClick={onRepairFlagged}
+                disabled={isRepairing}
+                className="mt-1.5 w-full py-1.5 px-2.5 rounded-xl bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-50 text-white font-extrabold text-[11px] flex items-center justify-center gap-1.5 shadow-2xs transition-all cursor-pointer"
+                title={`Fix only the ${failedBlockCount} flagged blocks`}
+              >
+                {isRepairing ? (
+                  <>
+                    <Loader2 className="w-3 h-3 animate-spin" />
+                    <span>Repairing flagged blocks...</span>
+                  </>
+                ) : (
+                  <>
+                    <Wrench className="w-3 h-3" />
+                    <span>Fix Flagged Only ({failedBlockCount})</span>
+                  </>
+                )}
+              </button>
             )}
           </div>
 

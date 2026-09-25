@@ -16,6 +16,15 @@ import { usePWAInstallPrompt } from "./utils/pwaInstall";
 import { skillRegistry } from "./skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
 import { validateAIPolishOutput } from "./utils/aiValidation";
+import { logPipelineDebug } from "./utils/debugLogger";
+import {
+  parseDocumentBlocks,
+  collectFailedBlocks,
+  replaceSingleBlockInDocument,
+  detectBlockFormattingIssue,
+  extractSubstantiveText,
+  type DocumentBlock,
+} from "./utils/blockIntegrity";
 import { AIStatusBanner } from "./components/AIStatusBanner";
 import { AIStatusNotification } from "./types/ai";
 import {
@@ -212,6 +221,24 @@ export default function App() {
     return cleanClientSideNotebookLM(inputText, formatMode, skillRegistry.getEnabledSkillIds());
   }, [cleanedMarkdown, inputText, formatMode, activeSkillsCount]);
 
+  // Parse document into atomic blocks for deterministic integrity and targeted repairs
+  const docBlocks = useMemo(() => {
+    return parseDocumentBlocks(effectiveMarkdown);
+  }, [effectiveMarkdown]);
+
+  // Collect flagged blocks that have KaTeX syntax errors, unmatched delimiters, or uncleaned artifacts
+  const { failedBlockIds: detectedFailedBlockIds, issuesMap: detectedIssuesMap } = useMemo(() => {
+    return collectFailedBlocks(docBlocks);
+  }, [docBlocks]);
+
+  // Targeted single-block and queue repair state
+  const [isRepairing, setIsRepairing] = useState<boolean>(false);
+  const [repairProgress, setRepairProgress] = useState<{
+    current: number;
+    total: number;
+    currentBlockId?: string;
+  } | null>(null);
+
   // Centralized input updater that cleanly invalidates any active in-flight AI requests
   const handleUpdateInput = (newText: string, newTitle?: string) => {
     activePolishRequestIdRef.current++;
@@ -307,6 +334,28 @@ export default function App() {
     setConversionStage("Normalizing with FormatAI Academic Engine (No AI)...");
 
     try {
+      const rawBlocks = parseDocumentBlocks(inputText);
+      logPipelineDebug(
+        "raw_input",
+        {
+          charCount: inputText.length,
+          wordCount: inputText.trim().split(/\s+/).length,
+        },
+        "Client:Format"
+      );
+      logPipelineDebug(
+        "parsed_blocks",
+        {
+          blockCount: rawBlocks.length,
+          blockIds: rawBlocks.slice(0, 5).map((b) => b.id),
+          blockTypes: rawBlocks.reduce((acc, b) => {
+            acc[b.type] = (acc[b.type] || 0) + 1;
+            return acc;
+          }, {} as Record<string, number>),
+        },
+        "Client:Format"
+      );
+
       const startMs = Date.now();
       const cleaned = cleanClientSideNotebookLM(
         inputText,
@@ -316,6 +365,25 @@ export default function App() {
       if (reqId !== activePolishRequestIdRef.current) return;
       const latencyMs = Math.max(1, Date.now() - startMs);
       setCleanedMarkdown(cleaned);
+
+      const cleanedBlocks = parseDocumentBlocks(cleaned);
+      logPipelineDebug(
+        "formatting_result",
+        {
+          charCount: cleaned.length,
+          blockCount: cleanedBlocks.length,
+          stageDurationMs: latencyMs,
+        },
+        "Client:Format"
+      );
+      logPipelineDebug(
+        "preview_input",
+        {
+          charCount: cleaned.length,
+          blockCount: cleanedBlocks.length,
+        },
+        "Client:Format"
+      );
 
       // Rule 2: Strictly truthful status - never claim AI was used
       const notif = createLocalFormatNotification(latencyMs);
@@ -391,6 +459,43 @@ export default function App() {
       const userProvs = getUserProviders();
       const userPrefs = getUserPreferences();
 
+      const rawBlocks = parseDocumentBlocks(inputText);
+      logPipelineDebug(
+        "raw_input",
+        {
+          charCount: inputText.length,
+          wordCount: inputText.trim().split(/\s+/).length,
+        },
+        "Client:AI"
+      );
+      logPipelineDebug(
+        "parsed_blocks",
+        {
+          blockCount: rawBlocks.length,
+          blockIds: rawBlocks.slice(0, 5).map((b) => b.id),
+        },
+        "Client:AI"
+      );
+      const baselineBlocks = parseDocumentBlocks(prePolishFormatAiResult);
+      logPipelineDebug(
+        "formatting_result",
+        {
+          charCount: prePolishFormatAiResult.length,
+          blockCount: baselineBlocks.length,
+        },
+        "Client:AI"
+      );
+      logPipelineDebug(
+        "ai_request",
+        {
+          providerId: userConfig.activeProviderId || "formatai",
+          model: userConfig.activeModel || "default",
+          charCount: inputText.length,
+          blockCount: baselineBlocks.length,
+        },
+        "Client:AI"
+      );
+
       const res = await fetch("/api/preview-clean", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -408,6 +513,17 @@ export default function App() {
 
       const latencyMs = Math.max(1, Date.now() - reqStartTime);
       const data = await res.json();
+
+      logPipelineDebug(
+        "ai_response",
+        {
+          providerId: data.provider_id || userConfig.activeProviderId,
+          model: data.model || userConfig.activeModel,
+          charCount: (data.cleaned_markdown || "").length,
+          stageDurationMs: latencyMs,
+        },
+        "Client:AI"
+      );
 
       // Guard against race condition: if user initiated a newer request or edited input in flight, discard stale response
       if (reqId !== activePolishRequestIdRef.current) {
@@ -511,6 +627,17 @@ export default function App() {
         Boolean(data.discarded_ai_output) ||
         !clientValidation.isValid;
 
+      logPipelineDebug(
+        "validation",
+        {
+          isValid: !isValidationFailed,
+          validationScore: data.validation_score ?? clientValidation.score,
+          missingBlocksCount: clientValidation.blockComparison?.missingBlocks?.length || 0,
+          charDiffPercent: clientValidation.blockComparison?.charCountDifferencePercent,
+        },
+        "Client:AI"
+      );
+
       if (isValidationFailed) {
         // 1. Discard AI Output: DO NOT apply data.cleaned_markdown
         // 2. Restore/Keep FormatAI Result: Setting cleanedMarkdown to null ensures
@@ -595,6 +722,15 @@ export default function App() {
 
       setValidationAlert(null);
       setCleanedMarkdown(data.cleaned_markdown);
+
+      logPipelineDebug(
+        "preview_input",
+        {
+          charCount: data.cleaned_markdown.length,
+          blockCount: parseDocumentBlocks(data.cleaned_markdown).length,
+        },
+        "Client:AI"
+      );
 
       // Record Telemetry Metric & Audit Log
       recordProviderMetric(
@@ -682,6 +818,225 @@ export default function App() {
         setIsConverting(false);
         setConversionStage("");
       }
+    }
+  };
+
+  /**
+   * Targeted repair for flagged blocks only ("Fix flagged only").
+   * Strictly isolates failedBlockIds:
+   * - Does not touch or re-send successful blocks
+   * - Sends each flagged block as a small individual request with 1-block context before/after
+   * - Queues requests sequentially with throttle to avoid provider rate limits
+   * - Enforces Phase 1 validation (non-empty, block ID match, suspicious short guard, KaTeX syntax)
+   * - On pass: replaces only that single block in document and clears red mark
+   * - On fail: preserves raw content intact and reports error
+   */
+  const handleRepairFlaggedBlocks = async () => {
+    if (isRepairing) return;
+    const blocksToRepair = docBlocks.filter((b) => detectedFailedBlockIds.includes(b.id));
+    if (blocksToRepair.length === 0) return;
+
+    setIsRepairing(true);
+    setRepairProgress({ current: 0, total: blocksToRepair.length });
+    setErrorMessage(null);
+
+    let currentMarkdown = effectiveMarkdown;
+    let successCount = 0;
+    let failCount = 0;
+    const failedErrors: string[] = [];
+
+    const userConfig = getUserSettings();
+    const userProvs = getUserProviders();
+
+    for (let i = 0; i < blocksToRepair.length; i++) {
+      const targetBlock = blocksToRepair[i];
+      setRepairProgress({
+        current: i + 1,
+        total: blocksToRepair.length,
+        currentBlockId: targetBlock.id,
+      });
+
+      // Find current blocks and 1-block context before and after
+      const currentBlocks = parseDocumentBlocks(currentMarkdown);
+      const targetIndex = currentBlocks.findIndex((b) => b.id === targetBlock.id);
+      const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
+      const nextBlockText =
+        targetIndex >= 0 && targetIndex < currentBlocks.length - 1
+          ? currentBlocks[targetIndex + 1].rawText
+          : "";
+
+      try {
+        const res = await fetch("/api/repair-block", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetBlock,
+            prevBlockText,
+            nextBlockText,
+            equationFormat,
+            aiConfig: userConfig,
+            userProviders: userProvs,
+          }),
+        });
+
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}: Failed to reach repair service`);
+        }
+
+        const data = await res.json();
+
+        // Phase 1 Validation on single block replacement
+        if (!data.success || !data.repairedText) {
+          throw new Error(data.error || "Repair engine did not return valid replacement.");
+        }
+
+        const candidateText = data.repairedText.trim();
+        // 1. Non-empty check
+        if (!candidateText) {
+          throw new Error("AI returned empty content for block.");
+        }
+        // 2. Block ID check
+        if (data.blockId && data.blockId !== targetBlock.id) {
+          throw new Error("Block ID mismatch in repair response.");
+        }
+        // 3. Suspiciously short check
+        const origSubstantive = targetBlock.rawText.replace(/[^a-zA-Z0-9]/g, "").length;
+        const candSubstantive = candidateText.replace(/[^a-zA-Z0-9]/g, "").length;
+        if (origSubstantive > 20 && candSubstantive < origSubstantive * 0.4) {
+          throw new Error("Repaired output was suspiciously short or truncated.");
+        }
+
+        // 4. Block syntax validation: KaTeX & Delimiter checks
+        const checkBlock: DocumentBlock = {
+          id: targetBlock.id,
+          type: targetBlock.type,
+          rawText: candidateText,
+          substantiveText: extractSubstantiveText(candidateText),
+          charCount: candidateText.length,
+          substantiveCharCount: extractSubstantiveText(candidateText).length,
+          lineStart: 1,
+          lineEnd: 1,
+        };
+        const issue = detectBlockFormattingIssue(checkBlock);
+        if (issue) {
+          throw new Error(`Repaired block still has issue: ${issue.reason}`);
+        }
+
+        // Validation passed! Replace ONLY this block in currentMarkdown
+        currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, candidateText);
+        setCleanedMarkdown(currentMarkdown);
+        successCount++;
+
+        logPipelineDebug(
+          "preview_input",
+          {
+            stage: "block_repair",
+            blockId: targetBlock.id,
+            repairedLength: candidateText.length,
+          },
+          "Client:Repair"
+        );
+      } catch (err: any) {
+        console.error(`Repair failed for block ${targetBlock.id}:`, err);
+        failCount++;
+        failedErrors.push(`Block [${targetBlock.id}]: ${err.message || "Failed to repair"}`);
+      }
+
+      // Small sequential queue throttle to avoid rate limits
+      if (i < blocksToRepair.length - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 300));
+      }
+    }
+
+    setIsRepairing(false);
+    setRepairProgress(null);
+
+    if (failCount === 0) {
+      setSuccessMessage(`Successfully repaired ${successCount} flagged block${successCount === 1 ? "" : "s"}.`);
+    } else if (successCount > 0) {
+      setSuccessMessage(`Repaired ${successCount} block(s). ${failCount} block(s) could not be resolved.`);
+      setErrorMessage(failedErrors.join(" • "));
+    } else {
+      setErrorMessage(`Repair failed for ${failCount} block(s): ${failedErrors.join(" • ")}`);
+    }
+  };
+
+  /**
+   * Targeted repair for a single specific block.
+   */
+  const handleRepairSingleBlock = async (blockId: string) => {
+    if (isRepairing) return;
+    const targetBlock = docBlocks.find((b) => b.id === blockId);
+    if (!targetBlock) return;
+
+    setIsRepairing(true);
+    setRepairProgress({ current: 1, total: 1, currentBlockId: blockId });
+    setErrorMessage(null);
+
+    const userConfig = getUserSettings();
+    const userProvs = getUserProviders();
+
+    const targetIndex = docBlocks.findIndex((b) => b.id === blockId);
+    const prevBlockText = targetIndex > 0 ? docBlocks[targetIndex - 1].rawText : "";
+    const nextBlockText = targetIndex < docBlocks.length - 1 ? docBlocks[targetIndex + 1].rawText : "";
+
+    try {
+      const res = await fetch("/api/repair-block", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          targetBlock,
+          prevBlockText,
+          nextBlockText,
+          equationFormat,
+          aiConfig: userConfig,
+          userProviders: userProvs,
+        }),
+      });
+
+      if (!res.ok) {
+        throw new Error(`HTTP ${res.status}: Failed to reach repair service`);
+      }
+
+      const data = await res.json();
+      if (!data.success || !data.repairedText) {
+        throw new Error(data.error || "Repair did not succeed.");
+      }
+
+      const candidateText = data.repairedText.trim();
+      if (!candidateText) {
+        throw new Error("AI returned empty content for block.");
+      }
+
+      const origSubstantive = targetBlock.rawText.replace(/[^a-zA-Z0-9]/g, "").length;
+      const candSubstantive = candidateText.replace(/[^a-zA-Z0-9]/g, "").length;
+      if (origSubstantive > 20 && candSubstantive < origSubstantive * 0.4) {
+        throw new Error("Repaired output was suspiciously short or truncated.");
+      }
+
+      const checkBlock: DocumentBlock = {
+        id: targetBlock.id,
+        type: targetBlock.type,
+        rawText: candidateText,
+        substantiveText: extractSubstantiveText(candidateText),
+        charCount: candidateText.length,
+        substantiveCharCount: extractSubstantiveText(candidateText).length,
+        lineStart: 1,
+        lineEnd: 1,
+      };
+      const issue = detectBlockFormattingIssue(checkBlock);
+      if (issue) {
+        throw new Error(`Repaired block still has issue: ${issue.reason}`);
+      }
+
+      const updatedDoc = replaceSingleBlockInDocument(effectiveMarkdown, blockId, candidateText);
+      setCleanedMarkdown(updatedDoc);
+      setSuccessMessage(`Block [${blockId}] repaired successfully.`);
+    } catch (err: any) {
+      setErrorMessage(`Could not repair block [${blockId}]: ${err.message || "Unknown error"}`);
+    } finally {
+      setIsRepairing(false);
+      setRepairProgress(null);
     }
   };
 
@@ -870,6 +1225,9 @@ export default function App() {
           }}
           onSelectSample={handleLoadSample}
           onOpenAISettings={() => setIsAISettingsModalOpen(true)}
+          failedBlockCount={detectedFailedBlockIds.length}
+          onRepairFlagged={handleRepairFlaggedBlocks}
+          isRepairing={isRepairing}
         />
 
         {/* High-Contrast Segmented View Switcher Bar (Split | Editor | Preview) */}
@@ -1123,6 +1481,12 @@ export default function App() {
                 onDownloadDocx={handleConvertToDocx}
                 onDownloadPdf={() => downloadFile("pdf")}
                 isDownloading={isConverting}
+                failedBlockIds={detectedFailedBlockIds}
+                blockIssuesMap={detectedIssuesMap}
+                onRepairSingleBlock={handleRepairSingleBlock}
+                onRepairAllFlagged={handleRepairFlaggedBlocks}
+                isRepairing={isRepairing}
+                repairProgress={repairProgress}
               />
             </div>
           </div>
@@ -1205,6 +1569,12 @@ export default function App() {
               onDownloadDocx={handleConvertToDocx}
               onDownloadPdf={() => downloadFile("pdf")}
               isDownloading={isConverting}
+              failedBlockIds={detectedFailedBlockIds}
+              blockIssuesMap={detectedIssuesMap}
+              onRepairSingleBlock={handleRepairSingleBlock}
+              onRepairAllFlagged={handleRepairFlaggedBlocks}
+              isRepairing={isRepairing}
+              repairProgress={repairProgress}
             />
           </div>
         )}

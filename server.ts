@@ -25,7 +25,13 @@ import {
 import { cleanClientSideNotebookLM } from "./src/utils/cleaner.ts";
 import { validateAIPolishOutput, formatValidationFeedback, type AIErrorCategory } from "./src/utils/aiValidation.ts";
 import { createDocumentChunks, reassembleDocumentChunks } from "./src/utils/documentChunker.ts";
-import { parseDocumentBlocks } from "./src/utils/blockIntegrity.ts";
+import {
+  parseDocumentBlocks,
+  detectBlockFormattingIssue,
+  extractSubstantiveText,
+  type DocumentBlock,
+} from "./src/utils/blockIntegrity.ts";
+import { logPipelineDebug } from "./src/utils/debugLogger.ts";
 import { classifyErrorDetails } from "./src/utils/aiStatusClassifier.ts";
 import { NO_IMPROVEMENT_MESSAGE, computeDocumentDiff } from "./src/utils/diffUtils.ts";
 import { aiRequestManager } from "./src/server/ai/AIRequestManager.ts";
@@ -526,12 +532,46 @@ CRITICAL FORMATTING & DOCUMENT STANDARDS:
 RAW NOTES:
 ${preCleaned}`;
 
+    // Phase 6 Pipeline Debug Tracing (Server: strictly metadata only, no keys/sensitive text)
+    const rawBlocks = parseDocumentBlocks(rawText);
+    logPipelineDebug(
+      "raw_input",
+      {
+        charCount: rawText.length,
+        wordCount: rawText.trim().split(/\s+/).length,
+      },
+      "Server"
+    );
+
+    logPipelineDebug(
+      "parsed_blocks",
+      {
+        blockCount: rawBlocks.length,
+        blockIds: rawBlocks.slice(0, 5).map((b) => b.id),
+        blockTypes: rawBlocks.reduce((acc, b) => {
+          acc[b.type] = (acc[b.type] || 0) + 1;
+          return acc;
+        }, {} as Record<string, number>),
+      },
+      "Server"
+    );
+
     // 1. Establish the authoritative FormatAI Baseline Document.
     // The existing FormatAI Result is the baseline for AI Polish.
     // If not passed from client's current verified preview state, compute it natively.
     const baselineDoc = baselineMarkdown && baselineMarkdown.trim()
       ? baselineMarkdown.trim()
       : cleanClientSideNotebookLM(rawText, formatMode, enabledSkillIds);
+
+    const baselineBlocks = parseDocumentBlocks(baselineDoc);
+    logPipelineDebug(
+      "formatting_result",
+      {
+        charCount: baselineDoc.length,
+        blockCount: baselineBlocks.length,
+      },
+      "Server"
+    );
 
     // Direct No AI / FormatAI request — instant deterministic formatting without external AI calls
     if (
@@ -540,6 +580,14 @@ ${preCleaned}`;
       (aiConfig as any)?.mode === "no_ai" ||
       (aiConfig as any)?.mode === "formatai"
     ) {
+      logPipelineDebug(
+        "preview_input",
+        {
+          charCount: baselineDoc.length,
+          blockCount: baselineBlocks.length,
+        },
+        "Server"
+      );
       return {
         cleanedMarkdown: baselineDoc,
         providerId: "formatai",
@@ -572,7 +620,6 @@ ${preCleaned}`;
     // ── REQUIREMENT 3: LARGE DOCUMENT BLOCK-BOUNDARY CHUNKING ──────────────────
     // If document is large (>3500 chars or >25 atomic blocks), chunk strictly on
     // block boundaries. Equations, tables, and code blocks are NEVER sliced.
-    const baselineBlocks = parseDocumentBlocks(baselineDoc);
     const isLargeDoc = baselineDoc.length > 3500 || baselineBlocks.length > 25;
 
     if (isLargeDoc) {
@@ -683,6 +730,26 @@ OUTPUT FORMAT: Return raw polished Markdown directly with NO conversational fill
       // Validate reassembled document against original baseline
       const fullDocValidation = validateAIPolishOutput(reassembled, rawText, baselineDoc);
 
+      logPipelineDebug(
+        "validation",
+        {
+          isValid: fullDocValidation.isValid && !hadChunkFailure,
+          validationScore: fullDocValidation.score,
+          missingBlocksCount: fullDocValidation.blockComparison?.missingBlocks?.length || 0,
+          charDiffPercent: fullDocValidation.blockComparison?.charCountDifferencePercent,
+        },
+        "Server:Chunk"
+      );
+
+      logPipelineDebug(
+        "preview_input",
+        {
+          charCount: reassembled.length,
+          blockCount: parseDocumentBlocks(reassembled).length,
+        },
+        "Server:Chunk"
+      );
+
       if (hadChunkFailure || !fullDocValidation.isValid) {
         return {
           cleanedMarkdown: reassembled,
@@ -752,6 +819,17 @@ ${baselineDoc}
 ${preCleaned}`;
 
     try {
+      logPipelineDebug(
+        "ai_request",
+        {
+          providerId: aiConfig?.activeProviderId || "default",
+          model: aiConfig?.activeModel || "default",
+          charCount: aiPolishPrompt.length,
+          blockCount: baselineBlocks.length,
+        },
+        "Server"
+      );
+
       const aiResponse = await aiRequestManager.executeRequestScoped(
         {
           prompt: aiPolishPrompt,
@@ -765,8 +843,29 @@ ${preCleaned}`;
 
       const candidate = cleanAiText(aiResponse.text);
 
+      logPipelineDebug(
+        "ai_response",
+        {
+          providerId: aiResponse.providerId,
+          model: aiResponse.model,
+          charCount: candidate.length,
+        },
+        "Server"
+      );
+
       // Quality-Gate Validation: non-empty, JSON complete, expected blocks, not suspiciously small
       let validation = validateAIPolishOutput(candidate, rawText, baselineDoc);
+
+      logPipelineDebug(
+        "validation",
+        {
+          isValid: validation.isValid,
+          validationScore: validation.score,
+          missingBlocksCount: validation.blockComparison?.missingBlocks?.length || 0,
+          charDiffPercent: validation.blockComparison?.charCountDifferencePercent,
+        },
+        "Server"
+      );
 
       // REQUIREMENT 2: Fail হলে: original রাখো → একবার retry → local formatting fallback → warning দেখাও
       if (!validation.isValid) {
@@ -796,6 +895,14 @@ ${retryFeedback}`;
 
           if (retryValidation.isValid) {
             console.log("Controlled AI repair retry SUCCEEDED! Committing validated candidate.");
+            logPipelineDebug(
+              "preview_input",
+              {
+                charCount: retryCandidate.length,
+                blockCount: parseDocumentBlocks(retryCandidate).length,
+              },
+              "Server"
+            );
             return {
               cleanedMarkdown: retryCandidate,
               providerId: retryResponse.providerId,
@@ -819,6 +926,14 @@ ${retryFeedback}`;
 
         // Both attempts failed: Discard AI Output & Preserve FormatAI Baseline Result (Local Formatting Fallback)
         console.warn("AI Polish output FAILED validation after retry. Preserving FormatAI Baseline Result:", validation.errors);
+        logPipelineDebug(
+          "preview_input",
+          {
+            charCount: baselineDoc.length,
+            blockCount: baselineBlocks.length,
+          },
+          "Server"
+        );
         return {
           cleanedMarkdown: baselineDoc,
           providerId: aiResponse.providerId,
@@ -836,6 +951,14 @@ ${retryFeedback}`;
       }
 
       // Candidate passed validation on first try -> Atomic Commit
+      logPipelineDebug(
+        "preview_input",
+        {
+          charCount: candidate.length,
+          blockCount: parseDocumentBlocks(candidate).length,
+        },
+        "Server"
+      );
       return {
         cleanedMarkdown: candidate,
         providerId: aiResponse.providerId,
@@ -852,6 +975,14 @@ ${retryFeedback}`;
     } catch (err: any) {
       console.warn("AIRequestManager error, preserving FormatAI Baseline Result:", err.message);
       const classified = classifyErrorDetails(err.message);
+      logPipelineDebug(
+        "preview_input",
+        {
+          charCount: baselineDoc.length,
+          blockCount: baselineBlocks.length,
+        },
+        "Server"
+      );
       // Fallback gracefully to baseline FormatAI result if all providers fail
       return {
         cleanedMarkdown: baselineDoc,
@@ -1348,6 +1479,166 @@ ${originalText}`;
         error: err.message || "Failed to polish text with AI.",
         error_category: classified.errorCategory,
         fallback_chain: (err as any).fallbackChain || [],
+      });
+    }
+  });
+
+  // Targeted Single-Block Repair Endpoint
+  // Solves: "Fix flagged only" — strictly touches only the requested failed block
+  app.post("/api/repair-block", async (req, res) => {
+    try {
+      const {
+        targetBlock,
+        prevBlockText,
+        nextBlockText,
+        equationFormat = "native",
+        aiConfig,
+        userProviders,
+      } = req.body;
+
+      if (!targetBlock || typeof targetBlock.rawText !== "string" || !targetBlock.rawText.trim()) {
+        return res.status(400).json({ error: "Missing or empty targetBlock in request." });
+      }
+
+      // Check if running in No AI / FormatAI mode
+      if (
+        aiConfig?.activeProviderId === "formatai" ||
+        aiConfig?.activeProviderId === "local" ||
+        aiConfig?.mode === "no_ai" ||
+        aiConfig?.mode === "formatai"
+      ) {
+        const candidate = cleanClientSideNotebookLM(targetBlock.rawText, "auto");
+        const tempBlock: DocumentBlock = {
+          id: targetBlock.id,
+          type: targetBlock.type,
+          rawText: candidate,
+          substantiveText: extractSubstantiveText(candidate),
+          charCount: candidate.length,
+          substantiveCharCount: extractSubstantiveText(candidate).length,
+          lineStart: 1,
+          lineEnd: 1,
+        };
+        const issue = detectBlockFormattingIssue(tempBlock);
+        if (issue) {
+          return res.json({
+            success: false,
+            error: `Local repair could not resolve: ${issue.reason}`,
+            blockId: targetBlock.id,
+          });
+        }
+        return res.json({
+          success: true,
+          blockId: targetBlock.id,
+          repairedText: candidate,
+          providerName: "FormatAI Native Typesetter",
+          model: "deterministic-engine",
+        });
+      }
+
+      // AI-assisted targeted block repair
+      const repairPrompt = `You are an academic mathematical editor and LaTeX typesetter.
+Your task is to REPAIR and format ONLY the TARGET BLOCK below.
+
+RULES:
+1. Fix all broken LaTeX math syntax, unclosed braces ({, }), unmatched delimiters ($$, \\[, \\], \\(, \\)), and incorrect notation.
+2. Standardize KaTeX notation: inline \\(...\\), display \\[...\\] or $$...$$.
+3. Preserve all original meaning, mathematical facts, variables, numbers, and questions. Do NOT invent new problems or solutions.
+4. Output ONLY the repaired block.
+5. Do NOT output conversational filler, introductions, or apologies.
+6. Do NOT wrap the entire output in a top-level \`\`\`markdown fence. Return raw Markdown text directly.
+7. Do NOT repeat or include the previous or next context blocks.
+
+${prevBlockText ? `---
+PREVIOUS BLOCK (FOR CONTEXT ONLY, DO NOT REPEAT):
+${prevBlockText}
+` : ""}
+---
+TARGET BLOCK TO REPAIR:
+${targetBlock.rawText}
+
+${nextBlockText ? `---
+NEXT BLOCK (FOR CONTEXT ONLY, DO NOT REPEAT):
+${nextBlockText}
+` : ""}`;
+
+      const systemInstruction = `You are an academic document formatting repair engine. Repair ONLY the target block. Return raw Markdown. Do not repeat context blocks. Do not add commentary.`;
+
+      const aiRes = await aiRequestManager.executeRequestScoped(
+        {
+          prompt: repairPrompt,
+          systemPrompt: systemInstruction,
+          temperature: 0.1,
+          capabilities: ["text", "math"],
+        },
+        aiConfig,
+        userProviders
+      );
+
+      let candidate = (aiRes.text || "").trim();
+      if (candidate.startsWith("```markdown")) {
+        candidate = candidate.slice(11).trim();
+      } else if (candidate.startsWith("```")) {
+        candidate = candidate.slice(3).trim();
+      }
+      if (candidate.endsWith("```")) {
+        candidate = candidate.slice(0, -3).trim();
+      }
+      candidate = standardizeMathToLatex(cleanNotebookLMTreeArtifacts(candidate));
+
+      // Validation on single block response
+      // 1. Non-empty
+      if (!candidate || !candidate.trim()) {
+        return res.json({
+          success: false,
+          error: "AI produced empty response for this block.",
+          blockId: targetBlock.id,
+        });
+      }
+
+      // 2. Suspiciously short check
+      const origSubstantive = targetBlock.rawText.replace(/[^a-zA-Z0-9]/g, "").length;
+      const candSubstantive = candidate.replace(/[^a-zA-Z0-9]/g, "").length;
+      if (origSubstantive > 20 && candSubstantive < origSubstantive * 0.4) {
+        return res.json({
+          success: false,
+          error: "AI response was suspiciously short or truncated.",
+          blockId: targetBlock.id,
+        });
+      }
+
+      // 3. Block syntax validation: KaTeX & Delimiter checks on repaired candidate
+      const tempBlock: DocumentBlock = {
+        id: targetBlock.id,
+        type: targetBlock.type,
+        rawText: candidate,
+        substantiveText: extractSubstantiveText(candidate),
+        charCount: candidate.length,
+        substantiveCharCount: extractSubstantiveText(candidate).length,
+        lineStart: 1,
+        lineEnd: 1,
+      };
+      const issue = detectBlockFormattingIssue(tempBlock);
+      if (issue) {
+        return res.json({
+          success: false,
+          error: `Repaired block still has issue: ${issue.reason}`,
+          blockId: targetBlock.id,
+        });
+      }
+
+      // Validation passed!
+      return res.json({
+        success: true,
+        blockId: targetBlock.id,
+        repairedText: candidate,
+        providerName: aiRes.providerName,
+        model: aiRes.model,
+      });
+    } catch (err: any) {
+      console.error("Block repair error:", err);
+      return res.status(500).json({
+        success: false,
+        error: err.message || "Failed to repair block.",
       });
     }
   });

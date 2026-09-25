@@ -20,10 +20,13 @@ import {
   ShieldAlert,
   AlertTriangle,
   X,
+  Wrench,
+  Loader2,
 } from "lucide-react";
 import katex from "katex";
 import { downloadPreviewAsPdf, generateDocumentPdf } from "../utils/pdfGenerator";
 import { TextDiffViewer } from "./TextDiffViewer";
+import { parseDocumentBlocks, type BlockFormattingIssue } from "../utils/blockIntegrity";
 
 export interface ValidationAlertState {
   failed: boolean;
@@ -59,6 +62,12 @@ interface FormattedPreviewProps {
   onDiscardDiffChanges?: () => void;
   activeViewMode?: "rendered" | "source" | "diff";
   onViewModeChange?: (mode: "rendered" | "source" | "diff") => void;
+  failedBlockIds?: string[];
+  blockIssuesMap?: Record<string, BlockFormattingIssue>;
+  onRepairSingleBlock?: (blockId: string) => void;
+  onRepairAllFlagged?: () => void;
+  isRepairing?: boolean;
+  repairProgress?: { current: number; total: number; currentBlockId?: string } | null;
 }
 
 function getCssFontFamily(font: string): string {
@@ -97,6 +106,12 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   onDiscardDiffChanges,
   activeViewMode,
   onViewModeChange,
+  failedBlockIds = [],
+  blockIssuesMap,
+  onRepairSingleBlock,
+  onRepairAllFlagged,
+  isRepairing = false,
+  repairProgress = null,
 }) => {
   const [copied, setCopied] = useState(false);
   const [internalViewMode, setInternalViewMode] = useState<"rendered" | "source" | "diff">("rendered");
@@ -268,10 +283,9 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     });
   }
 
-  // Parse lines into structured elements with useMemo to prevent re-parsing on scroll/zoom
-  const renderedElements = useMemo(() => {
+  // Helper function to render a list of lines within a block into structured React elements
+  function renderLinesToElements(lines: string[], blockIdPrefix: string): React.ReactNode[] {
     let seq = 0;
-    const lines = markdown.split("\n");
     const elements: React.ReactNode[] = [];
     let i = 0;
 
@@ -280,13 +294,13 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       const trimmed = rawLine.trim();
 
       if (!trimmed) {
-        const blockId = `block-sp-${seq++}`;
+        const blockId = `${blockIdPrefix}-sp-${seq++}`;
         elements.push(<div key={blockId} className="h-2.5" />);
         i++;
         continue;
       }
 
-      const blockId = `block-${seq++}`;
+      const blockId = `${blockIdPrefix}-${seq++}`;
 
       // Display equation block: $$...$$ (single or multi-line)
       if (trimmed.startsWith("$$")) {
@@ -809,7 +823,76 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
     }
 
     return elements;
-  }, [markdown, fontFamily, accentColor, equationFormat]);
+  }
+
+  // Parse document into atomic blocks with deterministic stable IDs
+  // Blocks with formatting/KaTeX issues are highlighted with red border and "Fix this block" action
+  const renderedElements = useMemo(() => {
+    if (!markdown || !markdown.trim()) return [];
+
+    const blocks = parseDocumentBlocks(markdown);
+    const elements: React.ReactNode[] = [];
+
+    blocks.forEach((block) => {
+      const isFailed = failedBlockIds.includes(block.id);
+      const issue = isFailed ? blockIssuesMap?.[block.id] : null;
+      const blockLines = block.rawText.split("\n");
+      const blockContent = renderLinesToElements(blockLines, block.id);
+
+      if (isFailed) {
+        elements.push(
+          <div
+            key={block.id}
+            id={`flagged-block-${block.id}`}
+            data-block-id={block.id}
+            data-flagged="true"
+            className="my-3 p-3.5 rounded-xl border-2 border-rose-400 bg-rose-50/75 shadow-xs relative group transition-all"
+          >
+            {/* Flagged Block Header Badge & Action */}
+            <div className="flex items-center justify-between text-xs text-rose-950 pb-2 mb-2.5 border-b border-rose-200">
+              <div className="flex items-center gap-1.5 font-bold flex-wrap">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0" />
+                <span className="font-extrabold text-rose-950">
+                  Flagged: {issue?.reason || "Formatting or LaTeX syntax error"}
+                </span>
+                <span className="font-mono text-[10px] text-rose-700 bg-rose-100 px-1.5 py-0.5 rounded border border-rose-300 font-semibold">
+                  {block.id}
+                </span>
+                <span className="text-[10px] text-rose-600 bg-white/80 px-1.5 py-0.5 rounded font-mono border border-rose-200">
+                  {block.type}
+                </span>
+              </div>
+              {onRepairSingleBlock && (
+                <button
+                  type="button"
+                  onClick={() => onRepairSingleBlock(block.id)}
+                  disabled={isRepairing}
+                  className="inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs font-bold text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-50 cursor-pointer shadow-2xs transition-colors shrink-0"
+                  title={`Repair only block ${block.id}`}
+                >
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Fix this block</span>
+                </button>
+              )}
+            </div>
+
+            {/* Block Body Content */}
+            <div className="text-slate-900 overflow-x-auto">
+              {blockContent}
+            </div>
+          </div>
+        );
+      } else {
+        elements.push(
+          <div key={block.id} data-block-id={block.id} className="my-0.5">
+            {blockContent}
+          </div>
+        );
+      }
+    });
+
+    return elements;
+  }, [markdown, fontFamily, accentColor, equationFormat, failedBlockIds, blockIssuesMap, isRepairing, onRepairSingleBlock]);
 
   const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
   const mathFormulaCount = (markdown.match(/\$[^$]+\$/g) || []).length;
@@ -966,6 +1049,33 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             <span className="sm:hidden">PDF</span>
           </button>
 
+          {/* Fix Flagged Only Button (Dedicated Targeted Repair) */}
+          {failedBlockIds.length > 0 && onRepairAllFlagged && (
+            <button
+              type="button"
+              id="btn-fix-flagged-preview"
+              onClick={onRepairAllFlagged}
+              disabled={isRepairing}
+              className="inline-flex items-center gap-1.5 text-xs font-black text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-50 px-2.5 sm:px-3 py-1.5 rounded-lg border-2 border-rose-500 shadow-2xs transition-all cursor-pointer shrink-0"
+              title="Fix only the flagged blocks without re-sending or modifying intact blocks"
+            >
+              {isRepairing ? (
+                <>
+                  <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  <span className="hidden sm:inline">
+                    Fixing {repairProgress ? `${repairProgress.current}/${repairProgress.total}` : "..."}
+                  </span>
+                  <span className="sm:hidden">Fixing...</span>
+                </>
+              ) : (
+                <>
+                  <Wrench className="w-3.5 h-3.5" />
+                  <span>Fix Flagged ({failedBlockIds.length})</span>
+                </>
+              )}
+            </button>
+          )}
+
           {/* Copy Button */}
           <button
             onClick={handleCopy}
@@ -1080,6 +1190,52 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
                   </button>
                 )}
               </div>
+            </div>
+          )}
+
+          {/* Flagged Blocks Warning & Targeted Repair Banner */}
+          {failedBlockIds.length > 0 && (
+            <div className="w-full max-w-[816px] mb-3 bg-rose-50/95 border-2 border-rose-400 rounded-xl p-3.5 text-xs text-rose-950 shadow-xs animate-fadeIn flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+              <div className="flex items-start sm:items-center gap-2.5">
+                <AlertTriangle className="w-4 h-4 text-rose-600 shrink-0 mt-0.5 sm:mt-0" />
+                <div>
+                  <div className="flex items-center gap-2 flex-wrap">
+                    <span className="font-extrabold text-rose-950 text-xs">
+                      {failedBlockIds.length} Block{failedBlockIds.length === 1 ? "" : "s"} Flagged with Issues
+                    </span>
+                    <span className="text-[10px] bg-rose-200 text-rose-900 font-extrabold px-1.5 py-0.2 rounded border border-rose-300 uppercase">
+                      Needs Repair
+                    </span>
+                    <span className="text-[10px] bg-emerald-100 text-emerald-800 font-bold px-1.5 py-0.2 rounded border border-emerald-300">
+                      Other Blocks Intact
+                    </span>
+                  </div>
+                  <p className="text-slate-700 text-[11px] leading-relaxed mt-0.5">
+                    Highlighted in red below with KaTeX/syntax issue details. Click <strong>"Fix flagged only"</strong> to repair these blocks without re-sending or modifying any intact blocks.
+                  </p>
+                </div>
+              </div>
+              {onRepairAllFlagged && (
+                <button
+                  type="button"
+                  id="btn-fix-flagged-banner"
+                  onClick={onRepairAllFlagged}
+                  disabled={isRepairing}
+                  className="inline-flex items-center justify-center gap-1.5 px-3.5 py-2 rounded-lg text-xs font-black text-white bg-rose-600 hover:bg-rose-700 active:bg-rose-800 disabled:opacity-50 shadow-2xs cursor-pointer transition-all shrink-0 whitespace-nowrap"
+                >
+                  {isRepairing ? (
+                    <>
+                      <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                      <span>Fixing {repairProgress ? `${repairProgress.current}/${repairProgress.total}` : "..."}</span>
+                    </>
+                  ) : (
+                    <>
+                      <Wrench className="w-3.5 h-3.5" />
+                      <span>Fix flagged only</span>
+                    </>
+                  )}
+                </button>
+              )}
             </div>
           )}
 

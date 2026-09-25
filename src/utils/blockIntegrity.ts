@@ -9,6 +9,8 @@
  * 5. Character count preservation with ±2% tolerance.
  */
 
+import katex from "katex";
+
 export type BlockType = "equation" | "table" | "code" | "heading" | "list" | "paragraph";
 
 export interface DocumentBlock {
@@ -426,3 +428,243 @@ export function compareDocumentBlocks(
     flags,
   };
 }
+
+export interface BlockFormattingIssue {
+  blockId: string;
+  type: BlockType;
+  reason: string;
+  category:
+    | "katex_error"
+    | "unbalanced_delimiters"
+    | "broken_command"
+    | "unclosed_fence"
+    | "tree_artifact"
+    | "raw_math_unwrapped";
+}
+
+/**
+ * Checks a single document block for formatting, KaTeX syntax, or delimiter issues.
+ * Returns null if the block is syntactically sound and valid.
+ */
+export function detectBlockFormattingIssue(block: DocumentBlock): BlockFormattingIssue | null {
+  const text = block.rawText;
+  if (!text || !text.trim()) return null;
+
+  // 1. Check for leftover tree-drawing characters
+  if (/(?:\|{2,}|├─|└─|├──|└──|\+---)/.test(text)) {
+    return {
+      blockId: block.id,
+      type: block.type,
+      reason: "Contains uncleaned tree-drawing artifacts (├──, └──)",
+      category: "tree_artifact",
+    };
+  }
+
+  // 2. Unclosed code fence
+  if (block.type === "code" && !text.trim().endsWith("```")) {
+    return {
+      blockId: block.id,
+      type: block.type,
+      reason: "Unclosed code fence",
+      category: "unclosed_fence",
+    };
+  }
+
+  // 3. Delimiter balance checks
+  // A. Display math $$
+  const doubleDollars = (text.match(/(?<!\\)\$\$/g) || []).length;
+  if (doubleDollars % 2 !== 0) {
+    return {
+      blockId: block.id,
+      type: block.type,
+      reason: "Unmatched display math delimiter '$$'",
+      category: "unbalanced_delimiters",
+    };
+  }
+
+  // B. Display math \[ ... \]
+  const openBrackets = (text.match(/(?:\\)+\[/g) || []).length;
+  const closeBrackets = (text.match(/(?:\\)+\]/g) || []).length;
+  if (openBrackets !== closeBrackets) {
+    return {
+      blockId: block.id,
+      type: block.type,
+      reason: "Unmatched display brackets '\[' vs '\]'",
+      category: "unbalanced_delimiters",
+    };
+  }
+
+  // C. Inline math \( ... \)
+  const openParens = (text.match(/(?:\\)+\(/g) || []).length;
+  const closeParens = (text.match(/(?:\\)+\)/g) || []).length;
+  if (openParens !== closeParens) {
+    return {
+      blockId: block.id,
+      type: block.type,
+      reason: "Unmatched inline math parens '\(' vs '\)'",
+      category: "unbalanced_delimiters",
+    };
+  }
+
+  // D. Single dollar $ (excluding $$)
+  const textNoDoubleDollar = text.replace(/(?<!\\)\$\$[\s\S]*?(?<!\\)\$\$/g, "");
+  const singleDollars = (textNoDoubleDollar.match(/(?<!\\)\$/g) || []).length;
+  if (singleDollars % 2 !== 0) {
+    return {
+      blockId: block.id,
+      type: block.type,
+      reason: "Unmatched inline dollar delimiter '$'",
+      category: "unbalanced_delimiters",
+    };
+  }
+
+  // 4. Extract math expressions and check for KaTeX errors & curly brace balance
+  const mathExpressions: Array<{ math: string; isDisplay: boolean }> = [];
+
+  // Display math $$...$$
+  const ddRegex = /\$\$([\s\S]*?)\$\$/g;
+  let match: RegExpExecArray | null;
+  while ((match = ddRegex.exec(text)) !== null) {
+    mathExpressions.push({ math: match[1], isDisplay: true });
+  }
+
+  // Display math \[...\]
+  const brkRegex = /(?:\\)+\[([\s\S]*?)(?:\\)+\]/g;
+  while ((match = brkRegex.exec(text)) !== null) {
+    mathExpressions.push({ math: match[1], isDisplay: true });
+  }
+
+  // Inline math \(...\)
+  const prnRegex = /(?:\\)+\(([\s\S]*?)(?:\\)+\)/g;
+  while ((match = prnRegex.exec(text)) !== null) {
+    mathExpressions.push({ math: match[1], isDisplay: false });
+  }
+
+  // Inline math $...$
+  const sdRegex = /(?<!\$)\$(?!\$)([^\$\n]+?)(?<!\$)\$(?!\$)/g;
+  while ((match = sdRegex.exec(textNoDoubleDollar)) !== null) {
+    mathExpressions.push({ math: match[1], isDisplay: false });
+  }
+
+  // If block itself is pure equation type without explicit outer delimiters
+  if (block.type === "equation" && mathExpressions.length === 0) {
+    mathExpressions.push({ math: text, isDisplay: true });
+  }
+
+  for (const { math, isDisplay } of mathExpressions) {
+    const trimmedMath = math.trim();
+    if (!trimmedMath) continue;
+
+    // Check curly braces balance inside math formula
+    let braceDepth = 0;
+    for (let i = 0; i < trimmedMath.length; i++) {
+      if (trimmedMath[i] === "{" && (i === 0 || trimmedMath[i - 1] !== "\\")) {
+        braceDepth++;
+      } else if (trimmedMath[i] === "}" && (i === 0 || trimmedMath[i - 1] !== "\\")) {
+        braceDepth--;
+      }
+      if (braceDepth < 0) break;
+    }
+    if (braceDepth !== 0) {
+      return {
+        blockId: block.id,
+        type: block.type,
+        reason: "Unbalanced curly braces '{ }' in LaTeX formula",
+        category: "broken_command",
+      };
+    }
+
+    // Check environment begin/end match
+    const begins = (trimmedMath.match(/\\begin\{([^}]+)\}/g) || []).map((m) =>
+      m.replace(/\\begin\{([^}]+)\}/, "$1")
+    );
+    const ends = (trimmedMath.match(/\\end\{([^}]+)\}/g) || []).map((m) =>
+      m.replace(/\\end\{([^}]+)\}/, "$1")
+    );
+    if (begins.length !== ends.length) {
+      return {
+        blockId: block.id,
+        type: block.type,
+        reason: `Mismatched LaTeX environments (${begins.join(", ")} vs ${ends.join(", ")})`,
+        category: "broken_command",
+      };
+    }
+
+    // Test with KaTeX renderer
+    try {
+      katex.renderToString(trimmedMath, {
+        displayMode: isDisplay,
+        throwOnError: true,
+        strict: "ignore",
+      });
+    } catch (err: any) {
+      const msg = (err.message || "")
+        .replace(/^KaTeX parse error:\s*/i, "")
+        .slice(0, 75);
+      return {
+        blockId: block.id,
+        type: block.type,
+        reason: `KaTeX syntax error: ${msg}`,
+        category: "katex_error",
+      };
+    }
+  }
+
+  // 5. Raw unwrapped LaTeX command outside math mode in paragraphs/lists
+  if (block.type === "paragraph" || block.type === "list") {
+    const strippedMath = text
+      .replace(/\$\$[\s\S]*?\$\$/g, "")
+      .replace(/(?:\\)+\[[\s\S]*?(?:\\)+\]/g, "")
+      .replace(/(?:\\)+\([\s\S]*?(?:\\)+\)/g, "")
+      .replace(/(?<!\$)\$(?!\$)[^\$\n]+?(?<!\$)\$(?!\$)/g, "");
+
+    if (/\\(?:frac|sqrt|sum|int|prod)\s*\{/.test(strippedMath)) {
+      return {
+        blockId: block.id,
+        type: block.type,
+        reason: "LaTeX formula found outside math delimiters ($$ or $)",
+        category: "raw_math_unwrapped",
+      };
+    }
+  }
+
+  return null;
+}
+
+/**
+ * Collects all failed/flagged block IDs and their issue details from a list of blocks.
+ */
+export function collectFailedBlocks(blocks: DocumentBlock[]): {
+  failedBlockIds: string[];
+  issuesMap: Record<string, BlockFormattingIssue>;
+} {
+  const failedBlockIds: string[] = [];
+  const issuesMap: Record<string, BlockFormattingIssue> = {};
+
+  for (const block of blocks) {
+    const issue = detectBlockFormattingIssue(block);
+    if (issue) {
+      failedBlockIds.push(block.id);
+      issuesMap[block.id] = issue;
+    }
+  }
+
+  return { failedBlockIds, issuesMap };
+}
+
+/**
+ * Replaces a single block in a document by its stable block ID while keeping all other blocks intact.
+ */
+export function replaceSingleBlockInDocument(
+  markdown: string,
+  targetBlockId: string,
+  repairedText: string
+): string {
+  const blocks = parseDocumentBlocks(markdown);
+  const targetIdx = blocks.findIndex((b) => b.id === targetBlockId);
+  if (targetIdx === -1) return markdown;
+
+  blocks[targetIdx].rawText = repairedText.trim();
+  return blocks.map((b) => b.rawText).join("\n\n");
+}
+
