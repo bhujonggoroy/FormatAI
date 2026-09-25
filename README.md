@@ -1,6 +1,6 @@
-# NotebookLM to DOCX Converter
+# FormatAI — Academic Mathematical Editor, LaTeX Typesetter & Document Formatter
 
-A lightweight, serverless-ready web application that takes messy, raw study notes and summaries copied from **Google NotebookLM** (including broken LaTeX, truncated math equations, and unstructured formatting), cleans them up with **Google Gemini AI**, converts math expressions into crystal-clear **Unicode math notation**, and exports a publication-grade Microsoft Word (**`.docx`**) document.
+A lightweight, high-performance web application and PWA that transforms messy, raw study notes, lecture summaries, and broken equations copied from **ChatGPT, Google Gemini, Claude, NotebookLM**, or any academic source into clean, publication-grade academic documents and editable Microsoft Word (**`.docx`**) files with standard LaTeX and native OMML math formulas.
 
 ---
 
@@ -60,9 +60,9 @@ Vercel natively supports Python serverless functions via `@vercel/python`.
    ```bash
    git init
    git add .
-   git commit -m "Initial commit of NotebookLM to DOCX Converter"
+   git commit -m "Initial commit of FormatAI"
    git branch -M main
-   git remote add origin https://github.com/your-username/notebooklm-docx-converter.git
+   git remote add origin https://github.com/your-username/formatai.git
    git push -u origin main
    ```
 
@@ -96,7 +96,7 @@ Render provides a 100% free web service tier with full Python & Gunicorn support
    - Connect your GitHub account and select your repository.
 
 3. **Configure the Service**:
-   - **Name**: `notebooklm-docx-converter`
+   - **Name**: `formatai`
    - **Language / Environment**: `Python 3`
    - **Branch**: `main`
    - **Build Command**: `pip install -r requirements.txt`
@@ -112,18 +112,18 @@ Render provides a 100% free web service tier with full Python & Gunicorn support
 5. **Deploy**:
    - Click **"Create Web Service"**.
    - Render will provision the container, install packages, and launch Gunicorn.
-   - Your app will be accessible at `https://notebooklm-docx-converter.onrender.com`.
+   - Your app will be accessible at `https://formatai.onrender.com`.
 
 ---
 
 ## Local Development Setup
 
-To run the Flask backend and test conversion locally:
+To run the application and test conversion locally:
 
 1. **Clone the repository**:
    ```bash
-   git clone https://github.com/your-username/notebooklm-docx-converter.git
-   cd notebooklm-docx-converter
+   git clone https://github.com/your-username/formatai.git
+   cd formatai
    ```
 
 2. **Create a Python virtual environment**:

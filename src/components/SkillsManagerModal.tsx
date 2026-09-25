@@ -177,9 +177,11 @@ export const GITHUB_REPOS_ATTRIBUTION = [
   },
 ];
 
-export const FULL_MIT_LICENSE_TEXT = `MIT License
+export const FULL_MIT_LICENSE_TEXT = `FormatAI — MIT License
 
 Copyright (c) 2025-2026 Bhujonggo Roy <bhujonggoroy@gmail.com> & FormatAI Contributors
+
+Project: FormatAI (Academic Mathematical Editor, LaTeX Typesetter & Document Formatter)
 
 Project Mission / Motto:
 "ChatGPT, Gemini, Claude, NotebookLM বা যেকোনো source থেকে পাওয়া AI-generated বা copy-pasted content-কে স্বয়ংক্রিয়ভাবে mathematical, scientific, textual এবং academic formatting সহ একটি clean, professional, editable DOCX document-এ রূপান্তর করা—শিক্ষার্থীদের জন্য সম্পূর্ণ বিনামূল্যে।"
@@ -1031,7 +1033,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                 </span>
               </button>
 
-              {/* Tab 6: Open Source License & 12 Repos */}
+              {/* Tab 6: Open Source License & Attributions */}
               <button
                 id="tab-btn-license"
                 type="button"
@@ -1043,8 +1045,8 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
                 }`}
               >
                 <Scale className={`w-3.5 h-3.5 shrink-0 ${activeTab === "license" ? "text-teal-200" : "text-slate-500"}`} />
-                <span className="hidden sm:inline">License & 12 Repos</span>
-                <span className="sm:hidden">License</span>
+                <span className="hidden sm:inline">FormatAI License</span>
+                <span className="sm:hidden">FormatAI License</span>
                 <span className={`px-1.5 py-0.2 rounded-full text-[10px] font-bold ${
                   activeTab === "license" ? "bg-teal-700 text-white" : "bg-slate-200 text-slate-700"
                 }`}>
@@ -2263,7 +2265,7 @@ Text:
                   <div className="flex items-center gap-2">
                     <Scale className="w-4 h-4 text-slate-700" />
                     <span className="text-xs font-bold text-slate-900">
-                      Official MIT License Agreement & Warranty Disclaimer:
+                      FormatAI Official MIT License Agreement & Warranty Disclaimer:
                     </span>
                   </div>
                   <button

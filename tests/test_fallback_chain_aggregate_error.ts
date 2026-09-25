@@ -35,7 +35,7 @@ class FailingMockAdapter implements AIProviderAdapter {
   constructor(id: string, name: string) {
     this.id = id;
     this.name = name;
-    this.models = [{ id: `${id}-model`, name: `${name} Model`, isFree: true, capabilities: ["text"] }];
+    this.models = [{ id: `${id}-model`, name: `${name} Model`, isFree: true, contextWindow: 128000, capabilities: ["text"] }];
   }
   async listModels(): Promise<ModelInfo[]> { return this.models; }
   async getModels(): Promise<ModelInfo[]> { return this.models; }

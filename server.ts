@@ -5,7 +5,6 @@ import http from "node:http";
 import express from "express";
 import path from "path";
 import fs from "fs";
-import { createServer as createViteServer } from "vite";
 import {
   cleanNotebookLMTreeArtifacts,
   standardizeMathToLatex,
@@ -1927,6 +1926,7 @@ export async function startStandaloneServer() {
 
   // Vite middleware for development vs static build for production
   if (process.env.NODE_ENV !== "production") {
+    const { createServer: createViteServer } = await import("vite");
     const vite = await createViteServer({
       server: {
         middlewareMode: true,

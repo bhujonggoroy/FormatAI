@@ -1925,7 +1925,7 @@ export default function App() {
               }}
               className="font-semibold text-emerald-700 hover:text-emerald-900 hover:underline cursor-pointer"
             >
-              License & 4 Upstream Repos
+              FormatAI License & Upstream Repos
             </button>
             <span>•</span>
             <button

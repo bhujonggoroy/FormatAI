@@ -1,6 +1,6 @@
 # Modular Skills System
 
-This directory contains the modular skill specifications and instruction standards integrated into the NotebookLM → DOCX Converter application.
+This directory contains the modular skill specifications and instruction standards integrated into the FormatAI application.
 
 ## Integrated Skills & Priority Order
 

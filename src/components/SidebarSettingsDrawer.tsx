@@ -683,7 +683,7 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             >
               <span className="flex items-center gap-2">
                 <Scale className="w-4 h-4 text-emerald-700" />
-                <span>MIT License & 4 Upstream Repos</span>
+                <span>FormatAI License & Upstream Repos</span>
               </span>
               <ChevronRight className="w-4 h-4 text-emerald-700" />
             </button>

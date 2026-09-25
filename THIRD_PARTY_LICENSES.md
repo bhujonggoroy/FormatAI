@@ -1,6 +1,6 @@
-# Third-Party Licenses & Intellectual Property Review
+# FormatAI — Third-Party Licenses & Intellectual Property Review
 
-This project acknowledges and builds upon four open-source GitHub repositories. Below is the detailed legal review and attribution documentation verifying that all upstream licenses are respected and that no copyright conflicts exist.
+FormatAI acknowledges and builds upon four open-source GitHub repositories. Below is the detailed legal review and attribution documentation verifying that all upstream licenses are respected and that no copyright conflicts exist.
 
 ---
 
