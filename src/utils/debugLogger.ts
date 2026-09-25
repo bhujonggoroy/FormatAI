@@ -34,6 +34,9 @@ export interface PipelineDebugTrace {
     charDiffPercent?: number;
     stageDurationMs?: number;
     errorMessage?: string;
+    stage?: string;
+    blockId?: string;
+    repairedLength?: number;
   };
 }
 
@@ -93,6 +96,9 @@ function sanitizeMetadata(metadata: Record<string, any>): PipelineDebugTrace["me
     "charDiffPercent",
     "stageDurationMs",
     "errorMessage",
+    "stage",
+    "blockId",
+    "repairedLength",
   ]);
 
   const sanitized: Record<string, any> = {};
