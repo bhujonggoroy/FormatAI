@@ -23,11 +23,21 @@ import {
 } from "lucide-react";
 import katex from "katex";
 import { downloadPreviewAsPdf, generateDocumentPdf } from "../utils/pdfGenerator";
+import { TextDiffViewer } from "./TextDiffViewer";
 
 export interface ValidationAlertState {
   failed: boolean;
   reason: string;
   errors: string[];
+}
+
+export interface PolishDiffData {
+  originalText: string;
+  polishedText: string;
+  hasChanges: boolean;
+  message?: string;
+  providerName?: string;
+  modelName?: string;
 }
 
 interface FormattedPreviewProps {
@@ -44,6 +54,11 @@ interface FormattedPreviewProps {
   onDownloadDocx: () => void;
   onDownloadPdf?: () => void;
   isDownloading: boolean;
+  diffData?: PolishDiffData | null;
+  onApplyDiffChanges?: () => void;
+  onDiscardDiffChanges?: () => void;
+  activeViewMode?: "rendered" | "source" | "diff";
+  onViewModeChange?: (mode: "rendered" | "source" | "diff") => void;
 }
 
 function getCssFontFamily(font: string): string {
@@ -77,9 +92,19 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   onDownloadDocx,
   onDownloadPdf,
   isDownloading,
+  diffData,
+  onApplyDiffChanges,
+  onDiscardDiffChanges,
+  activeViewMode,
+  onViewModeChange,
 }) => {
   const [copied, setCopied] = useState(false);
-  const [viewMode, setViewMode] = useState<"rendered" | "source">("rendered");
+  const [internalViewMode, setInternalViewMode] = useState<"rendered" | "source" | "diff">("rendered");
+  const viewMode = activeViewMode ?? internalViewMode;
+  const setViewMode = (mode: "rendered" | "source" | "diff") => {
+    setInternalViewMode(mode);
+    onViewModeChange?.(mode);
+  };
   const [zoomLevel, setZoomLevel] = useState<number>(100);
 
   const [scrollProgress, setScrollProgress] = useState<number>(0);
@@ -247,7 +272,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   const renderedElements = useMemo(() => {
     let seq = 0;
     const lines = markdown.split("\n");
-    const renderedElements: React.ReactNode[] = [];
+    const elements: React.ReactNode[] = [];
     let i = 0;
 
     while (i < lines.length) {
@@ -255,535 +280,536 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       const trimmed = rawLine.trim();
 
       if (!trimmed) {
-        renderedElements.push(<div key={`sp-${seq++}-${i}`} className="h-2.5" />);
+        const blockId = `block-sp-${seq++}`;
+        elements.push(<div key={blockId} className="h-2.5" />);
         i++;
         continue;
       }
 
-    // Display equation block: $$...$$ (single or multi-line)
-    if (trimmed.startsWith("$$")) {
-      let mathContent = "";
-      if (trimmed.length >= 4 && trimmed.slice(2).includes("$$")) {
-        const endIdx = trimmed.slice(2).indexOf("$$");
-        mathContent = trimmed.slice(2, 2 + endIdx).trim();
-        i++;
-      } else {
-        const mathLines: string[] = [];
-        const first = trimmed.slice(2).trim();
-        if (first) mathLines.push(first);
-        i++;
-        while (i < lines.length) {
-          const nextTrimmed = lines[i].trim();
-          if (nextTrimmed.includes("$$")) {
-            const endIdx = nextTrimmed.indexOf("$$");
-            const endPart = nextTrimmed.slice(0, endIdx).trim();
-            if (endPart) mathLines.push(endPart);
-            i++;
-            break;
-          }
-          // CRITICAL SAFETY GUARD: Never swallow structural markdown into an unclosed equation
-          if (/^#{1,6}\s+|^(\*{3,}|-{3,}|_{3,})$|^>\s+|^\|/.test(nextTrimmed)) {
-            break;
-          }
-          mathLines.push(lines[i]);
+      const blockId = `block-${seq++}`;
+
+      // Display equation block: $$...$$ (single or multi-line)
+      if (trimmed.startsWith("$$")) {
+        let mathContent = "";
+        if (trimmed.length >= 4 && trimmed.slice(2).includes("$$")) {
+          const endIdx = trimmed.slice(2).indexOf("$$");
+          mathContent = trimmed.slice(2, 2 + endIdx).trim();
           i++;
+        } else {
+          const mathLines: string[] = [];
+          const first = trimmed.slice(2).trim();
+          if (first) mathLines.push(first);
+          i++;
+          while (i < lines.length) {
+            const nextTrimmed = lines[i].trim();
+            if (nextTrimmed.includes("$$")) {
+              const endIdx = nextTrimmed.indexOf("$$");
+              const endPart = nextTrimmed.slice(0, endIdx).trim();
+              if (endPart) mathLines.push(endPart);
+              i++;
+              break;
+            }
+            // CRITICAL SAFETY GUARD: Never swallow structural markdown into an unclosed equation
+            if (/^#{1,6}\s+|^(\*{3,}|-{3,}|_{3,})$|^>\s+|^\|/.test(nextTrimmed)) {
+              break;
+            }
+            mathLines.push(lines[i]);
+            i++;
+          }
+          mathContent = mathLines.join(" ").trim();
         }
-        mathContent = mathLines.join(" ").trim();
+
+        if (mathContent) {
+          elements.push(
+            <div
+              key={blockId}
+              className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
+            >
+              <MathComponent math={mathContent} display={true} />
+            </div>
+          );
+        }
+        continue;
       }
 
-      if (mathContent) {
-        renderedElements.push(
+      // Display equation block: \[...\] or \\[...\\] (single or multi-line)
+      if (/^(?:\\)+\[/.test(trimmed)) {
+        let mathContent = "";
+        const closeBracketIndex = trimmed.search(/(?:\\)+\]/);
+        if (closeBracketIndex !== -1) {
+          const openMatch = trimmed.match(/^(?:\\)+\[\s*/)!;
+          const startIdx = openMatch[0].length;
+          mathContent = trimmed.slice(startIdx, closeBracketIndex).trim();
+          mathContent = mathContent.replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
+          i++;
+        } else {
+          const mathLines: string[] = [];
+          const first = trimmed.replace(/^(?:\\)+\[\s*/, "").trim();
+          if (first) mathLines.push(first);
+          i++;
+          while (i < lines.length) {
+            const nextTrimmed = lines[i].trim();
+            const nextCloseIdx = nextTrimmed.search(/(?:\\)+\]/);
+            if (nextCloseIdx !== -1) {
+              const endPart = nextTrimmed.slice(0, nextCloseIdx).trim();
+              if (endPart) mathLines.push(endPart);
+              i++;
+              break;
+            }
+            // CRITICAL SAFETY GUARD: Never swallow structural markdown into an unclosed equation
+            if (/^#{1,6}\s+|^(\*{3,}|-{3,}|_{3,})$|^>\s+|^\|/.test(nextTrimmed)) {
+              break;
+            }
+            mathLines.push(lines[i]);
+            i++;
+          }
+          mathContent = mathLines.join(" ").trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
+        }
+
+        if (mathContent) {
+          elements.push(
+            <div
+              key={blockId}
+              className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
+            >
+              <MathComponent math={mathContent} display={true} />
+            </div>
+          );
+        }
+        continue;
+      }
+
+      // Unwrapped equation block starting with math commands (e.g. \frac{...} or \sqrt{...})
+      if (
+        (trimmed.startsWith("\\frac") ||
+          trimmed.startsWith("\\sqrt") ||
+          trimmed.startsWith("\\sum") ||
+          trimmed.startsWith("\\int")) &&
+        !trimmed.startsWith("$")
+      ) {
+        elements.push(
           <div
-            key={`eq-${i}`}
+            key={blockId}
             className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
           >
-            <MathComponent math={mathContent} display={true} />
+            <MathComponent math={trimmed} display={true} />
           </div>
         );
-      }
-      continue;
-    }
-
-    // Display equation block: \[...\] or \\[...\\] (single or multi-line)
-    if (/^(?:\\)+\[/.test(trimmed)) {
-      let mathContent = "";
-      // Check if closing bracket is on this same line:
-      const closeBracketIndex = trimmed.search(/(?:\\)+\]/);
-      if (closeBracketIndex !== -1) {
-        const openMatch = trimmed.match(/^(?:\\)+\[\s*/)!;
-        const startIdx = openMatch[0].length;
-        mathContent = trimmed.slice(startIdx, closeBracketIndex).trim();
-        mathContent = mathContent.replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
         i++;
-      } else {
-        const mathLines: string[] = [];
-        const first = trimmed.replace(/^(?:\\)+\[\s*/, "").trim();
-        if (first) mathLines.push(first);
-        i++;
-        while (i < lines.length) {
-          const nextTrimmed = lines[i].trim();
-          const nextCloseIdx = nextTrimmed.search(/(?:\\)+\]/);
-          if (nextCloseIdx !== -1) {
-            const endPart = nextTrimmed.slice(0, nextCloseIdx).trim();
-            if (endPart) mathLines.push(endPart);
-            i++;
-            break;
-          }
-          // CRITICAL SAFETY GUARD: Never swallow structural markdown into an unclosed equation
-          if (/^#{1,6}\s+|^(\*{3,}|-{3,}|_{3,})$|^>\s+|^\|/.test(nextTrimmed)) {
-            break;
-          }
-          mathLines.push(lines[i]);
-          i++;
-        }
-        mathContent = mathLines.join(" ").trim().replace(/(?:\\+(?:quad|qquad|,|;|!|\s|newline)|\\\\)+$/g, "").trim();
+        continue;
       }
 
-      if (mathContent) {
-        renderedElements.push(
-          <div
-            key={`eq-bracket-${i}`}
-            className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
+      // Heading 1 (# ...)
+      if (trimmed.startsWith("# ")) {
+        elements.push(
+          <h1
+            key={blockId}
+            className="text-2xl font-bold tracking-tight mt-6 mb-3 pb-1 border-b border-slate-200"
+            style={{
+              color: accentColor,
+              fontFamily: getCssFontFamily(fontFamily),
+            }}
           >
-            <MathComponent math={mathContent} display={true} />
+            {renderInline(trimmed.slice(2), `${blockId}-inl`)}
+          </h1>
+        );
+        i++;
+        continue;
+      }
+
+      // Heading 2 (## ...)
+      if (trimmed.startsWith("## ")) {
+        elements.push(
+          <h2
+            key={blockId}
+            className="text-lg font-bold tracking-tight mt-5 mb-2"
+            style={{
+              color: accentColor === "#1A365D" ? "#2B6CB0" : accentColor,
+              fontFamily: getCssFontFamily(fontFamily),
+            }}
+          >
+            {renderInline(trimmed.slice(3), `${blockId}-inl`)}
+          </h2>
+        );
+        i++;
+        continue;
+      }
+
+      // Heading 3 (### ...)
+      if (trimmed.startsWith("### ")) {
+        elements.push(
+          <h3
+            key={blockId}
+            className="text-sm font-bold text-slate-800 mt-4 mb-1.5 flex items-center gap-1.5"
+            style={{ fontFamily: getCssFontFamily(fontFamily) }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
+              style={{ backgroundColor: accentColor }}
+            />
+            {renderInline(trimmed.slice(4), `${blockId}-inl`)}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+
+      // Heading 4 (#### ...)
+      if (trimmed.startsWith("#### ")) {
+        elements.push(
+          <h4
+            key={blockId}
+            className="text-xs font-bold uppercase tracking-wider text-slate-700 mt-3.5 mb-1.5 flex items-center gap-1.5"
+            style={{ fontFamily: getCssFontFamily(fontFamily) }}
+          >
+            <span
+              className="w-1 h-1 rounded-full inline-block shrink-0 bg-slate-400"
+            />
+            {renderInline(trimmed.slice(5), `${blockId}-inl`)}
+          </h4>
+        );
+        i++;
+        continue;
+      }
+
+      // Heading 5 (##### ...)
+      if (trimmed.startsWith("##### ")) {
+        elements.push(
+          <h5
+            key={blockId}
+            className="text-xs font-semibold text-slate-600 mt-3 mb-1"
+            style={{ fontFamily: getCssFontFamily(fontFamily) }}
+          >
+            {renderInline(trimmed.slice(6), `${blockId}-inl`)}
+          </h5>
+        );
+        i++;
+        continue;
+      }
+
+      // Heading 6 (###### ...)
+      if (trimmed.startsWith("###### ")) {
+        elements.push(
+          <h6
+            key={blockId}
+            className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mt-2.5 mb-1"
+            style={{ fontFamily: getCssFontFamily(fontFamily) }}
+          >
+            {renderInline(trimmed.slice(7), `${blockId}-inl`)}
+          </h6>
+        );
+        i++;
+        continue;
+      }
+
+      // Horizontal divider (--- or ***)
+      if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
+        elements.push(
+          <hr key={blockId} className="my-5 border-t border-slate-300" />
+        );
+        i++;
+        continue;
+      }
+
+      // 4-digit Year Header (e.g. 2019, 2025)
+      if (/^\d{4}$/.test(trimmed)) {
+        elements.push(
+          <h2
+            key={blockId}
+            className="text-xl font-bold tracking-tight mt-6 mb-1"
+            style={{
+              color: accentColor,
+              fontFamily: getCssFontFamily(fontFamily),
+            }}
+          >
+            {trimmed}
+          </h2>
+        );
+        i++;
+        continue;
+      }
+
+      // Exam Title (e.g. Final Examination, Midterm Examination)
+      if (/^(?:\*{0,2})(?:Final|Midterm|Mid-Semester)\s+Examination(?:\*{0,2})$/i.test(trimmed)) {
+        const cleanExam = trimmed.replace(/^\*+|\*+$/g, '').trim();
+        elements.push(
+          <div
+            key={blockId}
+            className="text-sm font-semibold italic text-slate-600 mb-3"
+            style={{ fontFamily: getCssFontFamily(fontFamily) }}
+          >
+            {cleanExam}
           </div>
         );
-      }
-      continue;
-    }
-
-    // Unwrapped equation block starting with math commands (e.g. \frac{...} or \sqrt{...})
-    if (
-      (trimmed.startsWith("\\frac") ||
-        trimmed.startsWith("\\sqrt") ||
-        trimmed.startsWith("\\sum") ||
-        trimmed.startsWith("\\int")) &&
-      !trimmed.startsWith("$")
-    ) {
-      renderedElements.push(
-        <div
-          key={`eq-auto-${i}`}
-          className="my-2 py-1.5 px-3 flex flex-col items-center justify-center overflow-x-auto text-slate-900 rounded hover:bg-slate-50/70 transition-colors"
-        >
-          <MathComponent math={trimmed} display={true} />
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Heading 1 (# ...)
-    if (trimmed.startsWith("# ")) {
-      renderedElements.push(
-        <h1
-          key={`h1-${i}`}
-          className="text-2xl font-bold tracking-tight mt-6 mb-3 pb-1 border-b border-slate-200"
-          style={{
-            color: accentColor,
-            fontFamily: getCssFontFamily(fontFamily),
-          }}
-        >
-          {renderInline(trimmed.slice(2))}
-        </h1>
-      );
-      i++;
-      continue;
-    }
-
-    // Heading 2 (## ...)
-    if (trimmed.startsWith("## ")) {
-      renderedElements.push(
-        <h2
-          key={`h2-${i}`}
-          className="text-lg font-bold tracking-tight mt-5 mb-2"
-          style={{
-            color: accentColor === "#1A365D" ? "#2B6CB0" : accentColor,
-            fontFamily: getCssFontFamily(fontFamily),
-          }}
-        >
-          {renderInline(trimmed.slice(3))}
-        </h2>
-      );
-      i++;
-      continue;
-    }
-
-    // Heading 3 (### ...)
-    if (trimmed.startsWith("### ")) {
-      renderedElements.push(
-        <h3
-          key={`h3-${i}`}
-          className="text-sm font-bold text-slate-800 mt-4 mb-1.5 flex items-center gap-1.5"
-          style={{ fontFamily: getCssFontFamily(fontFamily) }}
-        >
-          <span
-            className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
-            style={{ backgroundColor: accentColor }}
-          />
-          {renderInline(trimmed.slice(4))}
-        </h3>
-      );
-      i++;
-      continue;
-    }
-
-    // Heading 4 (#### ...)
-    if (trimmed.startsWith("#### ")) {
-      renderedElements.push(
-        <h4
-          key={`h4-${i}`}
-          className="text-xs font-bold uppercase tracking-wider text-slate-700 mt-3.5 mb-1.5 flex items-center gap-1.5"
-          style={{ fontFamily: getCssFontFamily(fontFamily) }}
-        >
-          <span
-            className="w-1 h-1 rounded-full inline-block shrink-0 bg-slate-400"
-          />
-          {renderInline(trimmed.slice(5))}
-        </h4>
-      );
-      i++;
-      continue;
-    }
-
-    // Heading 5 (##### ...)
-    if (trimmed.startsWith("##### ")) {
-      renderedElements.push(
-        <h5
-          key={`h5-${i}`}
-          className="text-xs font-semibold text-slate-600 mt-3 mb-1"
-          style={{ fontFamily: getCssFontFamily(fontFamily) }}
-        >
-          {renderInline(trimmed.slice(6))}
-        </h5>
-      );
-      i++;
-      continue;
-    }
-
-    // Heading 6 (###### ...)
-    if (trimmed.startsWith("###### ")) {
-      renderedElements.push(
-        <h6
-          key={`h6-${i}`}
-          className="text-[11px] font-semibold text-slate-500 uppercase tracking-widest mt-2.5 mb-1"
-          style={{ fontFamily: getCssFontFamily(fontFamily) }}
-        >
-          {renderInline(trimmed.slice(7))}
-        </h6>
-      );
-      i++;
-      continue;
-    }
-
-    // Horizontal divider (--- or ***)
-    if (/^(\*{3,}|-{3,}|_{3,})$/.test(trimmed)) {
-      renderedElements.push(
-        <hr key={`hr-${i}`} className="my-5 border-t border-slate-300" />
-      );
-      i++;
-      continue;
-    }
-
-    // 4-digit Year Header (e.g. 2019, 2025)
-    if (/^\d{4}$/.test(trimmed)) {
-      renderedElements.push(
-        <h2
-          key={`year-${i}`}
-          className="text-xl font-bold tracking-tight mt-6 mb-1"
-          style={{
-            color: accentColor,
-            fontFamily: getCssFontFamily(fontFamily),
-          }}
-        >
-          {trimmed}
-        </h2>
-      );
-      i++;
-      continue;
-    }
-
-    // Exam Title (e.g. Final Examination, Midterm Examination)
-    if (/^(?:\*{0,2})(?:Final|Midterm|Mid-Semester)\s+Examination(?:\*{0,2})$/i.test(trimmed)) {
-      const cleanExam = trimmed.replace(/^\*+|\*+$/g, '').trim();
-      renderedElements.push(
-        <div
-          key={`exam-${i}`}
-          className="text-sm font-semibold italic text-slate-600 mb-3"
-          style={{ fontFamily: getCssFontFamily(fontFamily) }}
-        >
-          {cleanExam}
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Section Header (e.g. Section A: Descriptive Statistics... or **Section A:**)
-    if (/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i.test(trimmed)) {
-      const match = trimmed.match(/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i)!;
-      const sectionLetter = match[1].toUpperCase();
-      const sectionDesc = match[2].trim().replace(/^[:\s-]+/, '').replace(/^\*+|\*+$/g, '');
-      const fullSectionTitle = `Section ${sectionLetter}:${sectionDesc ? " " + sectionDesc : ""}`;
-
-      renderedElements.push(
-        <h3
-          key={`section-${i}`}
-          className="text-base font-bold text-slate-900 mt-6 mb-2 pb-1 border-b border-slate-200 flex items-center gap-2"
-          style={{
-            color: accentColor,
-            fontFamily: getCssFontFamily(fontFamily),
-          }}
-        >
-          {renderInline(fullSectionTitle)}
-        </h3>
-      );
-      i++;
-      continue;
-    }
-
-    // Topic Header (e.g. Topic 1: ... or #### Topic 1: ...)
-    if (/^(?:#{2,4}\s*)?(?:\*{0,2})(Topic\s+\d+:?\s*.*?)(?:\*{0,2})$/i.test(trimmed)) {
-      const topicText = trimmed.replace(/^#{2,4}\s*/, '').replace(/^\*+|\*+$/g, '').trim();
-      renderedElements.push(
-        <h4
-          key={`topic-${i}`}
-          className="text-sm font-bold text-slate-800 mt-4 mb-2 flex items-center gap-1.5"
-          style={{ fontFamily: getCssFontFamily(fontFamily) }}
-        >
-          <span
-            className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
-            style={{ backgroundColor: accentColor }}
-          />
-          {renderInline(topicText)}
-        </h4>
-      );
-      i++;
-      continue;
-    }
-
-    // Pure Data Array: Centered comma-separated sequence of numbers
-    if (/^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}\d+(?:\.\d+)?(?:,\s*)?$/.test(trimmed)) {
-      const tokens = trimmed.replace(/,/g, ' ').trim().split(/\s+/);
-      const formattedData = tokens.join(', ') + (i + 1 < lines.length && /^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}/.test(lines[i + 1].trim()) ? ',' : '');
-      renderedElements.push(
-        <div
-          key={`data-${i}`}
-          className="my-1.5 text-center font-mono text-xs text-slate-700 tracking-wide select-text py-0.5"
-        >
-          {formattedData}
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Sub-questions & Lettered list items: e.g. a. Arithmetic mean... or i. E(y)... or (i) Draw...
-    const subMatch = trimmed.match(/^\s*(?:[-*•o]\s+)?(?:\*{0,2})([a-z]\.|\([a-z]\)|[a-z]\)|\(i{1,3}\)|[i-v]+\.|\([0-9]+\))\s*(.*)$/i);
-    if (subMatch) {
-      const prefix = subMatch[1].replace(/^\(/, '').replace(/\)$/, '.');
-      const subContent = subMatch[2].replace(/^\*+|\*+$/g, '').trim();
-
-      renderedElements.push(
-        <div
-          key={`sub-${i}`}
-          className="flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ml-6 leading-relaxed"
-        >
-          <span className="font-bold text-slate-900 shrink-0 select-none min-w-[20px]">
-            {prefix}
-          </span>
-          <div className="flex-1">{renderInline(subContent)}</div>
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Metadata and Side notes (Frequency: ..., Side note: ..., Note: ...)
-    const metaMatch = trimmed.match(/^(?:\s*[-*•o]\s+)?(?:\*{0,2})(\(?Side note:|\(?Note:|Frequency:)\s*(.*?)(?:\*{0,2})$/i);
-    if (metaMatch) {
-      const label = metaMatch[1];
-      const noteContent = metaMatch[2].replace(/^\*+|\*+$/g, '').trim();
-      const isSideNote = /side note|note/i.test(label);
-
-      renderedElements.push(
-        <div
-          key={`meta-${i}`}
-          className={`my-1 ml-6 text-xs text-slate-500 leading-normal ${
-            isSideNote ? 'italic' : ''
-          }`}
-        >
-          <span className={isSideNote ? 'italic text-slate-500' : 'font-semibold text-slate-600'}>
-            {label}{' '}
-          </span>
-          <span>{renderInline(noteContent)}</span>
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Markdown Table detection: | col1 | col2 |
-    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-      const tableRows: string[][] = [];
-
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-        const rowText = lines[i].trim();
-        // Skip separator row: |---|---|
-        if (/^\|[-:\s|]+\|$/.test(rowText)) {
-          i++;
-          continue;
-        }
-        const cells = rowText
-          .slice(1, -1)
-          .split("|")
-          .map((c) => c.trim());
-        tableRows.push(cells);
         i++;
+        continue;
       }
 
-      if (tableRows.length > 0) {
-        renderedElements.push(
-          <div key={`table-${i}`} className="my-3 overflow-x-auto rounded-md border border-slate-300 shadow-2xs">
-            <table className="w-full text-xs text-left border-collapse">
-              <thead>
-                <tr className="bg-slate-100 border-b border-slate-300 text-slate-900 font-bold">
-                  {tableRows[0].map((h, cIdx) => {
-                    const isNumeric = /^[\d.,\s/%+-]+$/.test(h) || /^(?:Variable|Income|Expenditure|Speed|GPA|Hour|ID|Year|x\d*|y\d*|Height|Weight|Age)$/i.test(h);
-                    return (
-                      <th
-                        key={cIdx}
-                        className={`px-3 py-2 border-r border-slate-300 last:border-r-0 ${
-                          isNumeric ? 'text-center' : 'text-left'
-                        }`}
-                      >
-                        {renderInline(h)}
-                      </th>
-                    );
-                  })}
-                </tr>
-              </thead>
-              <tbody>
-                {tableRows.slice(1).map((row, rIdx) => (
-                  <tr
-                    key={rIdx}
-                    className={`border-b border-slate-200 last:border-b-0 ${
-                      rIdx % 2 === 1 ? "bg-slate-50/70" : "bg-white"
-                    }`}
-                  >
-                    {row.map((cell, cIdx) => {
-                      const isNumeric = /^[\d.,\s/%+-]+$/.test(cell) || /^(?:Variable|Income|Expenditure|Speed|GPA|Hour|ID|Year|x\d*|y\d*|Height|Weight|Age)$/i.test(cell);
+      // Section Header (e.g. Section A: Descriptive Statistics... or **Section A:**)
+      if (/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i.test(trimmed)) {
+        const match = trimmed.match(/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i)!;
+        const sectionLetter = match[1].toUpperCase();
+        const sectionDesc = match[2].trim().replace(/^[:\s-]+/, '').replace(/^\*+|\*+$/g, '');
+        const fullSectionTitle = `Section ${sectionLetter}:${sectionDesc ? " " + sectionDesc : ""}`;
+
+        elements.push(
+          <h3
+            key={blockId}
+            className="text-base font-bold text-slate-900 mt-6 mb-2 pb-1 border-b border-slate-200 flex items-center gap-2"
+            style={{
+              color: accentColor,
+              fontFamily: getCssFontFamily(fontFamily),
+            }}
+          >
+            {renderInline(fullSectionTitle, `${blockId}-inl`)}
+          </h3>
+        );
+        i++;
+        continue;
+      }
+
+      // Topic Header (e.g. Topic 1: ... or #### Topic 1: ...)
+      if (/^(?:#{2,4}\s*)?(?:\*{0,2})(Topic\s+\d+:?\s*.*?)(?:\*{0,2})$/i.test(trimmed)) {
+        const topicText = trimmed.replace(/^#{2,4}\s*/, '').replace(/^\*+|\*+$/g, '').trim();
+        elements.push(
+          <h4
+            key={blockId}
+            className="text-sm font-bold text-slate-800 mt-4 mb-2 flex items-center gap-1.5"
+            style={{ fontFamily: getCssFontFamily(fontFamily) }}
+          >
+            <span
+              className="w-1.5 h-1.5 rounded-full inline-block shrink-0"
+              style={{ backgroundColor: accentColor }}
+            />
+            {renderInline(topicText, `${blockId}-inl`)}
+          </h4>
+        );
+        i++;
+        continue;
+      }
+
+      // Pure Data Array: Centered comma-separated sequence of numbers
+      if (/^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}\d+(?:\.\d+)?(?:,\s*)?$/.test(trimmed)) {
+        const tokens = trimmed.replace(/,/g, ' ').trim().split(/\s+/);
+        const formattedData = tokens.join(', ') + (i + 1 < lines.length && /^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}/.test(lines[i + 1].trim()) ? ',' : '');
+        elements.push(
+          <div
+            key={blockId}
+            className="my-1.5 text-center font-mono text-xs text-slate-700 tracking-wide select-text py-0.5"
+          >
+            {formattedData}
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Sub-questions & Lettered list items: e.g. a. Arithmetic mean... or i. E(y)... or (i) Draw...
+      const subMatch = trimmed.match(/^\s*(?:[-*•o]\s+)?(?:\*{0,2})([a-z]\.|\([a-z]\)|[a-z]\)|\(i{1,3}\)|[i-v]+\.|\([0-9]+\))\s*(.*)$/i);
+      if (subMatch) {
+        const prefix = subMatch[1].replace(/^\(/, '').replace(/\)$/, '.');
+        const subContent = subMatch[2].replace(/^\*+|\*+$/g, '').trim();
+
+        elements.push(
+          <div
+            key={blockId}
+            className="flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ml-6 leading-relaxed"
+          >
+            <span className="font-bold text-slate-900 shrink-0 select-none min-w-[20px]">
+              {prefix}
+            </span>
+            <div className="flex-1">{renderInline(subContent, `${blockId}-inl`)}</div>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Metadata and Side notes (Frequency: ..., Side note: ..., Note: ...)
+      const metaMatch = trimmed.match(/^(?:\s*[-*•o]\s+)?(?:\*{0,2})(\(?Side note:|\(?Note:|Frequency:)\s*(.*?)(?:\*{0,2})$/i);
+      if (metaMatch) {
+        const label = metaMatch[1];
+        const noteContent = metaMatch[2].replace(/^\*+|\*+$/g, '').trim();
+        const isSideNote = /side note|note/i.test(label);
+
+        elements.push(
+          <div
+            key={blockId}
+            className={`my-1 ml-6 text-xs text-slate-500 leading-normal ${
+              isSideNote ? 'italic' : ''
+            }`}
+          >
+            <span className={isSideNote ? 'italic text-slate-500' : 'font-semibold text-slate-600'}>
+              {label}{' '}
+            </span>
+            <span>{renderInline(noteContent, `${blockId}-inl`)}</span>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Markdown Table detection: | col1 | col2 |
+      if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
+        const tableRows: string[][] = [];
+
+        while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
+          const rowText = lines[i].trim();
+          // Skip separator row: |---|---|
+          if (/^\|[-:\s|]+\|$/.test(rowText)) {
+            i++;
+            continue;
+          }
+          const cells = rowText
+            .slice(1, -1)
+            .split("|")
+            .map((c) => c.trim());
+          tableRows.push(cells);
+          i++;
+        }
+
+        if (tableRows.length > 0) {
+          elements.push(
+            <div key={blockId} className="my-3 overflow-x-auto rounded-md border border-slate-300 shadow-2xs">
+              <table className="w-full text-xs text-left border-collapse">
+                <thead>
+                  <tr className="bg-slate-100 border-b border-slate-300 text-slate-900 font-bold">
+                    {tableRows[0].map((h, cIdx) => {
+                      const isNumeric = /^[\d.,\s/%+-]+$/.test(h) || /^(?:Variable|Income|Expenditure|Speed|GPA|Hour|ID|Year|x\d*|y\d*|Height|Weight|Age)$/i.test(h);
                       return (
-                        <td
-                          key={cIdx}
-                          className={`px-3 py-2 border-r border-slate-200 last:border-r-0 text-slate-700 ${
-                            isNumeric ? 'text-center font-mono text-[11px]' : 'text-left'
+                        <th
+                          key={`${blockId}-th-${cIdx}`}
+                          className={`px-3 py-2 border-r border-slate-300 last:border-r-0 ${
+                            isNumeric ? 'text-center' : 'text-left'
                           }`}
                         >
-                          {renderInline(cell)}
-                        </td>
+                          {renderInline(h, `${blockId}-th-${cIdx}`)}
+                        </th>
                       );
                     })}
                   </tr>
-                ))}
-              </tbody>
-            </table>
+                </thead>
+                <tbody>
+                  {tableRows.slice(1).map((row, rIdx) => (
+                    <tr
+                      key={`${blockId}-row-${rIdx}`}
+                      className={`border-b border-slate-200 last:border-b-0 ${
+                        rIdx % 2 === 1 ? "bg-slate-50/70" : "bg-white"
+                      }`}
+                    >
+                      {row.map((cell, cIdx) => {
+                        const isNumeric = /^[\d.,\s/%+-]+$/.test(cell) || /^(?:Variable|Income|Expenditure|Speed|GPA|Hour|ID|Year|x\d*|y\d*|Height|Weight|Age)$/i.test(cell);
+                        return (
+                          <td
+                            key={`${blockId}-cell-${rIdx}-${cIdx}`}
+                            className={`px-3 py-2 border-r border-slate-200 last:border-r-0 text-slate-700 ${
+                              isNumeric ? 'text-center font-mono text-[11px]' : 'text-left'
+                            }`}
+                          >
+                            {renderInline(cell, `${blockId}-c-${rIdx}-${cIdx}`)}
+                          </td>
+                        );
+                      })}
+                    </tr>
+                  ))}
+                </tbody>
+              </table>
+            </div>
+          );
+          continue;
+        }
+      }
+
+      // Blockquote or formula callout
+      if (trimmed.startsWith("> ")) {
+        elements.push(
+          <blockquote
+            key={blockId}
+            className="my-3 p-3.5 bg-blue-50/50 border-l-4 rounded-r-lg text-sm text-slate-800 font-medium shadow-2xs leading-relaxed"
+            style={{ borderColor: accentColor }}
+          >
+            {renderInline(trimmed.slice(2), `${blockId}-inl`)}
+          </blockquote>
+        );
+        i++;
+        continue;
+      }
+
+      // Bullet list item (supports -, *, •, and open circle o)
+      if (/^\s*(?:[-*•⁃◦▪▫–—]|\bo\b)\s+/.test(rawLine) || /^\s*o\s{1,}/.test(rawLine)) {
+        const indent = rawLine.match(/^(\s*)/)![0].length;
+        const isNested = indent >= 2 || /^\s{2,}/.test(rawLine);
+        const marginClass = indent >= 6 ? "ml-12" : indent >= 4 ? "ml-8" : isNested ? "ml-6" : "ml-3";
+        const strippedBullet = trimmed.replace(/^(?:[-*•⁃◦▪▫–—]|o)\s+/, "");
+
+        elements.push(
+          <div
+            key={blockId}
+            className={`flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ${marginClass} leading-relaxed`}
+          >
+            <span className="text-slate-400 mt-1 select-none text-xs leading-none">○</span>
+            <div className="flex-1">{renderInline(strippedBullet, `${blockId}-inl`)}</div>
           </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Numbered list item (Main Questions: 1. , 2. , 3. )
+      if (/^\s*\d+[\.\)]\s+/.test(trimmed)) {
+        const match = trimmed.match(/^(\d+[\.\)])\s*(.*)$/)!;
+        elements.push(
+          <div
+            key={blockId}
+            className="flex items-start gap-2.5 text-sm text-slate-900 my-2.5 ml-1 leading-relaxed"
+          >
+            <span className="font-bold text-sm select-none" style={{ color: accentColor }}>
+              {match[1]}
+            </span>
+            <div className="flex-1 font-normal">{renderInline(match[2].trim(), `${blockId}-inl`)}</div>
+          </div>
+        );
+        i++;
+        continue;
+      }
+
+      // Fenced Code block (pure native rendering, no artificial CSS virtualization)
+      if (trimmed.startsWith("```")) {
+        const codeLines: string[] = [];
+        i++;
+        while (i < lines.length && !lines[i].trim().startsWith("```")) {
+          codeLines.push(lines[i]);
+          i++;
+        }
+        if (i < lines.length && lines[i].trim().startsWith("```")) {
+          i++;
+        }
+        elements.push(
+          <pre
+            key={blockId}
+            className="my-3 p-3.5 bg-slate-900 text-slate-100 rounded-lg font-mono text-xs overflow-x-auto select-text shadow-2xs leading-relaxed"
+          >
+            <code>{codeLines.join("\n")}</code>
+          </pre>
         );
         continue;
       }
-    }
 
-    // Blockquote or formula callout
-    if (trimmed.startsWith("> ")) {
-      renderedElements.push(
-        <blockquote
-          key={`quote-${i}`}
-          className="my-3 p-3.5 bg-blue-50/50 border-l-4 rounded-r-lg text-sm text-slate-800 font-medium shadow-2xs leading-relaxed"
-          style={{ borderColor: accentColor }}
+      // Standard paragraph: 100% physically rendered without CSS contentVisibility
+      // This ensures 100+ paragraphs are fully visible, printable, selectable, and measurable
+      elements.push(
+        <p
+          key={blockId}
+          className="text-sm text-slate-800 my-2 leading-relaxed"
         >
-          {renderInline(trimmed.slice(2))}
-        </blockquote>
+          {renderInline(trimmed, `${blockId}-p`)}
+        </p>
       );
       i++;
-      continue;
     }
 
-    // Bullet list item (supports -, *, •, and open circle o)
-    if (/^\s*(?:[-*•⁃◦▪▫–—]|\bo\b)\s+/.test(rawLine) || /^\s*o\s{1,}/.test(rawLine)) {
-      const indent = rawLine.match(/^(\s*)/)![0].length;
-      const isNested = indent >= 2 || /^\s{2,}/.test(rawLine);
-      const marginClass = indent >= 6 ? "ml-12" : indent >= 4 ? "ml-8" : isNested ? "ml-6" : "ml-3";
-      const strippedBullet = trimmed.replace(/^(?:[-*•⁃◦▪▫–—]|o)\s+/, "");
-
-      renderedElements.push(
-        <div
-          key={`bullet-${i}`}
-          className={`flex items-start gap-2.5 text-sm text-slate-800 my-1.5 ${marginClass} leading-relaxed`}
-        >
-          <span className="text-slate-400 mt-1 select-none text-xs leading-none">○</span>
-          <div className="flex-1">{renderInline(strippedBullet)}</div>
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Numbered list item (Main Questions: 1. , 2. , 3. )
-    if (/^\s*\d+[\.\)]\s+/.test(trimmed)) {
-      const match = trimmed.match(/^(\d+[\.\)])\s*(.*)$/)!;
-      renderedElements.push(
-        <div
-          key={`num-${i}`}
-          className="flex items-start gap-2.5 text-sm text-slate-900 my-2.5 ml-1 leading-relaxed"
-        >
-          <span className="font-bold text-sm select-none" style={{ color: accentColor }}>
-            {match[1]}
-          </span>
-          <div className="flex-1 font-normal">{renderInline(match[2].trim())}</div>
-        </div>
-      );
-      i++;
-      continue;
-    }
-
-    // Fenced Code block
-    if (trimmed.startsWith("```")) {
-      const codeLines: string[] = [];
-      i++;
-      while (i < lines.length && !lines[i].trim().startsWith("```")) {
-        codeLines.push(lines[i]);
-        i++;
-      }
-      if (i < lines.length && lines[i].trim().startsWith("```")) {
-        i++;
-      }
-      renderedElements.push(
-        <pre
-          key={`code-${seq++}-${i}`}
-          className="my-3 p-3.5 bg-slate-900 text-slate-100 rounded-lg font-mono text-xs overflow-x-auto select-text shadow-2xs leading-relaxed"
-          style={{ contentVisibility: "auto", containIntrinsicSize: "0 60px" }}
-        >
-          <code>{codeLines.join("\n")}</code>
-        </pre>
-      );
-      continue;
-    }
-
-    // Standard paragraph with virtualization support for 100+ paragraphs
-    renderedElements.push(
-      <p
-        key={`p-${seq++}-${i}`}
-        className="text-sm text-slate-800 my-2 leading-relaxed"
-        style={{ contentVisibility: "auto", containIntrinsicSize: "0 28px" }}
-      >
-        {renderInline(trimmed, `p-${i}`)}
-      </p>
-    );
-    i++;
-  }
-
-  return renderedElements;
-}, [markdown, fontFamily, accentColor, equationFormat]);
+    return elements;
+  }, [markdown, fontFamily, accentColor, equationFormat]);
 
   const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
   const mathFormulaCount = (markdown.match(/\$[^$]+\$/g) || []).length;
@@ -864,7 +890,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             </button>
           </div>
 
-          {/* View Mode Toggle: Document Sheet vs LaTeX Code */}
+          {/* View Mode Toggle: Document Sheet vs LaTeX Code vs Polish Diff */}
           <div className="flex items-center bg-slate-200/90 border border-slate-300 p-0.5 rounded-lg shadow-2xs">
             <button
               onClick={() => setViewMode("rendered")}
@@ -888,6 +914,29 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             >
               <Code className="w-3.5 h-3.5 text-slate-700" />
               <span>LaTeX</span>
+            </button>
+            <button
+              onClick={() => setViewMode("diff")}
+              className={`inline-flex items-center gap-1 px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
+                viewMode === "diff"
+                  ? "bg-white text-indigo-950 shadow-2xs font-extrabold border border-indigo-300"
+                  : "text-slate-700 hover:text-slate-950 font-medium"
+              }`}
+              title="Compare text before and after AI Polish"
+            >
+              <Sparkles className="w-3.5 h-3.5 text-indigo-600" />
+              <span>Diff</span>
+              {diffData && (
+                <span
+                  className={`text-[9px] px-1 py-0.2 rounded font-black ${
+                    diffData.hasChanges
+                      ? "bg-indigo-100 text-indigo-800"
+                      : "bg-emerald-100 text-emerald-800"
+                  }`}
+                >
+                  {diffData.hasChanges ? "Changes" : "0 diff"}
+                </span>
+              )}
             </button>
           </div>
 
@@ -963,7 +1012,21 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       </div>
 
       {/* Main Preview Container */}
-      {viewMode === "rendered" ? (
+      {viewMode === "diff" ? (
+        <div className="p-2 sm:p-4 bg-slate-100/60 overflow-y-auto flex-1 flex flex-col items-center">
+          <div className="w-full max-w-[890px]">
+            <TextDiffViewer
+              originalText={diffData?.originalText || markdown}
+              polishedText={diffData?.polishedText || markdown}
+              onApplyChanges={onApplyDiffChanges || (() => setViewMode("rendered"))}
+              onKeepOriginal={onDiscardDiffChanges || (() => setViewMode("rendered"))}
+              onClose={() => setViewMode("rendered")}
+              providerName={diffData?.providerName || "AI Polish"}
+              modelName={diffData?.modelName}
+            />
+          </div>
+        </div>
+      ) : viewMode === "rendered" ? (
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}

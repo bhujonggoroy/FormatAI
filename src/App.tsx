@@ -212,12 +212,21 @@ export default function App() {
     return cleanClientSideNotebookLM(inputText, formatMode, skillRegistry.getEnabledSkillIds());
   }, [cleanedMarkdown, inputText, formatMode, activeSkillsCount]);
 
+  // Centralized input updater that cleanly invalidates any active in-flight AI requests
+  const handleUpdateInput = (newText: string, newTitle?: string) => {
+    activePolishRequestIdRef.current++;
+    setInputText(newText);
+    setDocTitle(newTitle !== undefined ? newTitle : getDisplayTitleFromContent(newText));
+    setCleanedMarkdown(null);
+    setValidationAlert(null);
+    setErrorMessage(null);
+    setIsConverting(false);
+    setConversionStage("");
+  };
+
   // Load a sample note
   const handleLoadSample = (sample: SampleNote) => {
-    setInputText(sample.text);
-    setDocTitle(getDisplayTitleFromContent(sample.text));
-    setCleanedMarkdown(null);
-    setErrorMessage(null);
+    handleUpdateInput(sample.text);
     setSuccessMessage(null);
   };
 
@@ -226,10 +235,7 @@ export default function App() {
     try {
       const text = await navigator.clipboard.readText();
       if (text) {
-        setInputText(text);
-        setDocTitle(getDisplayTitleFromContent(text));
-        setCleanedMarkdown(null);
-        setErrorMessage(null);
+        handleUpdateInput(text);
       }
     } catch {
       setErrorMessage("Please use Ctrl+V / Cmd+V to paste directly into the box.");
@@ -246,11 +252,8 @@ export default function App() {
     reader.onload = (event) => {
       const text = event.target?.result;
       if (typeof text === "string" && text.trim()) {
-        setInputText(text);
         const titleWithoutExt = file.name.replace(/\.[^/.]+$/, "");
-        setDocTitle(titleWithoutExt);
-        setCleanedMarkdown(null);
-        setErrorMessage(null);
+        handleUpdateInput(text, titleWithoutExt);
         setSuccessMessage(`Loaded "${file.name}" (${(file.size / 1024).toFixed(1)} KB) into FormatAI.`);
       }
     };
@@ -295,7 +298,7 @@ export default function App() {
       return;
     }
 
-    activePolishRequestIdRef.current++;
+    const reqId = ++activePolishRequestIdRef.current;
     setIsConverting(true);
     setErrorMessage(null);
     setSuccessMessage(null);
@@ -310,6 +313,7 @@ export default function App() {
         formatMode,
         skillRegistry.getEnabledSkillIds()
       );
+      if (reqId !== activePolishRequestIdRef.current) return;
       const latencyMs = Math.max(1, Date.now() - startMs);
       setCleanedMarkdown(cleaned);
 
@@ -347,10 +351,13 @@ export default function App() {
         ],
       });
     } catch (err: any) {
+      if (reqId !== activePolishRequestIdRef.current) return;
       setErrorMessage(err.message || "FormatAI normalization failed.");
     } finally {
-      setIsConverting(false);
-      setConversionStage("");
+      if (reqId === activePolishRequestIdRef.current) {
+        setIsConverting(false);
+        setConversionStage("");
+      }
     }
   };
 
@@ -464,7 +471,11 @@ export default function App() {
         }
 
         // Set User-Friendly Status Notification
-        const classified = classifyErrorDetails(data.error || "Failed to polish notes with AI.", res.status);
+        const classified = classifyErrorDetails(
+          data.error || "Failed to polish notes with AI.",
+          res.status,
+          data.error_category
+        );
         setAiStatus({
           ...classified,
           providerName: userConfig.activeProviderId || "AI Provider",
@@ -563,6 +574,7 @@ export default function App() {
           reason,
           providerName: data.provider_name || userConfig.activeProviderId,
           latencyMs,
+          errorCategory: data.error_category || clientValidation.errorCategory || "malformed",
         });
         setAiStatus(notif);
         return;
@@ -651,6 +663,7 @@ export default function App() {
       setAiStatus(notif);
       fetchAIHealth();
     } catch (err: any) {
+      if (reqId !== activePolishRequestIdRef.current) return;
       // Rule 21 & Rule 24: If AI API fails, preserve existing FormatAI result intact. Preview remains unchanged.
       setCleanedMarkdown(null);
       const classified = classifyErrorDetails(err.message || "Network request failed");
@@ -665,8 +678,10 @@ export default function App() {
         },
       });
     } finally {
-      setIsConverting(false);
-      setConversionStage("");
+      if (reqId === activePolishRequestIdRef.current) {
+        setIsConverting(false);
+        setConversionStage("");
+      }
     }
   };
 
@@ -1022,7 +1037,7 @@ export default function App() {
         {viewLayout === "split" && (
           <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start flex-1">
             {/* Left Pane: Raw Notes & AI Content Editor */}
-            <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col h-[480px] sm:h-[580px] lg:h-[680px] overflow-hidden">
+            <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col h-[520px] sm:h-[620px] lg:h-[calc(100vh-140px)] min-h-[580px] overflow-hidden">
               {/* Editor Header Bar with clear, distinct action buttons */}
               <div className="px-4 py-2.5 border-b-2 border-slate-200 flex items-center justify-between bg-slate-100/90">
                 <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
@@ -1055,13 +1070,7 @@ export default function App() {
                     <span>Paste</span>
                   </button>
                   <button
-                    onClick={() => {
-                      setInputText("");
-                      setDocTitle("FormatAI Document");
-                      setCleanedMarkdown(null);
-                      setErrorMessage(null);
-                      setSuccessMessage(null);
-                    }}
+                    onClick={() => handleUpdateInput("", "FormatAI Document")}
                     className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                     title="Clear input"
                   >
@@ -1099,7 +1108,7 @@ export default function App() {
             </div>
 
             {/* Right Pane: Live Document Sheet */}
-            <div className="h-[520px] sm:h-[620px] lg:h-[calc(100vh-140px)] min-h-[580px] max-h-[960px] lg:sticky lg:top-[108px] flex flex-col">
+            <div className="h-[520px] sm:h-[620px] lg:h-[calc(100vh-140px)] min-h-[580px] lg:sticky lg:top-[108px] flex flex-col">
               <FormattedPreview
                 markdown={effectiveMarkdown}
                 docTitle={docTitle}
@@ -1143,12 +1152,7 @@ export default function App() {
                   <span>Paste</span>
                 </button>
                 <button
-                  onClick={() => {
-                    setInputText("");
-                    setDocTitle("FormatAI Document");
-                    setCleanedMarkdown(null);
-                    setValidationAlert(null);
-                  }}
+                  onClick={() => handleUpdateInput("", "FormatAI Document")}
                   className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                 >
                   <Eraser className="w-3.5 h-3.5" />
@@ -1161,6 +1165,7 @@ export default function App() {
               value={inputText}
               onChange={(e) => {
                 const val = e.target.value;
+                activePolishRequestIdRef.current++;
                 setInputText(val);
                 setDocTitle(getDisplayTitleFromContent(val));
                 if (cleanedMarkdown) setCleanedMarkdown(null);
@@ -1185,7 +1190,7 @@ export default function App() {
 
         {/* WORKSPACE VIEW: DOCUMENT PREVIEW ONLY */}
         {viewLayout === "preview" && (
-          <div className="flex flex-col gap-4">
+          <div className="flex flex-col gap-4 h-[calc(100vh-140px)] min-h-[640px]">
             <FormattedPreview
               markdown={effectiveMarkdown}
               docTitle={docTitle}

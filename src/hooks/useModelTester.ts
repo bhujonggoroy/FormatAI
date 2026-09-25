@@ -85,11 +85,20 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   const abortControllerRef = useRef<AbortController | null>(null);
+  const scanRequestIdRef = useRef<number>(0);
   const activeProviderRef = useRef<string | undefined>(defaultProviderId);
   activeProviderRef.current = defaultProviderId;
 
   // Synchronize cache when defaultProviderId changes
   useEffect(() => {
+    // Abort any ongoing scan if provider changed
+    if (abortControllerRef.current) {
+      abortControllerRef.current.abort();
+      abortControllerRef.current = null;
+    }
+    scanRequestIdRef.current++;
+    setIsTesting(false);
+
     const canonical = canonicalProviderId(defaultProviderId);
     if (autoLoadCache && canonical) {
       const cached = getCachedModelTestReport(canonical);
@@ -106,11 +115,14 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
         abortControllerRef.current.abort();
         abortControllerRef.current = null;
       }
+      scanRequestIdRef.current++;
     };
   }, []);
 
   /**
    * Trigger a full scan for a provider (utilizing the adapter system)
+   * GUARANTEE: Only tests models of the specified current provider!
+   * GUARANTEE: Prevents overlapping requests with AbortController and request ID sequencing.
    */
   const scan = useCallback(
     async (
@@ -127,13 +139,14 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
         return null;
       }
 
-      // Abort any ongoing scan first
+      // Abort any ongoing scan first (Prevents overlapping requests)
       if (abortControllerRef.current) {
         abortControllerRef.current.abort();
       }
 
       const controller = new AbortController();
       abortControllerRef.current = controller;
+      const currentReqId = ++scanRequestIdRef.current;
 
       setIsTesting(true);
       setErrorMessage(null);
@@ -158,9 +171,17 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
             signal: controller.signal,
           },
           (p: ModelTestingProgress) => {
-            setProgress({ ...p });
+            // Guard against stale progress from superseded requests
+            if (currentReqId === scanRequestIdRef.current) {
+              setProgress({ ...p });
+            }
           }
         );
+
+        // Guard against stale results from superseded requests
+        if (currentReqId !== scanRequestIdRef.current) {
+          return null;
+        }
 
         setReport(result);
         if (result.status === "error" && result.errorMessage) {
@@ -168,6 +189,10 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
         }
         return result;
       } catch (err: any) {
+        if (currentReqId !== scanRequestIdRef.current) {
+          return null;
+        }
+
         if (controller.signal.aborted) {
           setProgress((prev) =>
             prev
@@ -194,8 +219,10 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
         );
         return null;
       } finally {
-        setIsTesting(false);
-        abortControllerRef.current = null;
+        if (currentReqId === scanRequestIdRef.current) {
+          setIsTesting(false);
+          abortControllerRef.current = null;
+        }
       }
     },
     [defaultProviderId, defaultApiKey, defaultEndpoint, defaultAccountId]
@@ -205,6 +232,7 @@ export function useModelTester(options: UseModelTesterOptions = {}): UseModelTes
    * Cancel an ongoing scan
    */
   const cancelScan = useCallback(() => {
+    scanRequestIdRef.current++;
     if (abortControllerRef.current) {
       abortControllerRef.current.abort();
       abortControllerRef.current = null;

@@ -202,6 +202,15 @@ export interface FallbackLogEntry {
   isSimulation?: boolean;
 }
 
+export type AIErrorCategory =
+  | "key_missing"
+  | "invalid_key"
+  | "rate_limit"
+  | "timeout"
+  | "network"
+  | "truncated"
+  | "malformed";
+
 export type AIStatusType =
   | "ai_working"
   | "local_format"
@@ -211,10 +220,18 @@ export type AIStatusType =
   | "api_error"
   | "quota"
   | "ai_off"
-  | "simulation";
+  | "simulation"
+  | "key_missing"
+  | "invalid_key"
+  | "rate_limit"
+  | "timeout"
+  | "network"
+  | "truncated"
+  | "malformed";
 
 export interface AIStatusNotification {
   type: AIStatusType;
+  errorCategory?: AIErrorCategory;
   badgeLabel: string;
   badgeIcon: string;
   badgeColor: "emerald" | "amber" | "rose" | "slate" | "blue";

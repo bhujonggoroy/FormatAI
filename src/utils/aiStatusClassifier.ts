@@ -1,10 +1,22 @@
-import { AIStatusNotification, AIStatusType, FallbackLogEntry, FallbackStep } from "../types/ai";
+import { AIStatusNotification, AIStatusType, AIErrorCategory, FallbackLogEntry, FallbackStep } from "../types/ai";
 
 /**
- * Helper to classify human-readable error reasons from technical messages or HTTP status.
+ * Helper to classify human-readable error reasons from technical messages, category, or HTTP status into 7 distinct categories:
+ * 1. key_missing
+ * 2. invalid_key
+ * 3. rate_limit
+ * 4. timeout
+ * 5. network
+ * 6. truncated
+ * 7. malformed
  */
-export function classifyErrorDetails(errorMessage?: string, statusCode?: number): {
+export function classifyErrorDetails(
+  errorMessage?: string,
+  statusCode?: number,
+  explicitCategory?: AIErrorCategory
+): {
   type: AIStatusType;
+  errorCategory: AIErrorCategory;
   badgeLabel: string;
   badgeIcon: string;
   badgeColor: "rose" | "amber";
@@ -16,7 +28,126 @@ export function classifyErrorDetails(errorMessage?: string, statusCode?: number)
 } {
   const msg = (errorMessage || "").toLowerCase();
 
-  // 1. Quota / Rate Limit (429 or quota exceeded)
+  // Explicit category override
+  if (explicitCategory) {
+    switch (explicitCategory) {
+      case "key_missing":
+        return {
+          type: "key_missing",
+          errorCategory: "key_missing",
+          badgeLabel: "KEY MISSING",
+          badgeIcon: "🔑",
+          badgeColor: "amber",
+          title: "API key is missing.",
+          secondaryText: "No active API key configured for this provider. Add a key in AI Settings or use local formatting.",
+          actionType: "settings",
+          actionLabel: "Configure API Key",
+          secondaryActionLabel: "Use Local Format",
+        };
+      case "invalid_key":
+        return {
+          type: "invalid_key",
+          errorCategory: "invalid_key",
+          badgeLabel: "INVALID KEY",
+          badgeIcon: "🚫",
+          badgeColor: "rose",
+          title: "API key is invalid or unauthorized.",
+          secondaryText: "Please check your API key credentials or provider permissions in AI Settings.",
+          actionType: "settings",
+          actionLabel: "Check AI Settings",
+          secondaryActionLabel: "Retry",
+        };
+      case "rate_limit":
+        return {
+          type: "rate_limit",
+          errorCategory: "rate_limit",
+          badgeLabel: "RATE LIMIT",
+          badgeIcon: "⏳",
+          badgeColor: "rose",
+          title: "Rate limit or free quota exceeded.",
+          secondaryText: "Provider request limit reached. Try another provider or wait a few moments.",
+          actionType: "another_provider",
+          actionLabel: "Try Another Provider",
+          secondaryActionLabel: "Retry",
+        };
+      case "timeout":
+        return {
+          type: "timeout",
+          errorCategory: "timeout",
+          badgeLabel: "TIMEOUT",
+          badgeIcon: "⏱️",
+          badgeColor: "amber",
+          title: "Request timed out.",
+          secondaryText: "The AI provider took too long to respond. The document will use local formatting or you can retry.",
+          actionType: "retry",
+          actionLabel: "Retry Polish",
+          secondaryActionLabel: "Open AI Settings",
+        };
+      case "network":
+        return {
+          type: "network",
+          errorCategory: "network",
+          badgeLabel: "NETWORK",
+          badgeIcon: "📡",
+          badgeColor: "rose",
+          title: "Network connection error.",
+          secondaryText: "Unable to reach the provider endpoint. Please check your internet connection.",
+          actionType: "retry",
+          actionLabel: "Retry Request",
+          secondaryActionLabel: "Open Settings",
+        };
+      case "truncated":
+        return {
+          type: "truncated",
+          errorCategory: "truncated",
+          badgeLabel: "TRUNCATED",
+          badgeIcon: "✂️",
+          badgeColor: "amber",
+          title: "AI output was truncated or suspiciously small.",
+          secondaryText: "The response ended prematurely or dropped expected blocks. FormatAI baseline was preserved intact.",
+          actionType: "retry",
+          actionLabel: "Retry Polish",
+          secondaryActionLabel: "Review Baseline",
+        };
+      case "malformed":
+        return {
+          type: "malformed",
+          errorCategory: "malformed",
+          badgeLabel: "MALFORMED",
+          badgeIcon: "⚠️",
+          badgeColor: "amber",
+          title: "AI output was malformed.",
+          secondaryText: "The response contained broken JSON, unmatched equations, or syntax errors. FormatAI baseline preserved.",
+          actionType: "retry",
+          actionLabel: "Retry Polish",
+          secondaryActionLabel: "Check Settings",
+        };
+    }
+  }
+
+  // 1. Key Missing
+  if (
+    msg.includes("no enabled api key") ||
+    msg.includes("no api key") ||
+    msg.includes("key is missing") ||
+    msg.includes("missing api key") ||
+    msg.includes("unconfigured")
+  ) {
+    return {
+      type: "key_missing",
+      errorCategory: "key_missing",
+      badgeLabel: "KEY MISSING",
+      badgeIcon: "🔑",
+      badgeColor: "amber",
+      title: "API key is missing.",
+      secondaryText: "No active API key configured for this provider. Add a key in AI Settings or use local formatting.",
+      actionType: "settings",
+      actionLabel: "Configure API Key",
+      secondaryActionLabel: "Use Local Format",
+    };
+  }
+
+  // 2. Rate Limit (429 or quota exceeded)
   if (
     statusCode === 429 ||
     msg.includes("quota") ||
@@ -28,25 +159,25 @@ export function classifyErrorDetails(errorMessage?: string, statusCode?: number)
     msg.includes("exceeded your current quota")
   ) {
     return {
-      type: "quota",
-      badgeLabel: "QUOTA",
-      badgeIcon: "🔴",
+      type: "rate_limit",
+      errorCategory: "rate_limit",
+      badgeLabel: "RATE LIMIT",
+      badgeIcon: "⏳",
       badgeColor: "rose",
-      title: "AI usage limit reached.",
-      secondaryText: "This provider cannot process more requests right now.",
+      title: "AI usage limit reached (429).",
+      secondaryText: "This provider cannot process more requests right now. Try another provider or retry later.",
       actionType: "another_provider",
       actionLabel: "Try Another Provider",
       secondaryActionLabel: "Retry",
     };
   }
 
-  // 2. API Key Error / Authentication / Permission
+  // 3. Invalid API Key / Authentication / Permission
   if (
     statusCode === 401 ||
     statusCode === 403 ||
     msg.includes("invalid api key") ||
     msg.includes("api key not valid") ||
-    msg.includes("api_key") ||
     msg.includes("unauthorized") ||
     msg.includes("forbidden") ||
     msg.includes("permission_denied") ||
@@ -56,21 +187,119 @@ export function classifyErrorDetails(errorMessage?: string, statusCode?: number)
     msg.includes("revoked")
   ) {
     return {
-      type: "api_error",
-      badgeLabel: "API ERROR",
-      badgeIcon: "🔴",
+      type: "invalid_key",
+      errorCategory: "invalid_key",
+      badgeLabel: "INVALID KEY",
+      badgeIcon: "🚫",
       badgeColor: "rose",
-      title: "AI API is not working.",
-      secondaryText: "Your API key or provider connection needs attention.",
+      title: "API key is invalid or unauthorized.",
+      secondaryText: "Your API key or provider connection needs attention in AI Settings.",
       actionType: "settings",
       actionLabel: "Check AI Settings",
       secondaryActionLabel: "Retry",
     };
   }
 
-  // 3. General AI Failure
+  // 4. Timeout
+  if (
+    statusCode === 408 ||
+    statusCode === 504 ||
+    msg.includes("timeout") ||
+    msg.includes("timed out") ||
+    msg.includes("deadline exceeded")
+  ) {
+    return {
+      type: "timeout",
+      errorCategory: "timeout",
+      badgeLabel: "TIMEOUT",
+      badgeIcon: "⏱️",
+      badgeColor: "amber",
+      title: "Request timed out.",
+      secondaryText: "The AI provider took longer than expected. FormatAI baseline was preserved.",
+      actionType: "retry",
+      actionLabel: "Retry Polish",
+      secondaryActionLabel: "Open AI Settings",
+    };
+  }
+
+  // 5. Network Connection Error
+  if (
+    msg.includes("econnrefused") ||
+    msg.includes("connection_refused") ||
+    msg.includes("connection refused") ||
+    msg.includes("enotfound") ||
+    msg.includes("fetch failed") ||
+    msg.includes("failed to fetch") ||
+    msg.includes("network error") ||
+    msg.includes("network disconnected") ||
+    msg.includes("net::") ||
+    msg.includes("offline") ||
+    msg.includes("connection failed") ||
+    msg.includes("dns") ||
+    msg.includes("socket hang up") ||
+    msg.includes("ehostunreach")
+  ) {
+    return {
+      type: "network",
+      errorCategory: "network",
+      badgeLabel: "NETWORK",
+      badgeIcon: "📡",
+      badgeColor: "rose",
+      title: "Network connection error.",
+      secondaryText: "Unable to reach the provider endpoint. Please check your internet connection.",
+      actionType: "retry",
+      actionLabel: "Retry Request",
+      secondaryActionLabel: "Open Settings",
+    };
+  }
+
+  // 6. Truncated / Suspiciously Small
+  if (
+    msg.includes("truncated") ||
+    msg.includes("suspiciously small") ||
+    msg.includes("missing expected") ||
+    msg.includes("content dropped")
+  ) {
+    return {
+      type: "truncated",
+      errorCategory: "truncated",
+      badgeLabel: "TRUNCATED",
+      badgeIcon: "✂️",
+      badgeColor: "amber",
+      title: "AI output was truncated or suspiciously small.",
+      secondaryText: "The response dropped content or stopped early. FormatAI baseline was preserved intact.",
+      actionType: "retry",
+      actionLabel: "Retry Polish",
+      secondaryActionLabel: "Review Baseline",
+    };
+  }
+
+  // 7. Malformed / Syntax / Delimiter
+  if (
+    msg.includes("malformed") ||
+    msg.includes("unmatched") ||
+    msg.includes("json") ||
+    msg.includes("syntax error") ||
+    msg.includes("empty")
+  ) {
+    return {
+      type: "malformed",
+      errorCategory: "malformed",
+      badgeLabel: "MALFORMED",
+      badgeIcon: "⚠️",
+      badgeColor: "amber",
+      title: "AI response was malformed.",
+      secondaryText: "The AI output contained broken syntax or empty response. FormatAI baseline was preserved.",
+      actionType: "retry",
+      actionLabel: "Retry Polish",
+      secondaryActionLabel: "Check Settings",
+    };
+  }
+
+  // General fallback
   return {
     type: "ai_failed",
+    errorCategory: "malformed",
     badgeLabel: "AI FAILED",
     badgeIcon: "🔴",
     badgeColor: "rose",
@@ -205,27 +434,43 @@ export function createQualityGateWarningNotification({
   reason,
   providerName,
   latencyMs,
+  errorCategory = "malformed",
 }: {
   reason: string;
   providerName: string;
   latencyMs: number;
+  errorCategory?: AIErrorCategory;
 }): AIStatusNotification {
+  const badgeMap: Record<AIErrorCategory, { label: string; icon: string }> = {
+    key_missing: { label: "KEY MISSING", icon: "🔑" },
+    invalid_key: { label: "INVALID KEY", icon: "🚫" },
+    rate_limit: { label: "RATE LIMIT", icon: "⏳" },
+    timeout: { label: "TIMEOUT", icon: "⏱️" },
+    network: { label: "NETWORK", icon: "📡" },
+    truncated: { label: "TRUNCATED", icon: "✂️" },
+    malformed: { label: "MALFORMED", icon: "⚠️" },
+  };
+
+  const badgeInfo = badgeMap[errorCategory] || { label: "AI DISCARDED", icon: "⚠️" };
+
   return {
-    type: "warning",
-    badgeLabel: "WARNING",
-    badgeIcon: "🟡",
+    type: errorCategory,
+    errorCategory,
+    badgeLabel: badgeInfo.label,
+    badgeIcon: badgeInfo.icon,
     badgeColor: "amber",
-    title: "Completed with warnings.",
-    secondaryText: "Your document was processed, but some items may need review (FormatAI baseline preserved).",
+    title: `AI output rejected (${badgeInfo.label}). FormatAI Result restored.`,
+    secondaryText: `Quality-Gate rejected AI output: ${reason}. Original document and baseline formatting kept completely intact.`,
     providerName,
     latencyMs,
     timestamp: Date.now(),
-    actionType: "settings",
-    actionLabel: "Review AI Settings",
+    actionType: "retry",
+    actionLabel: "Retry Polish",
+    secondaryActionLabel: "Review AI Settings",
     technicalDetails: {
       provider: providerName,
       requestStatus: "quality_gate_discarded",
-      errorCategory: "Validation Discard",
+      errorCategory: badgeInfo.label,
       executionTime: `${latencyMs}ms`,
       technicalErrorMessage: `AI Output Discarded: ${reason}`,
     },

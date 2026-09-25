@@ -112,7 +112,7 @@ export const UniversalModelTesterPanel: React.FC<UniversalModelTesterPanelProps>
               type="button"
               onClick={handleStartTest}
               className="inline-flex items-center gap-1.5 px-3 py-1 rounded-md text-xs font-bold bg-indigo-600 hover:bg-indigo-700 text-white shadow-2xs cursor-pointer transition-all active:scale-98"
-              title={`Discover and test all models for ${providerName}`}
+              title={`Discover and test all models for ${providerName} only`}
             >
               <Play className="w-3 h-3 fill-current" />
               <span>Test All Models</span>
