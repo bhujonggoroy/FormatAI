@@ -17,6 +17,7 @@ import {
   ChevronRight,
   ShieldCheck,
   Zap,
+  Key,
   Download,
   Check,
   Cpu,
@@ -319,6 +320,24 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
                       <span>{p.name}</span>
                     </span>
                   ))}
+                </div>
+
+                {/* Direct Add API Key Button (বাকি AI API যোগ করুন) */}
+                <div className="pt-2 mt-2 border-t border-slate-200">
+                  <button
+                    type="button"
+                    onClick={() => {
+                      onClose();
+                      onOpenAISettingsModal();
+                    }}
+                    className="w-full flex items-center justify-between bg-blue-50 hover:bg-blue-100 text-blue-900 border border-blue-200 text-[11px] font-extrabold py-1.5 px-2.5 rounded-lg transition-colors cursor-pointer"
+                  >
+                    <span className="flex items-center gap-1.5">
+                      <Key className="w-3.5 h-3.5 text-blue-600" />
+                      <span>+ Add AI API Key (Gemini, Groq, Claude, OpenAI...)</span>
+                    </span>
+                    <span className="text-[10px] text-blue-600 font-bold">Add API →</span>
+                  </button>
                 </div>
               </div>
             </div>

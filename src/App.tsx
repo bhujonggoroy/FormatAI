@@ -45,9 +45,9 @@ import {
   getUserProviders,
   saveUserProviders,
   getUserPreferences,
-  saveUserPreferences,
   recordProviderMetric,
   recordAuditLogEntry,
+  healAndNormalizeProviders,
 } from "./utils/userLocalStorage";
 import { getActiveModels } from "./config/modelRegistry";
 import { ModelInfo } from "./types/ai";
@@ -88,13 +88,6 @@ export default function App() {
   } | null>(null);
 
   const [cleanedMarkdown, setCleanedMarkdown] = useState<string | null>(null);
-  const [customPrompt, setCustomPrompt] = useState<string>(() => getUserPreferences().customPrompt || "");
-
-  const handleCustomPromptChange = (newPrompt: string) => {
-    setCustomPrompt(newPrompt);
-    saveUserPreferences({ customPrompt: newPrompt });
-  };
-
   const [viewLayout, setViewLayout] = useState<"split" | "editor" | "preview">(() => {
     if (typeof window !== "undefined" && window.innerWidth >= 1024) {
       return "split";
@@ -139,7 +132,11 @@ export default function App() {
       } catch {}
 
       const userConfig = getUserSettings();
-      const userProvs = getUserProviders(templates);
+      let userProvs = getUserProviders(templates);
+      if (!userProvs || userProvs.length === 0) {
+        userProvs = healAndNormalizeProviders([], templates);
+        saveUserProviders(userProvs);
+      }
 
       // Populate provider model selection dropdowns with active, free-tier models from getActiveModels
       let provsUpdated = false;
@@ -516,7 +513,7 @@ export default function App() {
           equationFormat,
           formatMode,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
-          customPrompt: customPrompt.trim() || userPrefs.customPrompt,
+          customPrompt: userPrefs.customPrompt,
           aiConfig: userConfig,
           userProviders: userProvs,
         }),
@@ -1339,7 +1336,7 @@ export default function App() {
           formatMode,
           format,
           enabledSkillIds: skillRegistry.getEnabledSkillIds(),
-          customPrompt: customPrompt.trim() || userPrefs.customPrompt,
+          customPrompt: userPrefs.customPrompt,
           aiConfig: userConfig,
           userProviders: userProvs,
         }),
@@ -1383,7 +1380,7 @@ export default function App() {
             equationFormat,
             formatMode,
             enabledSkillIds: skillRegistry.getEnabledSkillIds(),
-            customPrompt: customPrompt.trim() || userPrefs.customPrompt,
+            customPrompt: userPrefs.customPrompt,
             aiConfig: userConfig,
             userProviders: userProvs,
           }),
@@ -1979,8 +1976,6 @@ export default function App() {
         }}
         charCount={charCount}
         wordCount={wordCount}
-        customPrompt={customPrompt}
-        onCustomPromptChange={handleCustomPromptChange}
         isInstalled={isInstalled}
         hasNativePrompt={hasNativePrompt}
         onInstallApp={handleInstallApp}

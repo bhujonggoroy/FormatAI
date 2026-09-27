@@ -306,6 +306,48 @@ export class AIRequestManager {
     return results;
   }
 
+  /**
+   * Resolves available server-side environment keys for a given provider if present.
+   */
+  public getServerEnvironmentKeys(providerId: string): string[] {
+    const keys: string[] = [];
+    const addKey = (k?: string) => {
+      const trimmed = k?.trim();
+      if (trimmed && !keys.includes(trimmed)) keys.push(trimmed);
+    };
+
+    switch (providerId) {
+      case "gemini":
+        addKey(process.env.GEMINI_API_KEY);
+        addKey(process.env.GEMINI_API_KEY_1);
+        addKey(process.env.GEMINI_API_KEY_2);
+        break;
+      case "groq":
+        addKey(process.env.GROQ_API_KEY);
+        addKey(process.env.GROQ_API_KEY_1);
+        break;
+      case "openrouter":
+        addKey(process.env.OPENROUTER_API_KEY);
+        break;
+      case "mistral":
+        addKey(process.env.MISTRAL_API_KEY);
+        break;
+      case "cohere":
+        addKey(process.env.COHERE_API_KEY);
+        break;
+      case "huggingface":
+        addKey(process.env.HUGGINGFACE_API_KEY);
+        addKey(process.env.HF_API_KEY);
+        addKey(process.env.HUGGING_FACE_HUB_TOKEN);
+        break;
+      case "cloudflare":
+        addKey(process.env.CLOUDFLARE_API_KEY);
+        addKey(process.env.CLOUDFLARE_API_TOKEN);
+        break;
+    }
+    return keys;
+  }
+
   // --- REQUEST-SCOPED AUTHORITATIVE GENERATION PIPELINE ---
 
   /**
@@ -419,21 +461,20 @@ export class AIRequestManager {
       if (!adapter) continue;
 
       // RESOLVE USER KEYS: ONLY enabled === true keys can be used for normal generation!
+      const hasConfiguredKeys = Array.isArray(provider.apiKeys) && provider.apiKeys.length > 0;
       let activeKeys = (provider.apiKeys || []).filter((k) => k.enabled && k.key && k.key.trim());
 
-      // If user has not added any custom keys, allow server Gemini API environment fallback if available
-      if (activeKeys.length === 0 && provider.id === "gemini") {
-        const envKey = process.env.GEMINI_API_KEY || process.env.GEMINI_API_KEY_1;
-        if (envKey) {
-          activeKeys = [
-            {
-              id: "server-gemini-default",
-              name: "Server Gemini Default",
-              key: envKey,
-              enabled: true,
-              status: "active",
-            },
-          ];
+      // If user has not added any custom keys, allow server environment fallback if available
+      if (!hasConfiguredKeys && activeKeys.length === 0) {
+        const envKeys = this.getServerEnvironmentKeys(provider.id);
+        if (envKeys.length > 0) {
+          activeKeys = envKeys.map((envKey, idx) => ({
+            id: `server-${provider.id}-default-${idx + 1}`,
+            name: `Server ${provider.name} Default`,
+            key: envKey,
+            enabled: true,
+            status: "active" as const,
+          }));
         }
       }
 
@@ -545,6 +586,18 @@ export class AIRequestManager {
         }
       }
 
+      // Build ordered candidate models for this provider (modelToUse first, then alternatives)
+      const candidateModels: string[] = [modelToUse];
+      if (config.enableModelFallback !== false) {
+        for (const avail of provider.availableModels || []) {
+          if (!candidateModels.includes(avail.id)) {
+            if (isFreeOnly && !avail.isFree) continue;
+            if (requiredCapabilities.some((cap) => !supportsCap(cap, avail.id))) continue;
+            candidateModels.push(avail.id);
+          }
+        }
+      }
+
       // Reorder keys if manual mode specifies activeKeyId
       let orderedKeys: ApiKeyItem[] = [...activeKeys];
       if (
@@ -558,103 +611,123 @@ export class AIRequestManager {
         }
       }
 
-      // Try each enabled API key for this provider
-      for (let keyIdx = 0; keyIdx < orderedKeys.length; keyIdx++) {
-        const keyItem = orderedKeys[keyIdx];
-        const apiKey = keyItem.key;
-        const masked = maskApiKey(apiKey);
+      let providerHasSuccess = false;
 
-        let attempt = 0;
-        const maxRetries = Math.max(1, provider.maxRetries || 2);
+      // Try candidate models and enabled API keys
+      for (const currentModel of candidateModels) {
+        if (providerHasSuccess) break;
+        let skipRemainingKeysForThisModel = false;
 
-        while (attempt < maxRetries) {
-          attempt++;
-          const callStart = Date.now();
+        for (let keyIdx = 0; keyIdx < orderedKeys.length; keyIdx++) {
+          if (skipRemainingKeysForThisModel) break;
+          const keyItem = orderedKeys[keyIdx];
+          const apiKey = keyItem.key;
+          const masked = maskApiKey(apiKey);
 
-          try {
-            // BUILD & SEND REQUEST through Authoritative Adapter
-            const result = await adapter.generate(
-              { ...request, model: modelToUse },
-              apiKey,
-              modelToUse,
-              {
-                timeoutMs: provider.timeoutMs || config.defaultTimeoutMs,
-                customEndpoint: provider.customEndpoint,
-                accountId: provider.accountId,
-                temperature: request.temperature,
-                maxTokens: request.maxTokens,
+          let attempt = 0;
+          const maxRetries = Math.max(1, provider.maxRetries || 2);
+
+          while (attempt < maxRetries) {
+            attempt++;
+            const callStart = Date.now();
+
+            try {
+              // BUILD & SEND REQUEST through Authoritative Adapter
+              const result = await adapter.generate(
+                { ...request, model: currentModel },
+                apiKey,
+                currentModel,
+                {
+                  timeoutMs: provider.timeoutMs || config.defaultTimeoutMs,
+                  customEndpoint: provider.customEndpoint,
+                  accountId: provider.accountId,
+                  temperature: request.temperature,
+                  maxTokens: request.maxTokens,
+                }
+              );
+
+              const latency = Date.now() - callStart;
+              const effectiveModel = (result as any).modelUsed || currentModel;
+
+              fallbackChain.push({
+                providerId: provider.id,
+                providerName: provider.name,
+                keyMasked: masked,
+                keyName: keyItem.name,
+                model: effectiveModel,
+                status: "success",
+                latencyMs: latency,
+                timestamp: Date.now(),
+              });
+
+              providerHasSuccess = true;
+              return {
+                text: result.text,
+                providerId: provider.id,
+                providerName: provider.name,
+                model: effectiveModel,
+                keyMasked: masked,
+                keyName: keyItem.name,
+                latencyMs: Date.now() - overallStartTime,
+                inputTokensEst: result.inputTokens,
+                outputTokensEst: result.outputTokens,
+                fallbackChain,
+              };
+            } catch (err: any) {
+              const latency = Date.now() - callStart;
+              const normalized: NormalizedAIError = adapter.normalizeError
+                ? adapter.normalizeError(err)
+                : {
+                    kind: typeof adapter.classifyError === "function" ? (adapter.classifyError(err) as any) : "unknown",
+                    code: "UNKNOWN_ERROR",
+                    message: err?.message || String(err),
+                    retryable: true,
+                  };
+
+              const stepStatus =
+                normalized.code === "RATE_LIMIT" || normalized.kind === "rate_limit"
+                  ? "rate_limited"
+                  : normalized.code === "INVALID_API_KEY" || normalized.kind === "invalid_key"
+                  ? "invalid_key"
+                  : normalized.code === "MODEL_UNAVAILABLE" || normalized.kind === "model_unavailable"
+                  ? "model_unavailable"
+                  : normalized.code === "FORBIDDEN" || normalized.kind === "permission_denied"
+                  ? "permission_denied"
+                  : normalized.code === "TIMEOUT" || normalized.kind === "timeout"
+                  ? "timeout"
+                  : "server_error";
+
+              fallbackChain.push({
+                providerId: provider.id,
+                providerName: provider.name,
+                keyMasked: masked,
+                keyName: keyItem.name,
+                model: currentModel,
+                status: stepStatus as any,
+                errorMessage: normalized.message,
+                latencyMs: latency,
+                timestamp: Date.now(),
+              });
+
+              // If non-retryable (invalid key, model unavailable, forbidden), stop retrying this specific key
+              if (!normalized.retryable || normalized.kind === "invalid_key" || normalized.kind === "model_unavailable") {
+                break;
               }
-            );
 
-            const latency = Date.now() - callStart;
-            const effectiveModel = (result as any).modelUsed || modelToUse;
+              // If model is experiencing temporary high demand (503) or unavailable, break to try next model in candidateModels
+              const isOverloadedOrUnavailable =
+                normalized.statusCode === 503 ||
+                normalized.message?.includes("experiencing high demand") ||
+                normalized.message?.includes("503");
 
-            fallbackChain.push({
-              providerId: provider.id,
-              providerName: provider.name,
-              keyMasked: masked,
-              keyName: keyItem.name,
-              model: effectiveModel,
-              status: "success",
-              latencyMs: latency,
-              timestamp: Date.now(),
-            });
+              if (isOverloadedOrUnavailable && candidateModels.length > 1) {
+                skipRemainingKeysForThisModel = true;
+                break;
+              }
 
-            return {
-              text: result.text,
-              providerId: provider.id,
-              providerName: provider.name,
-              model: effectiveModel,
-              keyMasked: masked,
-              keyName: keyItem.name,
-              latencyMs: Date.now() - overallStartTime,
-              inputTokensEst: result.inputTokens,
-              outputTokensEst: result.outputTokens,
-              fallbackChain,
-            };
-          } catch (err: any) {
-            const latency = Date.now() - callStart;
-            const normalized: NormalizedAIError = adapter.normalizeError
-              ? adapter.normalizeError(err)
-              : {
-                  kind: typeof adapter.classifyError === "function" ? (adapter.classifyError(err) as any) : "unknown",
-                  code: "UNKNOWN_ERROR",
-                  message: err?.message || String(err),
-                  retryable: true,
-                };
-
-            const stepStatus =
-              normalized.code === "RATE_LIMIT" || normalized.kind === "rate_limit"
-                ? "rate_limited"
-                : normalized.code === "INVALID_API_KEY" || normalized.kind === "invalid_key"
-                ? "invalid_key"
-                : normalized.code === "MODEL_UNAVAILABLE" || normalized.kind === "model_unavailable"
-                ? "model_unavailable"
-                : normalized.code === "FORBIDDEN" || normalized.kind === "permission_denied"
-                ? "permission_denied"
-                : normalized.code === "TIMEOUT" || normalized.kind === "timeout"
-                ? "timeout"
-                : "server_error";
-
-            fallbackChain.push({
-              providerId: provider.id,
-              providerName: provider.name,
-              keyMasked: masked,
-              keyName: keyItem.name,
-              model: modelToUse,
-              status: stepStatus as any,
-              errorMessage: normalized.message,
-              latencyMs: latency,
-              timestamp: Date.now(),
-            });
-
-            // If non-retryable (invalid key, model unavailable, forbidden), stop retrying this specific key
-            if (!normalized.retryable || normalized.code === "INVALID_API_KEY" || normalized.code === "MODEL_UNAVAILABLE") {
-              break;
-            }
-
-            if (attempt < maxRetries && normalized.retryable) {
-              await new Promise((r) => setTimeout(r, 400 * attempt));
+              if (attempt < maxRetries && normalized.retryable) {
+                await new Promise((r) => setTimeout(r, 400 * attempt));
+              }
             }
           }
         }
@@ -667,13 +740,13 @@ export class AIRequestManager {
       errorMessage = "All configured AI providers failed. All enabled AI providers are currently unavailable.";
     } else if (fallbackChain.length === 1) {
       const step = fallbackChain[0];
-      errorMessage = `AI request failed on ${step.providerName} (${step.model}): ${step.errorMessage}`;
+      errorMessage = `All configured AI providers failed: AI request failed on ${step.providerName} (${step.model}): ${step.errorMessage}`;
     } else {
       const stepLines = fallbackChain.map((step, idx) => {
         const masked = step.keyMasked && step.keyMasked !== "none" ? ` [key: ${step.keyMasked}]` : "";
         return `  ${idx + 1}. ${step.providerName} (${step.model}${masked}): ${step.errorMessage}`;
       });
-      errorMessage = `All providers failed (${fallbackChain.length} steps attempted):\n${stepLines.join("\n")}`;
+      errorMessage = `All configured AI providers failed (${fallbackChain.length} steps attempted):\n${stepLines.join("\n")}`;
     }
 
     // Determine the most informative failure step for classification and badge assignment

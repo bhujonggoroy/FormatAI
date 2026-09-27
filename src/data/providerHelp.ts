@@ -83,6 +83,46 @@ export const PROVIDER_HELP: Record<string, ProviderHelpConfig> = {
     providerOrg: "Cloudflare",
     helpDescription: "Create your API token from the Cloudflare Dashboard and add it to FormatAI. Free-tier availability and usage limits are controlled by Cloudflare.",
   },
+
+  openai: {
+    id: "openai",
+    name: "OpenAI",
+    freeLabel: "Developer API access",
+    apiKeyUrl: "https://platform.openai.com/api-keys",
+    enabled: true,
+    providerOrg: "OpenAI",
+    helpDescription: "Create your OpenAI API key from the OpenAI Platform dashboard and add it to FormatAI for GPT-4o, GPT-4o Mini, and o-series reasoning models.",
+  },
+
+  claude: {
+    id: "claude",
+    name: "Anthropic Claude",
+    freeLabel: "Developer API access",
+    apiKeyUrl: "https://console.anthropic.com/settings/keys",
+    enabled: true,
+    providerOrg: "Anthropic",
+    helpDescription: "Create your API key from the Anthropic Console and add it to FormatAI for Claude 3.5 Sonnet, Claude 3.5 Haiku, and Opus models.",
+  },
+
+  deepseek: {
+    id: "deepseek",
+    name: "DeepSeek",
+    freeLabel: "Developer API access",
+    apiKeyUrl: "https://platform.deepseek.com/api_keys",
+    enabled: true,
+    providerOrg: "DeepSeek AI",
+    helpDescription: "Create your API key from the DeepSeek Platform and add it to FormatAI for DeepSeek V4 and deep reasoning models.",
+  },
+
+  custom: {
+    id: "custom",
+    name: "Custom AI / Ollama",
+    freeLabel: "Local & Private Unlimited ($0)",
+    apiKeyUrl: "http://localhost:11434",
+    enabled: true,
+    providerOrg: "Self-Hosted / Local LLM",
+    helpDescription: "Connect your local Ollama, LM Studio, vLLM, or custom OpenAI-compatible reverse proxy with zero external fees and 100% privacy.",
+  },
 };
 
 /**

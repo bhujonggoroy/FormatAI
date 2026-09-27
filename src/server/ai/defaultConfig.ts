@@ -100,7 +100,7 @@ export function getInitialProviders(): ProviderConfig[] {
       enabled: true,
       priority: 3,
       apiKeys: [],
-      selectedModel: "zai-org/glm-5.3-prime:free",
+      selectedModel: "qwen/qwen3.8-27b:free",
       availableModels: CENTRAL_CATALOG.openrouter,
       maxRetries: 2,
       timeoutMs: 40000,

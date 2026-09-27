@@ -568,6 +568,25 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
             </div>
           );
         })}
+
+        {/* Direct Button to Add AI API Keys (বাকি AI API যোগ করুন) */}
+        <div className="pt-1.5 border-t border-slate-200">
+          <button
+            type="button"
+            onClick={() => {
+              onClose();
+              if (onOpenAISettings) onOpenAISettings();
+            }}
+            className="w-full flex items-center justify-between p-2 rounded-xl bg-blue-50/90 hover:bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold transition-all cursor-pointer shadow-2xs"
+            title="Open AI Control Panel to add API keys for Gemini, Groq, OpenAI, Claude, DeepSeek..."
+          >
+            <span className="flex items-center gap-1.5">
+              <Key className="w-3.5 h-3.5 text-blue-600" />
+              <span>+ Add AI API Key (Gemini, Groq, Claude, OpenAI...)</span>
+            </span>
+            <ExternalLink className="w-3 h-3 text-blue-600" />
+          </button>
+        </div>
       </div>
 
       {/* Model Picker for the Selected AI */}

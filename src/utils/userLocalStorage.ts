@@ -67,6 +67,232 @@ export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze
   customPrompt: "",
 });
 
+export const CANONICAL_DEFAULT_PROVIDERS: UserProviderConfig[] = [
+  {
+    id: "gemini",
+    name: "Google Gemini",
+    enabled: true,
+    priority: 1,
+    selectedModel: "gemini-3.8-flash",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.gemini || [],
+    maxRetries: 2,
+    timeoutMs: 45000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerMinute: 15,
+        requestsPerDay: 1500,
+        tokensPerMinute: 1000000,
+      },
+      notes: "Free tier — 15 RPM, 1,500 RPD without credit card requirement.",
+    },
+    notes: "Primary AI provider with direct Google Gemini integration.",
+  },
+  {
+    id: "groq",
+    name: "Groq",
+    enabled: true,
+    priority: 2,
+    selectedModel: "openai/gpt-oss-120b",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.groq || [],
+    maxRetries: 2,
+    timeoutMs: 30000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerMinute: 30,
+        requestsPerDay: 14400,
+        tokensPerMinute: 6000,
+      },
+      notes: "Free tier — 30 RPM on Groq LPU with ultra-low latency.",
+    },
+    notes: "High speed backup provider for instant fallback on Groq LPUs.",
+  },
+  {
+    id: "openrouter",
+    name: "OpenRouter",
+    enabled: true,
+    priority: 3,
+    selectedModel: "qwen/qwen3.8-27b:free",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.openrouter || [],
+    maxRetries: 2,
+    timeoutMs: 40000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerMinute: 20,
+        requestsPerDay: 200,
+      },
+      notes: "Free tier — genuine $0 pricing verified endpoints.",
+    },
+    notes: "Universal fallback router supporting verified $0 free models.",
+  },
+  {
+    id: "mistral",
+    name: "Mistral",
+    enabled: true,
+    priority: 4,
+    selectedModel: "mistral-medium-3.5",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.mistral || [],
+    maxRetries: 2,
+    timeoutMs: 35000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerMinute: 5,
+        requestsPerDay: 1000,
+      },
+      notes: "Free tier — La Plateforme experiment tier limits.",
+    },
+    notes: "European open-weights AI provider with strict privacy standards.",
+  },
+  {
+    id: "cohere",
+    name: "Cohere",
+    enabled: true,
+    priority: 5,
+    selectedModel: "command-a-plus-05-2026",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.cohere || [],
+    maxRetries: 1,
+    timeoutMs: 35000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerMinute: 20,
+        requestsPerDay: 1000,
+      },
+      notes: "Free tier — Trial API key: 20 RPM, 1,000 monthly calls.",
+    },
+    notes: "Enterprise-grade model provider with developer trial keys.",
+  },
+  {
+    id: "openai",
+    name: "OpenAI",
+    enabled: false,
+    priority: 6,
+    selectedModel: "gpt-4o-mini",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.openai || [],
+    maxRetries: 2,
+    timeoutMs: 45000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: false,
+      limits: {},
+      notes: "Developer pay-as-you-go tier.",
+    },
+    notes: "Direct OpenAI integration supporting GPT-4o, GPT-4o Mini, and reasoning models.",
+  },
+  {
+    id: "claude",
+    name: "Anthropic Claude",
+    enabled: false,
+    priority: 7,
+    selectedModel: "claude-3-5-haiku-latest",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.claude || [],
+    maxRetries: 2,
+    timeoutMs: 45000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: false,
+      limits: {},
+      notes: "Anthropic API pay-as-you-go tier.",
+    },
+    notes: "Direct Anthropic Claude integration for advanced academic document formatting.",
+  },
+  {
+    id: "huggingface",
+    name: "Hugging Face",
+    enabled: true,
+    priority: 8,
+    selectedModel: "Qwen/Qwen3.8-27B",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.huggingface || [],
+    maxRetries: 2,
+    timeoutMs: 45000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerMinute: 10,
+      },
+      notes: "Free tier — Serverless Inference API with user HF Access Token.",
+    },
+    notes: "Serverless inference access to verified open source instruction models.",
+  },
+  {
+    id: "cloudflare",
+    name: "Cloudflare Workers AI",
+    enabled: true,
+    priority: 9,
+    selectedModel: "@cf/zai-org/glm-5.3",
+    apiKeys: [],
+    availableModels: CENTRAL_CATALOG.cloudflare || [],
+    maxRetries: 2,
+    timeoutMs: 40000,
+    billingMode: "free_only",
+    status: "active",
+    freeTier: {
+      enabled: true,
+      limits: {
+        requestsPerDay: 10000,
+      },
+      notes: "Free tier — 10,000 free neurons daily on Workers AI edge.",
+    },
+    notes: "Edge-hosted open models running on Cloudflare global network.",
+  },
+  {
+    id: "custom",
+    name: "Custom AI Endpoint",
+    enabled: false,
+    priority: 10,
+    selectedModel: "default-model",
+    apiKeys: [],
+    availableModels: [
+      {
+        id: "default-model",
+        name: "Custom Local Model",
+        provider: "custom",
+        status: "active",
+        free: true,
+        isFree: true,
+        apiAvailable: true,
+        deprecated: false,
+        retired: false,
+        freeTier: "Local / custom unlimited",
+        contextWindow: 32768,
+        capabilities: ["text", "math", "long_context", "json", "code"],
+        description: "Self-hosted Ollama, LM Studio, vLLM, or custom proxy.",
+      },
+    ],
+    maxRetries: 1,
+    timeoutMs: 60000,
+    customEndpoint: "http://localhost:11434/v1/chat/completions",
+    billingMode: "free_only",
+    notes: "Allows connecting local LLMs like Ollama or custom reverse proxies.",
+    status: "active",
+  },
+];
+
 export interface UserAISettingsPackage {
   version: number;
   userId: string;
@@ -124,10 +350,34 @@ export function healAndNormalizeProviders(
   providers: UserProviderConfig[],
   templates?: ClientProviderConfig[]
 ): UserProviderConfig[] {
-  const templateMap = new Map((templates || []).map((t) => [t.id, t]));
+  const baseTemplates: (ClientProviderConfig | UserProviderConfig)[] =
+    templates && templates.length > 0 ? templates : CANONICAL_DEFAULT_PROVIDERS;
+  const templateMap = new Map(baseTemplates.map((t) => [t.id.toLowerCase(), t]));
 
-  return providers.map((provider) => {
-    const tmpl = templateMap.get(provider.id);
+  // If providers is completely empty or not an array, initialize fully with templates
+  const sourceProviders = (Array.isArray(providers) && providers.length > 0)
+    ? providers
+    : baseTemplates.map((t) => ({
+        id: t.id,
+        name: t.name,
+        enabled: t.enabled,
+        priority: t.priority,
+        apiKeys: (t as any).apiKeys || [],
+        selectedModel: t.selectedModel,
+        selectedKeyId: (t as any).selectedKeyId,
+        availableModels: t.availableModels || [],
+        maxRetries: t.maxRetries || 2,
+        timeoutMs: t.timeoutMs || 45000,
+        customEndpoint: t.customEndpoint,
+        accountId: t.accountId,
+        billingMode: t.billingMode || "free_only",
+        freeTier: t.freeTier,
+        notes: t.notes,
+        status: (t as any).status || "active",
+      }));
+
+  const normalized = sourceProviders.map((provider) => {
+    const tmpl = templateMap.get(provider.id.toLowerCase());
     const catalogModels = CENTRAL_CATALOG[provider.id.toLowerCase()];
     const activeRegistryModels = getActiveModels(provider.id);
 
@@ -177,7 +427,7 @@ export function healAndNormalizeProviders(
     }
 
     // 2. Normalize API keys:
-    const apiKeys: UserApiKeyItem[] = (provider.apiKeys || []).map((keyItem, idx) => ({
+    const apiKeys: UserApiKeyItem[] = (provider.apiKeys || []).map((keyItem: any, idx: number) => ({
       id: keyItem.id || `key-${idx + 1}`,
       name: keyItem.name || `API Key ${idx + 1}`,
       key: keyItem.key || "",
@@ -192,23 +442,55 @@ export function healAndNormalizeProviders(
       cooldownUntil: keyItem.cooldownUntil,
     }));
 
-    // 3. Ensure unconfigured providers without keys are not accidentally enabled by stale legacy defaults
-    let isEnabled = provider.enabled;
-    if (provider.id === "cloudflare") {
-      const hasCloudflareCredentials = apiKeys.some((k) => k.enabled && k.key && k.key.trim().length > 0);
-      if (!hasCloudflareCredentials) {
-        isEnabled = false;
-      }
-    }
-
     return {
-      ...provider,
-      enabled: isEnabled,
+      id: provider.id,
+      name: provider.name || tmpl?.name || provider.id,
+      enabled: typeof provider.enabled === "boolean" ? provider.enabled : (tmpl?.enabled ?? true),
+      priority: typeof provider.priority === "number" ? provider.priority : (tmpl?.priority ?? 99),
       selectedModel,
+      selectedKeyId: provider.selectedKeyId,
       availableModels: available,
       apiKeys,
+      maxRetries: provider.maxRetries || tmpl?.maxRetries || 2,
+      timeoutMs: provider.timeoutMs || tmpl?.timeoutMs || 45000,
+      customEndpoint: provider.customEndpoint || tmpl?.customEndpoint,
+      accountId: provider.accountId || tmpl?.accountId,
+      billingMode: provider.billingMode || tmpl?.billingMode || "free_only",
+      freeTier: provider.freeTier || tmpl?.freeTier,
+      notes: provider.notes || tmpl?.notes,
+      status: provider.status || tmpl?.status || "active",
+      lastError: (provider as any).lastError,
     };
   });
+
+  // Ensure all canonical templates are included if missing from user providers
+  const existingIds = new Set(normalized.map((p) => p.id.toLowerCase()));
+  for (const tmpl of baseTemplates) {
+    if (!existingIds.has(tmpl.id.toLowerCase())) {
+      existingIds.add(tmpl.id.toLowerCase());
+      normalized.push({
+        id: tmpl.id,
+        name: tmpl.name,
+        enabled: tmpl.enabled,
+        priority: tmpl.priority,
+        apiKeys: (tmpl as any).apiKeys || [],
+        selectedModel: tmpl.selectedModel,
+        selectedKeyId: (tmpl as any).selectedKeyId,
+        availableModels: tmpl.availableModels || [],
+        maxRetries: tmpl.maxRetries || 2,
+        timeoutMs: tmpl.timeoutMs || 45000,
+        customEndpoint: tmpl.customEndpoint,
+        accountId: tmpl.accountId,
+        billingMode: tmpl.billingMode || "free_only",
+        freeTier: tmpl.freeTier,
+        notes: tmpl.notes,
+        status: (tmpl as any).status || "active",
+        lastError: undefined,
+      });
+    }
+  }
+
+  return normalized.sort((a, b) => a.priority - b.priority);
 }
 
 /**
@@ -224,7 +506,7 @@ export function loadUserAISettingsPackage(
   if (raw) {
     try {
       const parsed: UserAISettingsPackage = JSON.parse(raw);
-      if (parsed && Array.isArray(parsed.providers)) {
+      if (parsed && Array.isArray(parsed.providers) && parsed.providers.length > 0) {
         // Self-heal loaded settings
         const healedProviders = healAndNormalizeProviders(parsed.providers, templates);
         const healedConfig = { ...DEFAULT_MANAGER_CONFIG, ...(parsed.config || {}) };

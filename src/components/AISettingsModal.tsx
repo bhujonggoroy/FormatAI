@@ -15,6 +15,7 @@ import {
   saveUserSettings,
   getUserProviders,
   saveUserProviders,
+  healAndNormalizeProviders,
   toClientProviders,
   getUserStats,
   saveUserStats,
@@ -62,6 +63,8 @@ import {
   ChevronUp,
   ChevronLeft,
   ChevronRight,
+  Eye,
+  EyeOff,
 } from "lucide-react";
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
 import { GetFreeApiKeyModal } from "./GetFreeApiKeyModal";
@@ -154,6 +157,15 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const [newKeyInputs, setNewKeyInputs] = useState<Record<string, { key: string; name: string }>>({});
   const [showAddKeyFor, setShowAddKeyFor] = useState<string | null>(null);
 
+  // Dedicated Quick Add AI API Key segment state
+  const [quickAddProviderId, setQuickAddProviderId] = useState<string>("gemini");
+  const [quickAddKeyLabel, setQuickAddKeyLabel] = useState<string>("");
+  const [quickAddKeySecret, setQuickAddKeySecret] = useState<string>("");
+  const [quickAddCustomEndpoint, setQuickAddCustomEndpoint] = useState<string>("");
+  const [quickAddAccountId, setQuickAddAccountId] = useState<string>("");
+  const [showQuickAddSecret, setShowQuickAddSecret] = useState<boolean>(false);
+  const [isSubmittingQuickKey, setIsSubmittingQuickKey] = useState<boolean>(false);
+
   // Notifications
   const [statusBanner, setStatusBanner] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
 
@@ -187,7 +199,11 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
       // 2. Reconcile with current browser's isolated local storage
       const userSettings = getUserSettings();
-      const userProvs = getUserProviders(templates);
+      let userProvs = getUserProviders(templates);
+      if (!userProvs || userProvs.length === 0) {
+        userProvs = healAndNormalizeProviders([], templates);
+        saveUserProviders(userProvs);
+      }
       const userStats = getUserStats();
       const userLogs = getUserLogs();
 
@@ -282,6 +298,73 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       onConfigChanged?.();
     } catch (err: any) {
       showStatus(err.message, "error");
+    }
+  };
+
+  // Dedicated Quick Add AI API Key & Connect Provider handler (বাকি AI API যোগ করুন)
+  const handleQuickAddAPIKey = async (e?: React.FormEvent) => {
+    if (e) e.preventDefault();
+    const rawSecret = quickAddKeySecret.trim();
+    if (!rawSecret && quickAddProviderId !== "custom") {
+      showStatus(`Please enter an API key for ${quickAddProviderId.toUpperCase()}`, "error");
+      return;
+    }
+
+    setIsSubmittingQuickKey(true);
+    try {
+      const userProvs = getUserProviders();
+      let prov = userProvs.find((p) => p.id === quickAddProviderId);
+      if (!prov) {
+        const healed = healAndNormalizeProviders(userProvs);
+        prov = healed.find((p) => p.id === quickAddProviderId);
+      }
+
+      if (!prov) {
+        throw new Error("Provider not found: " + quickAddProviderId);
+      }
+
+      const newKeyId = `key-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`;
+      const keyName =
+        quickAddKeyLabel.trim() ||
+        `${prov.name} Key ${(prov.apiKeys || []).length + 1}`;
+
+      const newKeyItem: UserApiKeyItem = {
+        id: newKeyId,
+        name: keyName,
+        key: rawSecret,
+        maskedKey: maskApiKey(rawSecret),
+        enabled: true, // Turn key ON immediately so user can use it right away!
+        status: "active",
+      };
+
+      if (!prov.apiKeys) prov.apiKeys = [];
+      prov.apiKeys.push(newKeyItem);
+      prov.enabled = true; // Turn provider ON
+      prov.selectedKeyId = newKeyId;
+
+      if (quickAddProviderId === "custom" && quickAddCustomEndpoint.trim()) {
+        prov.customEndpoint = quickAddCustomEndpoint.trim();
+      }
+      if (quickAddProviderId === "cloudflare" && quickAddAccountId.trim()) {
+        prov.accountId = quickAddAccountId.trim();
+      }
+
+      saveUserProviders(userProvs);
+      setProviders(toClientProviders(userProvs));
+      setQuickAddKeySecret("");
+      setQuickAddKeyLabel("");
+      showStatus(
+        `✓ ${prov.name} API key connected and activated! Provider is now ON & ready.`,
+        "success"
+      );
+      onConfigChanged?.();
+
+      // Trigger test in background
+      handleTestKey(prov.id, newKeyId, prov.selectedModel);
+    } catch (err: any) {
+      showStatus("Failed to add API key: " + err.message, "error");
+    } finally {
+      setIsSubmittingQuickKey(false);
     }
   };
 
@@ -708,7 +791,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 <span className="hidden sm:inline">Multi-Provider AI Control Panel</span>
                 <span className="sm:hidden">AI Control Panel</span>
                 <span className="text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
-                  8 Providers
+                  {providers.length > 0 ? `${providers.length} Providers` : "10 Providers"}
                 </span>
               </h2>
               <p className="hidden sm:block text-xs text-slate-500 mt-0.5 truncate">
@@ -718,6 +801,22 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           </div>
 
           <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={() => {
+                handleSelectTab("control");
+                setTimeout(() => {
+                  const el = document.getElementById("quick-add-ai-api-segment");
+                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
+                }, 50);
+              }}
+              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-xs transition-colors cursor-pointer whitespace-nowrap"
+              title="Add API keys for any AI provider (বাকি AI API যোগ করুন)"
+            >
+              <Plus className="w-3.5 h-3.5 stroke-[3]" />
+              <span className="hidden sm:inline">+ Add AI API</span>
+              <span className="sm:hidden">+ API</span>
+            </button>
             <button
               onClick={handleSaveSettings}
               disabled={isSaving}
@@ -1195,6 +1294,239 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 </div>
               </div>
 
+              {/* ========================================================================= */}
+              {/* DEDICATED QUICK-ADD AI API KEY & CONNECT PROVIDER SEGMENT                 */}
+              {/* (বাকি AI API যোগ করার সেগমেন্ট - Highly Visible & Accessible)              */}
+              {/* ========================================================================= */}
+              <div
+                id="quick-add-ai-api-segment"
+                className="bg-gradient-to-r from-blue-50/95 via-indigo-50/80 to-slate-50 border-2 border-blue-400/80 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/80 pb-3">
+                  <div className="flex items-center gap-2.5 min-w-0">
+                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
+                      <Key className="w-4 h-4 stroke-[2.5]" />
+                    </div>
+                    <div>
+                      <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
+                        <span>Add AI API Key & Connect Providers</span>
+                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-600 text-white shadow-2xs">
+                          বাকি AI API যোগ করুন
+                        </span>
+                      </h3>
+                      <p className="text-xs text-slate-600 mt-0.5">
+                        Add and activate API keys for Gemini, Groq, OpenRouter, Mistral, Cohere, OpenAI, Claude, DeepSeek, Hugging Face, Cloudflare, or Custom AI.
+                      </p>
+                    </div>
+                  </div>
+                  <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 rounded-full shrink-0">
+                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
+                    <span>Zero-Server Leak • Safe Browser Storage</span>
+                  </div>
+                </div>
+
+                <form onSubmit={handleQuickAddAPIKey} className="space-y-3">
+                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
+                    {/* 1. Provider Selector */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-800 mb-1">
+                        1. Select AI Provider:
+                      </label>
+                      <select
+                        value={quickAddProviderId}
+                        onChange={(e) => setQuickAddProviderId(e.target.value)}
+                        className="w-full text-xs font-bold bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl p-2.5 text-slate-900 shadow-2xs focus:outline-none"
+                      >
+                        {providers.length > 0 ? (
+                          providers.map((p) => {
+                            const activeCount = (p.apiKeys || []).filter((k) => k.enabled).length;
+                            return (
+                              <option key={p.id} value={p.id}>
+                                {p.name} {activeCount > 0 ? `(${activeCount} key active)` : "(Needs Key / Add Key)"}
+                              </option>
+                            );
+                          })
+                        ) : (
+                          <>
+                            <option value="gemini">Google Gemini</option>
+                            <option value="groq">Groq</option>
+                            <option value="openrouter">OpenRouter</option>
+                            <option value="mistral">Mistral AI</option>
+                            <option value="cohere">Cohere</option>
+                            <option value="openai">OpenAI</option>
+                            <option value="claude">Anthropic Claude</option>
+                            <option value="deepseek">DeepSeek</option>
+                            <option value="huggingface">Hugging Face</option>
+                            <option value="cloudflare">Cloudflare Workers AI</option>
+                            <option value="custom">Custom AI / Local Ollama</option>
+                          </>
+                        )}
+                      </select>
+                    </div>
+
+                    {/* 2. Key Nickname / Label */}
+                    <div>
+                      <label className="block text-[11px] font-extrabold text-slate-800 mb-1">
+                        2. Key Label (Optional):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. Primary Key, Personal Free Key"
+                        value={quickAddKeyLabel}
+                        onChange={(e) => setQuickAddKeyLabel(e.target.value)}
+                        className="w-full text-xs font-medium bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl p-2.5 text-slate-900 shadow-2xs focus:outline-none"
+                      />
+                    </div>
+
+                    {/* 3. API Key Secret Input */}
+                    <div>
+                      <div className="flex items-center justify-between mb-1">
+                        <label className="block text-[11px] font-extrabold text-slate-800">
+                          3. Secret API Key:
+                        </label>
+                        {(() => {
+                          const help = getProviderHelp(quickAddProviderId);
+                          if (!help?.apiKeyUrl) return null;
+                          return (
+                            <button
+                              type="button"
+                              onClick={() => setFreeKeyModalProvider(help)}
+                              className="text-[10px] font-extrabold text-blue-700 hover:text-blue-900 underline flex items-center gap-0.5 cursor-pointer"
+                            >
+                              <span>Get Free Key</span>
+                              <ExternalLink className="w-2.5 h-2.5" />
+                            </button>
+                          );
+                        })()}
+                      </div>
+                      <div className="relative">
+                        <input
+                          type={showQuickAddSecret ? "text" : "password"}
+                          placeholder={
+                            quickAddProviderId === "gemini"
+                              ? "AIzaSy..."
+                              : quickAddProviderId === "groq"
+                              ? "gsk_..."
+                              : quickAddProviderId === "openrouter"
+                              ? "sk-or-..."
+                              : quickAddProviderId === "custom"
+                              ? "Optional key (or leave empty for local)"
+                              : "Enter raw API key (sk-...)"
+                          }
+                          value={quickAddKeySecret}
+                          onChange={(e) => setQuickAddKeySecret(e.target.value)}
+                          className="w-full text-xs font-mono bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl p-2.5 pr-9 text-slate-900 shadow-2xs focus:outline-none"
+                        />
+                        <button
+                          type="button"
+                          onClick={() => setShowQuickAddSecret(!showQuickAddSecret)}
+                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
+                          title={showQuickAddSecret ? "Hide key" : "Show key"}
+                        >
+                          {showQuickAddSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+
+                  {/* Optional conditional fields: Custom Endpoint or Cloudflare Account ID */}
+                  {quickAddProviderId === "custom" && (
+                    <div className="p-3 bg-white/90 rounded-xl border border-blue-200 space-y-1.5">
+                      <label className="block text-[11px] font-extrabold text-slate-800">
+                        Custom Endpoint URL (OpenAI-compatible / Ollama / LM Studio):
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="http://localhost:11434/v1/chat/completions"
+                        value={quickAddCustomEndpoint}
+                        onChange={(e) => setQuickAddCustomEndpoint(e.target.value)}
+                        className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800"
+                      />
+                      <p className="text-[10px] text-slate-500">
+                        Works with Ollama, LM Studio, LocalAI, vLLM, or any custom reverse proxy endpoint.
+                      </p>
+                    </div>
+                  )}
+
+                  {quickAddProviderId === "cloudflare" && (
+                    <div className="p-3 bg-white/90 rounded-xl border border-blue-200 space-y-1.5">
+                      <label className="block text-[11px] font-extrabold text-slate-800">
+                        Cloudflare Account ID:
+                      </label>
+                      <input
+                        type="text"
+                        placeholder="e.g. 7f3b890a..."
+                        value={quickAddAccountId}
+                        onChange={(e) => setQuickAddAccountId(e.target.value)}
+                        className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800"
+                      />
+                    </div>
+                  )}
+
+                  {/* Action and Helper Bar */}
+                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
+                    <div className="flex items-center gap-2 text-xs text-slate-600">
+                      {(() => {
+                        const targetProv = providers.find((p) => p.id === quickAddProviderId);
+                        if (!targetProv) return null;
+                        const activeCount = (targetProv.apiKeys || []).filter((k) => k.enabled).length;
+                        return (
+                          <span className="inline-flex items-center gap-1.5">
+                            <span
+                              className={`w-2 h-2 rounded-full ${
+                                targetProv.enabled && activeCount > 0
+                                  ? "bg-emerald-500 animate-pulse"
+                                  : "bg-slate-300"
+                              }`}
+                            />
+                            <span className="font-semibold text-slate-700">
+                              Current Status:{" "}
+                              {targetProv.enabled && activeCount > 0
+                                ? `${activeCount} Key Active (ON) • Ready to Polish`
+                                : "No Active Key (Add key to activate)"}
+                            </span>
+                          </span>
+                        );
+                      })()}
+                    </div>
+
+                    <div className="flex items-center gap-2">
+                      {(() => {
+                        const help = getProviderHelp(quickAddProviderId);
+                        if (!help?.apiKeyUrl) return null;
+                        return (
+                          <button
+                            type="button"
+                            onClick={() => setFreeKeyModalProvider(help)}
+                            className="px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-300 transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
+                          >
+                            <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
+                            <span>How to get key</span>
+                          </button>
+                        );
+                      })()}
+                      <button
+                        type="submit"
+                        disabled={isSubmittingQuickKey}
+                        className="px-4 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-xs transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                      >
+                        {isSubmittingQuickKey ? (
+                          <>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
+                            <span>Saving & Connecting...</span>
+                          </>
+                        ) : (
+                          <>
+                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
+                            <span>Save & Connect AI API</span>
+                          </>
+                        )}
+                      </button>
+                    </div>
+                  </div>
+                </form>
+              </div>
+
               {/* SECTION 3: CONFIGURABLE PROVIDER GRID */}
               <div className="space-y-3">
                 <div className="flex flex-wrap items-center justify-between gap-2">
@@ -1215,22 +1547,42 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   </div>
                 </div>
 
-                {/* 4/2/1 Responsive Grid */}
-                <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                  {providers.map((p, idx) => {
-                    const helpConfig = getProviderHelp(p.id);
-                    const activeKeysCount = p.apiKeys.filter((k) => k.enabled).length;
-                    const theme = getAIProviderTheme(p.id);
+                {providers.length === 0 ? (
+                  <div className="p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 space-y-3">
+                    <Server className="w-10 h-10 text-slate-400 mx-auto" />
+                    <h4 className="text-sm font-bold text-slate-800">Initializing AI Providers...</h4>
+                    <p className="text-xs text-slate-500 max-w-md mx-auto">
+                      AI providers list is ready to be restored. Click below to load all 10 AI providers (Google Gemini, Groq, OpenRouter, Mistral, Cohere, OpenAI, Claude, Hugging Face, Cloudflare, Custom).
+                    </p>
+                    <button
+                      type="button"
+                      onClick={async () => {
+                        resetAllUserData();
+                        await fetchAIConfig();
+                      }}
+                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+                    >
+                      <RotateCcw className="w-3.5 h-3.5" />
+                      <span>Restore All AI Providers</span>
+                    </button>
+                  </div>
+                ) : (
+                  /* 4/2/1 Responsive Grid */
+                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
+                    {providers.map((p, idx) => {
+                      const helpConfig = getProviderHelp(p.id);
+                      const activeKeysCount = p.apiKeys.filter((k) => k.enabled).length;
+                      const theme = getAIProviderTheme(p.id);
 
-                    return (
-                      <div
-                        key={p.id}
-                        className={`rounded-2xl border-2 flex flex-col justify-between transition-all duration-200 shadow-xs overflow-hidden ${
-                          p.enabled
-                            ? `${theme.cardBorder} ${theme.activeRing} bg-white`
-                            : "border-slate-200 bg-slate-50/70 opacity-80"
-                        }`}
-                      >
+                      return (
+                        <div
+                          key={p.id}
+                          className={`rounded-2xl border-2 flex flex-col justify-between transition-all duration-200 shadow-xs overflow-hidden ${
+                            p.enabled
+                              ? `${theme.cardBorder} ${theme.activeRing} bg-white`
+                              : "border-slate-200 bg-slate-50/70 opacity-80"
+                          }`}
+                        >
                         {/* Top AI Brand Gradient Strip */}
                         <div className={`h-1.5 w-full ${p.enabled ? theme.topBarGradient : "bg-slate-300"}`} />
 
@@ -1675,7 +2027,8 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     );
                   })}
                 </div>
-              </div>
+              )}
+            </div>
             </>
           ) : activeTab === "fallback" ? (
             /* TAB 2: FALLBACK RULES & STRATEGY */
