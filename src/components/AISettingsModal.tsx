@@ -1,14 +1,12 @@
-import React, { useState, useEffect, useRef } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   ClientProviderConfig,
-  ClientApiKeyItem,
   ManagerConfig,
   ProviderStats,
   FallbackLogEntry,
   TestResult,
   ModelInfo,
   UserApiKeyItem,
-  UserProviderConfig,
 } from "../types/ai";
 import {
   getUserSettings,
@@ -20,7 +18,6 @@ import {
   getUserStats,
   saveUserStats,
   getUserLogs,
-  saveUserLogs,
   clearUserLogs,
   recordProviderMetric,
   recordAuditLogEntry,
@@ -37,48 +34,58 @@ import {
   X,
   Sparkles,
   ShieldCheck,
-  Zap,
   Key,
   Plus,
   Trash2,
   RefreshCw,
   CheckCircle2,
   AlertCircle,
-  Clock,
   ArrowUp,
   ArrowDown,
   Activity,
   ScrollText,
   HelpCircle,
-  Check,
   AlertTriangle,
   Server,
-  Layers,
-  Settings2,
   SlidersHorizontal,
   Save,
   RotateCcw,
   ExternalLink,
-  ChevronDown,
-  ChevronUp,
-  ChevronLeft,
-  ChevronRight,
   Eye,
   EyeOff,
+  ChevronDown,
+  Inbox,
+  Check,
 } from "lucide-react";
 import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
 import { GetFreeApiKeyModal } from "./GetFreeApiKeyModal";
-import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
+import { AIBrandLogo } from "./AIBrandLogo";
 import { StatusSignalGuide } from "./StatusSignalGuide";
 import { classifyAuditLogEntry } from "../utils/aiStatusClassifier";
 import { UniversalModelTesterPanel } from "./UniversalModelTesterPanel";
+
+type TabId = "providers" | "settings" | "usage" | "logs";
 
 interface AISettingsModalProps {
   isOpen: boolean;
   onClose: () => void;
   onConfigChanged?: () => void;
-  initialTab?: "control" | "fallback" | "stats" | "logs";
+  initialTab?: "control" | "fallback" | "stats" | "logs" | "providers" | "settings" | "usage";
 }
+
+const TAB_INDEX_MAP: Record<TabId, number> = {
+  providers: 0,
+  settings: 1,
+  usage: 2,
+  logs: 3,
+};
+
+const TABS: Array<{ id: TabId; label: string; icon: React.FC<{ className?: string }> }> = [
+  { id: "providers", label: "Providers", icon: Server },
+  { id: "settings", label: "Settings", icon: SlidersHorizontal },
+  { id: "usage", label: "Usage", icon: Activity },
+  { id: "logs", label: "Logs", icon: ScrollText },
+];
 
 export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   isOpen,
@@ -86,64 +93,94 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   onConfigChanged,
   initialTab,
 }) => {
-  const [activeTab, setActiveTab] = useState<"control" | "fallback" | "stats" | "logs">("control");
+  // Remember last opened tab with localStorage and fallback to initialTab or "providers"
+  const [activeTab, setActiveTabState] = useState<TabId>(() => {
+    if (initialTab) {
+      if (initialTab === "control") return "providers";
+      if (initialTab === "fallback") return "settings";
+      if (initialTab === "stats") return "usage";
+      if (["providers", "settings", "usage", "logs"].includes(initialTab)) {
+        return initialTab as TabId;
+      }
+    }
+    try {
+      const saved = localStorage.getItem("formatai:last_ai_tab");
+      if (saved && ["providers", "settings", "usage", "logs"].includes(saved)) {
+        return saved as TabId;
+      }
+    } catch {}
+    return "providers";
+  });
+
+  const setActiveTab = (tab: TabId) => {
+    setActiveTabState(tab);
+    try {
+      localStorage.setItem("formatai:last_ai_tab", tab);
+    } catch {}
+  };
+
+  const modalRef = useRef<HTMLDivElement>(null);
+  const toastTimeoutRef = useRef<NodeJS.Timeout | null>(null);
 
   useEffect(() => {
     if (isOpen && initialTab) {
-      setActiveTab(initialTab);
+      if (initialTab === "control") setActiveTab("providers");
+      else if (initialTab === "fallback") setActiveTab("settings");
+      else if (initialTab === "stats") setActiveTab("usage");
+      else if (["providers", "settings", "usage", "logs"].includes(initialTab)) {
+        setActiveTab(initialTab as TabId);
+      }
     }
   }, [isOpen, initialTab]);
 
-  // Tab Slide Bar & Scroll Controls
-  const tabBarRef = useRef<HTMLDivElement>(null);
-  const [canScrollLeft, setCanScrollLeft] = useState(false);
-  const [canScrollRight, setCanScrollRight] = useState(true);
-
-  const checkTabBarScroll = () => {
-    const el = tabBarRef.current;
-    if (!el) return;
-    setCanScrollLeft(el.scrollLeft > 6);
-    setCanScrollRight(el.scrollLeft + el.clientWidth < el.scrollWidth - 6);
-  };
-
-  const handleSlideTabBar = (direction: "left" | "right") => {
-    const el = tabBarRef.current;
-    if (!el) return;
-    const distance = direction === "left" ? -200 : 200;
-    el.scrollBy({ left: distance, behavior: "smooth" });
-    setTimeout(checkTabBarScroll, 350);
-  };
-
-  const handleSelectTab = (tab: "control" | "fallback" | "stats" | "logs") => {
-    setActiveTab(tab);
-    setTimeout(() => {
-      const btn = document.getElementById(`ai-tab-btn-${tab}`);
-      if (btn && tabBarRef.current) {
-        btn.scrollIntoView({ behavior: "smooth", block: "nearest", inline: "center" });
-      }
-      checkTabBarScroll();
-    }, 60);
-  };
-
+  // Close on Escape & trap focus
   useEffect(() => {
     if (!isOpen) return;
-    const timer = setTimeout(checkTabBarScroll, 100);
-    const el = tabBarRef.current;
-    if (!el) return;
-    el.addEventListener("scroll", checkTabBarScroll, { passive: true });
-    window.addEventListener("resize", checkTabBarScroll);
-    return () => {
-      clearTimeout(timer);
-      el.removeEventListener("scroll", checkTabBarScroll);
-      window.removeEventListener("resize", checkTabBarScroll);
+
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+        return;
+      }
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = modalRef.current.querySelectorAll<HTMLElement>(
+          'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+        );
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
+      }
     };
-  }, [isOpen]);
+
+    window.addEventListener("keydown", handleKeyDown);
+    return () => window.removeEventListener("keydown", handleKeyDown);
+  }, [isOpen, onClose]);
+
   const [config, setConfig] = useState<ManagerConfig | null>(null);
   const [providers, setProviders] = useState<ClientProviderConfig[]>([]);
   const [stats, setStats] = useState<ProviderStats[]>([]);
   const [logs, setLogs] = useState<FallbackLogEntry[]>([]);
   const [isLoading, setIsLoading] = useState<boolean>(true);
   const [isSaving, setIsSaving] = useState<boolean>(false);
+
+  // Expanded Provider accordion (only one open at a time)
+  const [expandedProviderId, setExpandedProviderId] = useState<string | null>(null);
+
+  // Quick Add Drawer / Modal at the top of Providers list
+  const [showQuickAddDrawer, setShowQuickAddDrawer] = useState<boolean>(false);
 
   // Free API Key modal state
   const [freeKeyModalProvider, setFreeKeyModalProvider] = useState<ProviderHelpConfig | null>(null);
@@ -156,8 +193,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   // Adding key state per provider
   const [newKeyInputs, setNewKeyInputs] = useState<Record<string, { key: string; name: string }>>({});
   const [showAddKeyFor, setShowAddKeyFor] = useState<string | null>(null);
+  const [revealedKeyIds, setRevealedKeyIds] = useState<Record<string, boolean>>({});
 
-  // Dedicated Quick Add AI API Key segment state
+  // Dedicated Quick Add AI API Key state
   const [quickAddProviderId, setQuickAddProviderId] = useState<string>("gemini");
   const [quickAddKeyLabel, setQuickAddKeyLabel] = useState<string>("");
   const [quickAddKeySecret, setQuickAddKeySecret] = useState<string>("");
@@ -166,8 +204,11 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
   const [showQuickAddSecret, setShowQuickAddSecret] = useState<boolean>(false);
   const [isSubmittingQuickKey, setIsSubmittingQuickKey] = useState<boolean>(false);
 
-  // Notifications
-  const [statusBanner, setStatusBanner] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
+  // Collapsible Status Signal Guide (collapsed by default)
+  const [showStatusGuide, setShowStatusGuide] = useState<boolean>(false);
+
+  // Sleek floating toast notification (non-blocking)
+  const [toast, setToast] = useState<{ text: string; type: "success" | "error" | "info" } | null>(null);
 
   useEffect(() => {
     if (isOpen) {
@@ -175,17 +216,19 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     }
   }, [isOpen]);
 
-  const showStatus = (text: string, type: "success" | "error" | "info" = "success") => {
-    setStatusBanner({ text, type });
-    setTimeout(() => {
-      setStatusBanner(null);
-    }, 5000);
+  const showToast = (text: string, type: "success" | "error" | "info" = "success") => {
+    if (toastTimeoutRef.current) {
+      clearTimeout(toastTimeoutRef.current);
+    }
+    setToast({ text, type });
+    toastTimeoutRef.current = setTimeout(() => {
+      setToast(null);
+    }, 3500);
   };
 
   const fetchAIConfig = async () => {
     setIsLoading(true);
     try {
-      // 1. Fetch static templates from server
       let templates: ClientProviderConfig[] = [];
       try {
         const cfgRes = await fetch("/api/ai/config");
@@ -197,7 +240,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         console.warn("Could not fetch server AI templates:", err);
       }
 
-      // 2. Reconcile with current browser's isolated local storage
       const userSettings = getUserSettings();
       let userProvs = getUserProviders(templates);
       if (!userProvs || userProvs.length === 0) {
@@ -212,13 +254,12 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       setStats(userStats);
       setLogs(userLogs);
     } catch (err: any) {
-      showStatus("Failed to load AI configuration: " + err.message, "error");
+      showToast("Failed to load AI configuration: " + err.message, "error");
     } finally {
       setIsLoading(false);
     }
   };
 
-  // Update Global Strategy or Active Configuration (strictly local to current browser)
   const handleUpdateConfig = async (updates: Partial<ManagerConfig>) => {
     try {
       const current = getUserSettings();
@@ -227,11 +268,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       setConfig(updated);
       onConfigChanged?.();
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     }
   };
 
-  // Update a Provider (toggle provider ON/OFF, change selected model, priority, custom endpoint, accountId)
   const handleUpdateProvider = async (providerId: string, updates: Partial<ClientProviderConfig>) => {
     try {
       const userProvs = getUserProviders();
@@ -243,11 +283,10 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         onConfigChanged?.();
       }
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     }
   };
 
-  // Toggle individual API key ON / OFF
   const handleToggleKey = async (providerId: string, keyId: string, currentEnabled: boolean) => {
     try {
       const userProvs = getUserProviders();
@@ -257,15 +296,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         keyObj.enabled = !currentEnabled;
         saveUserProviders(userProvs);
         setProviders(toClientProviders(userProvs));
-        showStatus(`Key ${!currentEnabled ? "Enabled (ON)" : "Disabled (OFF)"}`);
+        showToast(`Key ${!currentEnabled ? "enabled (ON)" : "disabled (OFF)"}`);
         onConfigChanged?.();
       }
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     }
   };
 
-  // Add an API key (defaults to enabled = false / OFF)
   const handleAddKey = async (providerId: string) => {
     const input = newKeyInputs[providerId];
     if (!input || !input.key.trim()) return;
@@ -294,19 +332,18 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       setProviders(toClientProviders(userProvs));
       setNewKeyInputs((prev) => ({ ...prev, [providerId]: { key: "", name: "" } }));
       setShowAddKeyFor(null);
-      showStatus(`API key added for ${prov.name} (Status: OFF). Turn it ON when ready to use.`);
+      showToast(`Key added for ${prov.name} (OFF). Turn ON to use.`);
       onConfigChanged?.();
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     }
   };
 
-  // Dedicated Quick Add AI API Key & Connect Provider handler (বাকি AI API যোগ করুন)
   const handleQuickAddAPIKey = async (e?: React.FormEvent) => {
     if (e) e.preventDefault();
     const rawSecret = quickAddKeySecret.trim();
     if (!rawSecret && quickAddProviderId !== "custom") {
-      showStatus(`Please enter an API key for ${quickAddProviderId.toUpperCase()}`, "error");
+      showToast(`Please enter an API key for ${quickAddProviderId.toUpperCase()}`, "error");
       return;
     }
 
@@ -333,13 +370,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         name: keyName,
         key: rawSecret,
         maskedKey: maskApiKey(rawSecret),
-        enabled: true, // Turn key ON immediately so user can use it right away!
+        enabled: true,
         status: "active",
       };
 
       if (!prov.apiKeys) prov.apiKeys = [];
       prov.apiKeys.push(newKeyItem);
-      prov.enabled = true; // Turn provider ON
+      prov.enabled = true;
       prov.selectedKeyId = newKeyId;
 
       if (quickAddProviderId === "custom" && quickAddCustomEndpoint.trim()) {
@@ -353,22 +390,18 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       setProviders(toClientProviders(userProvs));
       setQuickAddKeySecret("");
       setQuickAddKeyLabel("");
-      showStatus(
-        `✓ ${prov.name} API key connected and activated! Provider is now ON & ready.`,
-        "success"
-      );
+      setShowQuickAddDrawer(false);
+      showToast(`✓ ${prov.name} API key connected & active!`, "success");
       onConfigChanged?.();
 
-      // Trigger test in background
       handleTestKey(prov.id, newKeyId, prov.selectedModel);
     } catch (err: any) {
-      showStatus("Failed to add API key: " + err.message, "error");
+      showToast("Failed to add API key: " + err.message, "error");
     } finally {
       setIsSubmittingQuickKey(false);
     }
   };
 
-  // Remove an API key
   const handleRemoveKey = async (providerId: string, keyId: string) => {
     if (!confirm("Are you sure you want to remove this API key?")) return;
     try {
@@ -381,15 +414,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         }
         saveUserProviders(userProvs);
         setProviders(toClientProviders(userProvs));
-        showStatus("API key deleted.");
+        showToast("API key removed.");
         onConfigChanged?.();
       }
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     }
   };
 
-  // Refresh live model catalog from provider API
   const handleRefreshModels = async (providerId: string) => {
     setRefreshingProviderId(providerId);
     try {
@@ -417,18 +449,17 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           saveUserProviders(userProvs);
           setProviders(toClientProviders(userProvs));
         }
-        showStatus(`✓ Refreshed models for ${prov?.name || providerId} (${data.models.length} active models)`);
+        showToast(`✓ Refreshed ${data.models.length} models for ${prov?.name || providerId}`);
       } else {
-        showStatus(data.error || `Could not refresh models for ${prov?.name || providerId}`, "error");
+        showToast(data.error || `Could not refresh models for ${prov?.name || providerId}`, "error");
       }
     } catch (err: any) {
-      showStatus(err.message || "Failed to refresh models", "error");
+      showToast(err.message || "Failed to refresh models", "error");
     } finally {
       setRefreshingProviderId(null);
     }
   };
 
-  // Test individual API key + selected model
   const handleTestKey = async (providerId: string, keyId: string, model?: string) => {
     const testId = `${providerId}-${keyId}`;
     setTestingKeyId(testId);
@@ -478,7 +509,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         setProviders(toClientProviders(userProvs));
       }
 
-      // Record Telemetry Metric & Audit Log
       recordProviderMetric(
         providerId,
         result.providerName || providerId,
@@ -513,24 +543,18 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       setLogs(getUserLogs());
 
       if (result.success) {
-        showStatus(
-          `✓ Connection successful: ${result.providerName} (${result.model}) • Response: ${result.latencyMs}ms`
-        );
+        showToast(`✓ Connected to ${result.providerName} (${result.latencyMs}ms)`);
       } else {
         const title = result.errorTitle || (result.errorCode ? `[${result.errorCode}]` : "Connection failed");
-        showStatus(
-          `${title}: ${result.userFacingMessage || result.errorMessage || "Unknown error"}`,
-          "error"
-        );
+        showToast(`${title}: ${result.userFacingMessage || result.errorMessage || "Unknown error"}`, "error");
       }
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     } finally {
       setTestingKeyId(null);
     }
   };
 
-  // Test all active providers
   const handleTestAll = async () => {
     setTestingKeyId("all");
     try {
@@ -593,15 +617,14 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
         setStats(getUserStats());
         setLogs(getUserLogs());
       }
-      showStatus("Tested all active enabled providers. View details below.");
+      showToast("Tested all active enabled providers.");
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     } finally {
       setTestingKeyId(null);
     }
   };
 
-  // Move priority up or down
   const handleMovePriority = async (providerId: string, direction: "up" | "down") => {
     const userProvs = getUserProviders();
     const sorted = [...userProvs].sort((a, b) => a.priority - b.priority);
@@ -624,20 +647,19 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     onConfigChanged?.();
   };
 
-  // Save Settings explicitly
   const handleSaveSettings = async () => {
     setIsSaving(true);
     try {
-      showStatus("AI Settings saved successfully! Stored locally in your browser.");
+      await new Promise((r) => setTimeout(r, 200));
+      showToast("Settings saved", "success");
       onConfigChanged?.();
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     } finally {
       setIsSaving(false);
     }
   };
 
-  // Reset to Defaults
   const handleResetSettings = async () => {
     if (
       !confirm(
@@ -649,28 +671,25 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     try {
       resetAllUserData();
       await fetchAIConfig();
-      showStatus("AI Settings reset to safe defaults.");
+      showToast("AI Settings reset to safe defaults.");
       onConfigChanged?.();
     } catch (err: any) {
-      showStatus(err.message, "error");
+      showToast(err.message, "error");
     }
   };
 
-  // Reset Telemetry metrics
   const handleResetTelemetry = () => {
     saveUserStats(DEFAULT_PROVIDER_STATS);
     setStats(structuredClone(DEFAULT_PROVIDER_STATS));
-    showStatus("Provider Telemetry metrics reset to baseline.");
+    showToast("Telemetry metrics reset to baseline.");
   };
 
-  // Clear Audit Logs
   const handleClearAuditLogs = () => {
     clearUserLogs();
     setLogs([]);
-    showStatus("Fallback Audit Logs cleared.");
+    showToast("Audit logs cleared.");
   };
 
-  // Generate a live multi-hop diagnostic failover trace
   const handleSimulateFailoverProbe = () => {
     recordAuditLogEntry({
       requestSummary: "Multi-Hop Failover Diagnostic Simulation",
@@ -721,838 +740,321 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
 
     setStats(getUserStats());
     setLogs(getUserLogs());
-    showStatus("🔵 SIMULATION: Fallback test completed. No real document processing was performed.");
+    showToast("Failover simulation completed.");
+  };
+
+  // Keyboard navigation across tabs
+  const handleTabKeyDown = (e: React.KeyboardEvent, index: number) => {
+    if (e.key === "ArrowRight") {
+      e.preventDefault();
+      const nextIndex = (index + 1) % TABS.length;
+      setActiveTab(TABS[nextIndex].id);
+      const nextBtn = document.getElementById(`tab-${TABS[nextIndex].id}`);
+      nextBtn?.focus();
+    } else if (e.key === "ArrowLeft") {
+      e.preventDefault();
+      const prevIndex = (index - 1 + TABS.length) % TABS.length;
+      setActiveTab(TABS[prevIndex].id);
+      const prevBtn = document.getElementById(`tab-${TABS[prevIndex].id}`);
+      prevBtn?.focus();
+    }
   };
 
   if (!isOpen) return null;
 
-  // Compute active provider and available models/keys for Active AI section
-  const currentActiveProvider = providers.find(
-    (p) => p.id === (config?.activeProviderId || "gemini")
-  ) || providers[0];
-
-  const isFreeOnly = Boolean(config?.freeOnlyMode || config?.billingMode === "free_only");
-  const rawAvailableModels = currentActiveProvider?.availableModels || [];
-  const activeRegistryModels = getActiveModels(currentActiveProvider?.id);
-  const activeCatalogModels = getCatalogModels(currentActiveProvider?.id || "");
-  const activeReport = getCachedModelTestReport(currentActiveProvider?.id || "");
-  const activeCanonical = canonicalProviderId(currentActiveProvider?.id);
-  const activeReadyModels = (activeReport?.readyModels || []).filter(
-    (m) => canonicalProviderId(m.provider) === activeCanonical
-  );
-
-  const currentAvailableModels = (() => {
-    const seen = new Set<string>();
-    const list: Array<{ id: string; name: string; free: boolean; isReady?: boolean }> = [];
-
-    // 1. Ready-to-Deploy models first (Requirement 10)
-    for (const m of activeReadyModels) {
-      if (!seen.has(m.id)) {
-        seen.add(m.id);
-        list.push({ id: m.id, name: m.name || m.id, free: m.isFree, isReady: true });
-      }
-    }
-
-    // 2. Base models for this provider
-    const basePool = activeRegistryModels.length > 0
-      ? activeRegistryModels
-      : isFreeOnly
-      ? rawAvailableModels.filter(isModelSelectable)
-      : rawAvailableModels.length > 0
-      ? rawAvailableModels.filter((m) => !m.deprecated && !m.retired && m.status !== "retired")
-      : activeCatalogModels;
-
-    for (const m of basePool) {
-      if (!seen.has(m.id)) {
-        seen.add(m.id);
-        list.push({
-          id: m.id,
-          name: m.name || m.id,
-          free: Boolean(m.free || (m as any).isFree),
-          isReady: false,
-        });
-      }
-    }
-    return list;
-  })();
-  const currentProviderKeys = currentActiveProvider?.apiKeys || [];
+  const currentActiveProvider =
+    providers.find((p) => p.id === (config?.activeProviderId || "gemini")) || providers[0];
+  const activeModelName = config?.activeModel || currentActiveProvider?.selectedModel || "Standard";
+  const activeModeText = config?.mode === "automatic" ? "Automatic mode" : "Manual mode";
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-4 bg-slate-900/60 backdrop-blur-xs antialiased">
-      <div className="bg-white w-full sm:max-w-7xl h-full sm:h-[88vh] sm:max-h-[92vh] sm:rounded-2xl rounded-none shadow-2xl flex flex-col overflow-hidden border-0 sm:border sm:border-slate-200">
-        {/* Modal Header */}
-        <div className="shrink-0 px-3 sm:px-6 py-2.5 sm:py-4 border-b border-slate-200 flex items-center justify-between gap-2 bg-slate-50/90">
-          <div className="flex items-center gap-2 sm:gap-3 min-w-0">
-            <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-              <Sparkles className="w-4 h-4 sm:w-5 sm:h-5" />
-            </div>
-            <div className="min-w-0">
-              <h2 className="text-sm sm:text-lg font-extrabold text-slate-900 flex items-center gap-1.5 sm:gap-2 truncate">
-                <span className="hidden sm:inline">Multi-Provider AI Control Panel</span>
-                <span className="sm:hidden">AI Control Panel</span>
-                <span className="text-[10px] sm:text-xs font-bold px-1.5 py-0.5 rounded-full bg-blue-100 text-blue-800 border border-blue-200 shrink-0">
-                  {providers.length > 0 ? `${providers.length} Providers` : "10 Providers"}
-                </span>
-              </h2>
-              <p className="hidden sm:block text-xs text-slate-500 mt-0.5 truncate">
-                Explicit ON/OFF activation, key rotation, priority fallback, and zero-leak secrets management.
-              </p>
-            </div>
-          </div>
-
-          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0">
-            <button
-              type="button"
-              onClick={() => {
-                handleSelectTab("control");
-                setTimeout(() => {
-                  const el = document.getElementById("quick-add-ai-api-segment");
-                  if (el) el.scrollIntoView({ behavior: "smooth", block: "center" });
-                }, 50);
-              }}
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-black bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white shadow-xs transition-colors cursor-pointer whitespace-nowrap"
-              title="Add API keys for any AI provider (বাকি AI API যোগ করুন)"
-            >
-              <Plus className="w-3.5 h-3.5 stroke-[3]" />
-              <span className="hidden sm:inline">+ Add AI API</span>
-              <span className="sm:hidden">+ API</span>
-            </button>
-            <button
-              onClick={handleSaveSettings}
-              disabled={isSaving}
-              className="inline-flex items-center gap-1 sm:gap-1.5 px-2.5 sm:px-3 py-1.5 rounded-xl text-xs font-extrabold bg-emerald-600 hover:bg-emerald-700 text-white shadow-xs transition-colors cursor-pointer disabled:opacity-50 whitespace-nowrap"
-            >
-              <Save className="w-3.5 h-3.5" />
-              <span className="hidden sm:inline">{isSaving ? "Saving..." : "Save AI Settings"}</span>
-              <span className="sm:hidden">{isSaving ? "Saving..." : "Save"}</span>
-            </button>
-            <button
-              onClick={handleResetSettings}
-              className="hidden sm:inline-flex items-center gap-1.5 px-3 py-1.5 rounded-xl text-xs font-bold bg-slate-200 hover:bg-slate-300 text-slate-700 transition-colors cursor-pointer"
-              title="Reset AI Settings to safe defaults"
-            >
-              <RotateCcw className="w-3.5 h-3.5" />
-              <span>Reset</span>
-            </button>
-            <button
-              onClick={onClose}
-              className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200 transition-colors cursor-pointer"
-              aria-label="Close modal"
-            >
-              <X className="w-5 h-5" />
-            </button>
-          </div>
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-xs transition-opacity duration-150 motion-reduce:transition-none animate-modal-backdrop"
+    >
+      <div
+        ref={modalRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="ai-settings-title"
+        className="bg-white w-full sm:max-w-[880px] h-[95vh] sm:h-[80vh] sm:max-h-[80vh] rounded-t-2xl sm:rounded-xl shadow-xl flex flex-col overflow-hidden border-t sm:border border-slate-200 animate-modal-content motion-reduce:transition-none motion-reduce:transform-none"
+      >
+        {/* Mobile Drag Indicator Handle */}
+        <div className="sm:hidden flex justify-center pt-2.5 pb-1 shrink-0 bg-white" aria-hidden="true">
+          <div className="w-10 h-1 bg-slate-300 rounded-full" />
         </div>
 
-        {/* Global Notification Banner */}
-        {statusBanner && (
-          <div
-            className={`shrink-0 px-3 sm:px-6 py-2 sm:py-2.5 text-xs font-medium flex items-center justify-between border-b ${
-              statusBanner.type === "error"
-                ? "bg-rose-50 text-rose-800 border-rose-200"
-                : statusBanner.type === "info"
-                ? "bg-sky-50 text-sky-800 border-sky-200"
-                : "bg-emerald-50 text-emerald-800 border-emerald-200"
-            }`}
+        {/* Modal Header (Fixed / Sticky) */}
+        <div className="shrink-0 px-4 sm:px-5 py-3 border-b border-slate-200 flex items-center justify-between gap-3 bg-white">
+          <div className="min-w-0">
+            <h2 id="ai-settings-title" className="text-sm sm:text-base font-semibold text-slate-900 truncate">
+              Multi-Provider AI Control Panel
+            </h2>
+            <p className="text-xs text-slate-600 mt-0.5 truncate">
+              Manage AI models, credentials, automatic failover rules, and operational telemetry.
+            </p>
+          </div>
+
+          <button
+            onClick={onClose}
+            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors cursor-pointer shrink-0"
+            aria-label="Close modal"
           >
-            <div className="flex items-center gap-2 min-w-0">
-              {statusBanner.type === "error" ? (
-                <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              ) : (
-                <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              )}
-              <span className="truncate">{statusBanner.text}</span>
-            </div>
-            <button
-              onClick={() => setStatusBanner(null)}
-              className="text-slate-400 hover:text-slate-700 text-xs cursor-pointer ml-2 p-1"
-            >
-              ✕
-            </button>
-          </div>
-        )}
-
-        {/* Tabs Navigation with Visible Slide Bar & Controls */}
-        <div className="shrink-0 bg-slate-100 border-b-2 border-slate-300 px-2 sm:px-4 py-2">
-          <div className="flex items-center gap-1.5 sm:gap-2">
-            {/* Left Slide Button */}
-            <button
-              id="slide-ai-tabs-left-btn"
-              type="button"
-              onClick={() => handleSlideTabBar("left")}
-              disabled={!canScrollLeft}
-              className={`p-2 rounded-xl border-2 transition-all cursor-pointer shrink-0 flex items-center justify-center ${
-                canScrollLeft
-                  ? "bg-white text-blue-700 border-blue-400 hover:bg-blue-50 shadow-2xs hover:scale-105 active:scale-95"
-                  : "bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed"
-              }`}
-              title="Slide Left (বামে স্লাইড করুন)"
-              aria-label="Slide Left"
-            >
-              <ChevronLeft className="w-4 h-4 stroke-[3]" />
-            </button>
-
-            {/* Scrollable Container with EXPLICIT Visible Slide Bar (Scrollbar) */}
-            <div
-              ref={tabBarRef}
-              className="flex-1 bg-white p-1 rounded-xl border-2 border-slate-300 flex items-center gap-1.5 overflow-x-auto shadow-inner pb-2.5 [scrollbar-width:auto] [scrollbar-color:#2563eb_#e2e8f0] [&::-webkit-scrollbar]:h-2.5 [&::-webkit-scrollbar-track]:bg-slate-200 [&::-webkit-scrollbar-track]:rounded-full [&::-webkit-scrollbar-thumb]:bg-blue-600 hover:[&::-webkit-scrollbar-thumb]:bg-blue-700 [&::-webkit-scrollbar-thumb]:rounded-full"
-            >
-              <button
-                id="ai-tab-btn-control"
-                onClick={() => handleSelectTab("control")}
-                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
-                  activeTab === "control"
-                    ? "bg-blue-900 text-white shadow-xs font-extrabold border border-blue-950"
-                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
-                }`}
-              >
-                <Settings2 className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">AI Control Panel & Keys</span>
-                <span className="sm:hidden">Keys & Models</span>
-              </button>
-              <button
-                id="ai-tab-btn-fallback"
-                onClick={() => handleSelectTab("fallback")}
-                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
-                  activeTab === "fallback"
-                    ? "bg-indigo-900 text-white shadow-xs font-extrabold border border-indigo-950"
-                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
-                }`}
-              >
-                <ShieldCheck className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">Fallback Strategy & Safety</span>
-                <span className="sm:hidden">Fallback</span>
-              </button>
-              <button
-                id="ai-tab-btn-stats"
-                onClick={() => handleSelectTab("stats")}
-                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
-                  activeTab === "stats"
-                    ? "bg-emerald-900 text-white shadow-xs font-extrabold border border-emerald-950"
-                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
-                }`}
-              >
-                <Activity className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">Usage & Health Telemetry</span>
-                <span className="sm:hidden">Telemetry</span>
-              </button>
-              <button
-                id="ai-tab-btn-logs"
-                onClick={() => handleSelectTab("logs")}
-                className={`py-1.5 sm:py-2 px-3 sm:px-4 rounded-lg transition-colors flex items-center gap-1.5 cursor-pointer whitespace-nowrap shrink-0 text-xs font-semibold ${
-                  activeTab === "logs"
-                    ? "bg-purple-900 text-white shadow-xs font-extrabold border border-purple-950"
-                    : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
-                }`}
-              >
-                <ScrollText className="w-4 h-4 shrink-0" />
-                <span className="hidden sm:inline">Fallback Audit Logs</span>
-                <span className="sm:hidden">Audit Logs</span>
-              </button>
-            </div>
-
-            {/* Right Slide Button */}
-            <button
-              id="slide-ai-tabs-right-btn"
-              type="button"
-              onClick={() => handleSlideTabBar("right")}
-              disabled={!canScrollRight}
-              className={`p-2 rounded-xl border-2 transition-all cursor-pointer shrink-0 flex items-center justify-center ${
-                canScrollRight
-                  ? "bg-blue-600 text-white border-blue-700 hover:bg-blue-700 shadow-2xs hover:scale-105 active:scale-95 animate-pulse"
-                  : "bg-slate-200 text-slate-400 border-slate-300 opacity-40 cursor-not-allowed"
-              }`}
-              title="Slide Right"
-              aria-label="Slide Right"
-            >
-              <ChevronRight className="w-4 h-4 stroke-[3]" />
-            </button>
-          </div>
+            <X className="w-5 h-5" />
+          </button>
         </div>
 
-        {/* Modal Body */}
-        <div className="flex-1 min-h-0 overflow-y-auto p-3 sm:p-6 space-y-4 sm:space-y-6 bg-slate-50/50">
+        {/* Segmented Tab Bar (WCAG AA tablist with keyboard arrow navigation) */}
+        <div className="shrink-0 border-b border-slate-200 bg-white px-2 sm:px-5 relative">
+          <nav
+            role="tablist"
+            aria-label="AI Settings Tabs"
+            className="grid grid-cols-4 w-full"
+          >
+            {TABS.map((tab, idx) => {
+              const Icon = tab.icon;
+              const isActive = activeTab === tab.id;
+              return (
+                <button
+                  key={tab.id}
+                  role="tab"
+                  id={`tab-${tab.id}`}
+                  aria-selected={isActive}
+                  aria-controls={`tabpanel-${tab.id}`}
+                  tabIndex={isActive ? 0 : -1}
+                  onKeyDown={(e) => handleTabKeyDown(e, idx)}
+                  onClick={() => setActiveTab(tab.id)}
+                  className={`py-3 flex items-center justify-center gap-1.5 sm:gap-2 text-xs font-medium transition-colors cursor-pointer select-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                    isActive ? "text-blue-700 font-semibold" : "text-slate-600 hover:text-slate-900"
+                  }`}
+                >
+                  <Icon className="w-4 h-4 shrink-0" />
+                  <span className="truncate">{tab.label}</span>
+                </button>
+              );
+            })}
+          </nav>
+          {/* Smooth sliding indicator bar (200ms ease-out) */}
+          <div
+            className="absolute bottom-0 left-0 h-0.5 bg-blue-600 transition-transform duration-200 ease-out motion-reduce:transition-none"
+            style={{
+              width: "25%",
+              transform: `translateX(${TAB_INDEX_MAP[activeTab] * 100}%)`,
+            }}
+          />
+        </div>
+
+        {/* Modal Body (Scrolls internally) */}
+        <div
+          role="tabpanel"
+          id={`tabpanel-${activeTab}`}
+          aria-labelledby={`tab-${activeTab}`}
+          tabIndex={0}
+          className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 space-y-4 bg-slate-50/50 focus-visible:outline-none"
+        >
           {isLoading ? (
-            <div className="py-20 flex flex-col items-center justify-center text-slate-400 gap-3">
-              <RefreshCw className="w-8 h-8 animate-spin text-blue-600" />
-              <p className="text-sm font-medium text-slate-600">Loading AI Configurations...</p>
+            <div className="py-20 flex flex-col items-center justify-center text-slate-500 gap-3">
+              <RefreshCw className="w-6 h-6 animate-spin text-blue-600 motion-reduce:animate-none" />
+              <p className="text-xs text-slate-700 font-medium">Loading AI configurations...</p>
             </div>
-          ) : activeTab === "control" ? (
-            <>
-              {/* SECTION 1: GLOBAL AI MODE & SAFETY TOGGLES */}
-              <div className="bg-white rounded-xl border border-slate-200 p-5 shadow-xs space-y-4">
-                <div className="flex items-center justify-between border-b border-slate-100 pb-3">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <Zap className="w-4 h-4 text-amber-500" />
-                      Global AI Mode & Cost Guardrails
-                    </h3>
-                    <p className="text-xs text-slate-500 mt-0.5">
-                      Configure how requests are scheduled across providers and enforce zero accidental spend.
-                    </p>
+          ) : activeTab === "providers" ? (
+            /* TAB 1: PROVIDERS */
+            <div className="space-y-4 transition-opacity duration-150 ease-out motion-reduce:transition-none">
+              {/* Single compact summary bar at the top */}
+              <div className="flex flex-wrap items-center justify-between gap-2.5 px-3.5 sm:px-4 py-2.5 bg-white border border-slate-200 rounded-xl text-xs shadow-xs">
+                <div className="flex items-center gap-2 text-slate-700 min-w-0 flex-wrap">
+                  <span className="text-slate-500 font-medium">Currently using:</span>
+                  <div className="flex items-center gap-1.5 font-semibold text-slate-900 truncate">
+                    <AIBrandLogo providerId={currentActiveProvider?.id || "gemini"} size="sm" />
+                    <span className="truncate">{currentActiveProvider?.name || "Google Gemini"}</span>
+                    <span className="text-slate-500 font-normal">({activeModelName})</span>
                   </div>
-                  <div className="flex items-center gap-2">
-                    <button
-                      onClick={handleTestAll}
-                      disabled={testingKeyId === "all"}
-                      className="inline-flex items-center gap-1.5 px-3 py-1.5 rounded-lg text-xs font-medium bg-slate-100 hover:bg-slate-200 text-slate-800 transition-colors cursor-pointer border border-slate-200"
-                    >
-                      <RefreshCw className={`w-3.5 h-3.5 ${testingKeyId === "all" ? "animate-spin text-blue-600" : ""}`} />
-                      <span>Test All Active</span>
-                    </button>
-                  </div>
+                  <span className="text-slate-300">·</span>
+                  <span className="text-slate-600 font-medium">{activeModeText}</span>
                 </div>
-
-                <div className="grid grid-cols-1 md:grid-cols-3 gap-4">
-                  {/* Mode Selector */}
-                  <div className="p-3.5 rounded-xl border border-slate-200/90 bg-slate-50/70 flex flex-col justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block mb-1">Execution Mode</span>
-                      <p className="text-[11px] text-slate-500 mb-3">
-                        Automatic prioritizes the fallback chain; Manual locks requests to your chosen active configuration.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-3">
-                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="global_mode"
-                          checked={config?.mode === "automatic"}
-                          onChange={() => handleUpdateConfig({ mode: "automatic" })}
-                          className="text-blue-600 focus:ring-blue-500"
-                        />
-                        <span>Automatic</span>
-                      </label>
-                      <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="global_mode"
-                          checked={config?.mode === "manual"}
-                          onChange={() => handleUpdateConfig({ mode: "manual" })}
-                          className="text-blue-600 focus:ring-blue-500"
-                        />
-                        <span>Manual</span>
-                      </label>
-                    </div>
-                  </div>
-
-                  {/* Fallback Checkbox */}
-                  <div className="p-3.5 rounded-xl border border-slate-200/90 bg-slate-50/70 flex flex-col justify-between">
-                    <div>
-                      <span className="text-xs font-bold text-slate-900 block mb-1">Automatic Fallback</span>
-                      <p className="text-[11px] text-slate-500 mb-3">
-                        Automatically step down to secondary providers on rate-limits (429), timeouts, or server outages.
-                      </p>
-                    </div>
-                    <label className="inline-flex items-center gap-2 text-xs font-medium text-slate-800 cursor-pointer">
-                      <input
-                        type="checkbox"
-                        checked={Boolean(config?.enableFallback)}
-                        onChange={(e) => handleUpdateConfig({ enableFallback: e.target.checked })}
-                        className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4 cursor-pointer"
-                      />
-                      <span>Enable Automatic Fallback</span>
-                    </label>
-                  </div>
-
-                  {/* Free-Only / Billing Mode */}
-                  <div className="p-3.5 rounded-xl border border-slate-200/90 bg-slate-50/70 flex flex-col justify-between">
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <span className="text-xs font-bold text-slate-900">Billing Mode</span>
-                        <span className="text-[10px] px-1.5 py-0.5 rounded bg-emerald-100 text-emerald-800 font-semibold">
-                          Zero Spend Guard
-                        </span>
-                      </div>
-                      <p className="text-[11px] text-slate-500 mb-3">
-                        Restricts requests strictly to free models & free tiers. Never switches to paid endpoints.
-                      </p>
-                    </div>
-                    <div className="flex items-center gap-4">
-                      <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="billing_mode"
-                          checked={config?.freeOnlyMode || config?.billingMode === "free_only"}
-                          onChange={() => handleUpdateConfig({ freeOnlyMode: true, billingMode: "free_only" })}
-                          className="text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <span>Free Only</span>
-                      </label>
-                      <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
-                        <input
-                          type="radio"
-                          name="billing_mode"
-                          checked={!config?.freeOnlyMode && config?.billingMode === "free_and_paid"}
-                          onChange={() => handleUpdateConfig({ freeOnlyMode: false, billingMode: "free_and_paid" })}
-                          className="text-emerald-600 focus:ring-emerald-500"
-                        />
-                        <span>Free + Paid</span>
-                      </label>
-                    </div>
-                  </div>
+                <div className="flex items-center gap-2">
+                  <span className="text-slate-500 text-xs">
+                    {providers.filter((p) => p.enabled).length} of {providers.length} active
+                  </span>
                 </div>
               </div>
 
-              {/* SECTION 2: COMPACT ACTIVE AI CONFIGURATION */}
-              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
-                <div className="border-b border-slate-100 pb-2.5 flex flex-wrap items-center justify-between gap-2">
-                  <div className="flex items-center gap-2">
-                    <SlidersHorizontal className="w-4 h-4 text-blue-600 shrink-0" />
-                    <h3 className="text-xs font-bold tracking-wider text-slate-900 uppercase">
-                      Active AI Configuration
-                    </h3>
-                    <span
-                      className={`text-[10px] px-2 py-0.5 rounded-full font-semibold border ${
-                        currentActiveProvider?.enabled
-                          ? "bg-emerald-50 text-emerald-800 border-emerald-200"
-                          : "bg-rose-50 text-rose-800 border-rose-200"
-                      }`}
-                    >
-                      {currentActiveProvider?.enabled ? "✓ Active (ON)" : "○ Disabled (OFF)"}
-                    </span>
-                  </div>
-
-                  {/* Active Provider Chips (wraps on small screens) */}
-                  <div className="flex flex-wrap items-center gap-1.5">
-                    <span className="text-[11px] font-medium text-slate-500 mr-0.5">Active Providers:</span>
-                    {providers.filter((p) => p.enabled).length === 0 ? (
-                      <span className="text-[11px] text-amber-700 italic">None active (FormatAI Only)</span>
-                    ) : (
-                      providers
-                        .filter((p) => p.enabled)
-                        .map((p) => {
-                          const pTheme = getAIProviderTheme(p.id);
-                          const isCurrent = p.id === (config?.activeProviderId || "gemini");
-                          return (
-                            <span
-                              key={p.id}
-                              onClick={() => {
-                                if (isCurrent) {
-                                  handleUpdateConfig({
-                                    activeProviderId: "formatai",
-                                    activeModel: "standard-academic",
-                                  });
-                                } else {
-                                  handleUpdateConfig({
-                                    activeProviderId: p.id,
-                                    activeModel: p.selectedModel || "",
-                                  });
-                                }
-                              }}
-                              onDoubleClick={(e) => {
-                                e.preventDefault();
-                                e.stopPropagation();
-                                handleUpdateConfig({
-                                  activeProviderId: "formatai",
-                                  activeModel: "standard-academic",
-                                });
-                              }}
-                              title={
-                                isCurrent
-                                  ? "Double-click to deselect and switch to FormatAI (No AI)"
-                                  : "Click to select as active AI"
-                              }
-                              className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-full text-[11px] font-semibold border transition-all cursor-pointer ${
-                                isCurrent
-                                  ? `${pTheme.badgeStyle} ring-1 ring-offset-0 shadow-2xs`
-                                  : "bg-slate-100 text-slate-700 border-slate-200 hover:bg-slate-200"
-                              }`}
-                            >
-                              <AIBrandLogo providerId={p.id} size="sm" />
-                              <span>{p.name.replace("Google ", "").replace(" Workers AI", "")}</span>
-                              <span className="w-1.5 h-1.5 rounded-full bg-emerald-500" />
-                              {isCurrent && (
-                                <span className="text-[9px] font-bold text-slate-500 hover:text-rose-600 ml-0.5">
-                                  ✕
-                                </span>
-                              )}
-                            </span>
-                          );
-                        })
-                    )}
-                  </div>
-                </div>
-
-                {/* 4 Compact Controls */}
-                <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-2.5">
-                  {/* Provider Dropdown */}
-                  <div>
-                    <div className="flex items-center justify-between mb-1">
-                      <label className="text-[11px] font-bold text-slate-700">
-                        Active Provider:
-                      </label>
-                      <div className="flex items-center gap-1">
-                        <AIBrandLogo providerId={config?.activeProviderId || "gemini"} size="sm" />
-                        <span className="text-[10px] font-bold text-slate-600">
-                          {getAIProviderTheme(config?.activeProviderId || "gemini").badgeLabel}
-                        </span>
-                      </div>
+              {/* Quick Add AI API Drawer / Expandable Form */}
+              {showQuickAddDrawer && (
+                <div className="bg-white border border-slate-200 rounded-xl p-4 shadow-xs space-y-3 transition-all duration-150 ease-out motion-reduce:transition-none">
+                  <div className="flex items-center justify-between border-b border-slate-100 pb-2.5">
+                    <div className="flex items-center gap-2">
+                      <Key className="w-4 h-4 text-slate-600" />
+                      <h3 className="text-sm font-semibold text-slate-900">Add AI API Key</h3>
                     </div>
-                    <select
-                      value={config?.activeProviderId || "gemini"}
-                      onChange={(e) => {
-                        const newPId = e.target.value;
-                        if (newPId === "formatai") {
-                          handleUpdateConfig({
-                            activeProviderId: "formatai",
-                            activeModel: "standard-academic",
-                            activeKeyId: undefined,
-                          });
-                          return;
-                        }
-                        const targetP = providers.find((p) => p.id === newPId);
-                        handleUpdateConfig({
-                          activeProviderId: newPId,
-                          activeModel: targetP?.selectedModel || "",
-                          activeKeyId: targetP?.apiKeys?.[0]?.id,
-                        });
-                      }}
-                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      <option value="formatai">FormatAI (No AI • Deterministic Normalizer)</option>
-                      {providers.map((p) => (
-                        <option key={p.id} value={p.id}>
-                          {p.name} {p.enabled ? "(ON)" : "(OFF)"}
-                        </option>
-                      ))}
-                    </select>
-                  </div>
-
-                  {/* Model Dropdown */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Selected Model:
-                    </label>
-                    <select
-                      value={config?.activeModel || currentActiveProvider?.selectedModel || ""}
-                      onChange={(e) => {
-                        handleUpdateConfig({ activeModel: e.target.value });
-                        handleUpdateProvider(currentActiveProvider.id, { selectedModel: e.target.value });
-                      }}
-                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500"
-                    >
-                      {currentAvailableModels.length === 0 ? (
-                        <option value="" disabled>
-                          No currently available free model
-                        </option>
-                      ) : (
-                        currentAvailableModels.map((m) => (
-                          <option key={m.id} value={m.id}>
-                            {m.name} {m.free ? "(Free tier)" : "(Paid tier)"}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  {/* API Key Dropdown */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Active API Key:
-                    </label>
-                    <select
-                      value={config?.activeKeyId || currentProviderKeys[0]?.id || ""}
-                      onChange={(e) => handleUpdateConfig({ activeKeyId: e.target.value })}
-                      disabled={currentProviderKeys.length === 0}
-                      className="w-full text-xs font-medium bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 disabled:opacity-50"
-                    >
-                      {currentProviderKeys.length === 0 ? (
-                        <option value="">No Keys Configured</option>
-                      ) : (
-                        currentProviderKeys.map((k) => (
-                          <option key={k.id} value={k.id}>
-                            {k.name} ({k.maskedKey}) {k.enabled ? "[ON]" : "[OFF]"}
-                          </option>
-                        ))
-                      )}
-                    </select>
-                  </div>
-
-                  {/* Mode Display & Toggle */}
-                  <div>
-                    <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                      Current Mode:
-                    </label>
-                    <div className="flex items-center justify-between h-[34px] px-2.5 rounded-lg border border-slate-300 bg-slate-50 text-xs">
-                      <span className="font-bold text-slate-800 capitalize">
-                        {config?.mode} Mode
-                      </span>
-                      <button
-                        type="button"
-                        onClick={() =>
-                          handleUpdateConfig({
-                            mode: config?.mode === "automatic" ? "manual" : "automatic",
-                          })
-                        }
-                        className="text-[11px] font-semibold text-blue-600 hover:text-blue-800 cursor-pointer underline"
-                      >
-                        Switch to {config?.mode === "automatic" ? "Manual" : "Auto"}
-                      </button>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              {/* ========================================================================= */}
-              {/* DEDICATED QUICK-ADD AI API KEY & CONNECT PROVIDER SEGMENT                 */}
-              {/* (বাকি AI API যোগ করার সেগমেন্ট - Highly Visible & Accessible)              */}
-              {/* ========================================================================= */}
-              <div
-                id="quick-add-ai-api-segment"
-                className="bg-gradient-to-r from-blue-50/95 via-indigo-50/80 to-slate-50 border-2 border-blue-400/80 rounded-2xl p-4 sm:p-5 shadow-xs space-y-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2 border-b border-blue-200/80 pb-3">
-                  <div className="flex items-center gap-2.5 min-w-0">
-                    <div className="w-9 h-9 rounded-xl bg-blue-600 text-white flex items-center justify-center shadow-xs shrink-0">
-                      <Key className="w-4 h-4 stroke-[2.5]" />
-                    </div>
-                    <div>
-                      <h3 className="text-sm font-extrabold text-slate-900 flex items-center gap-2">
-                        <span>Add AI API Key & Connect Providers</span>
-                        <span className="text-[10px] font-bold px-2 py-0.5 rounded-full bg-blue-600 text-white shadow-2xs">
-                          বাকি AI API যোগ করুন
-                        </span>
-                      </h3>
-                      <p className="text-xs text-slate-600 mt-0.5">
-                        Add and activate API keys for Gemini, Groq, OpenRouter, Mistral, Cohere, OpenAI, Claude, DeepSeek, Hugging Face, Cloudflare, or Custom AI.
-                      </p>
-                    </div>
-                  </div>
-                  <div className="flex items-center gap-2 text-[11px] font-bold text-emerald-800 bg-emerald-100/90 border border-emerald-300 px-2.5 py-1 rounded-full shrink-0">
-                    <ShieldCheck className="w-3.5 h-3.5 text-emerald-700" />
-                    <span>Zero-Server Leak • Safe Browser Storage</span>
-                  </div>
-                </div>
-
-                <form onSubmit={handleQuickAddAPIKey} className="space-y-3">
-                  <div className="grid grid-cols-1 md:grid-cols-3 gap-3">
-                    {/* 1. Provider Selector */}
-                    <div>
-                      <label className="block text-[11px] font-extrabold text-slate-800 mb-1">
-                        1. Select AI Provider:
-                      </label>
-                      <select
-                        value={quickAddProviderId}
-                        onChange={(e) => setQuickAddProviderId(e.target.value)}
-                        className="w-full text-xs font-bold bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl p-2.5 text-slate-900 shadow-2xs focus:outline-none"
-                      >
-                        {providers.length > 0 ? (
-                          providers.map((p) => {
-                            const activeCount = (p.apiKeys || []).filter((k) => k.enabled).length;
-                            return (
-                              <option key={p.id} value={p.id}>
-                                {p.name} {activeCount > 0 ? `(${activeCount} key active)` : "(Needs Key / Add Key)"}
-                              </option>
-                            );
-                          })
-                        ) : (
-                          <>
-                            <option value="gemini">Google Gemini</option>
-                            <option value="groq">Groq</option>
-                            <option value="openrouter">OpenRouter</option>
-                            <option value="mistral">Mistral AI</option>
-                            <option value="cohere">Cohere</option>
-                            <option value="openai">OpenAI</option>
-                            <option value="claude">Anthropic Claude</option>
-                            <option value="deepseek">DeepSeek</option>
-                            <option value="huggingface">Hugging Face</option>
-                            <option value="cloudflare">Cloudflare Workers AI</option>
-                            <option value="custom">Custom AI / Local Ollama</option>
-                          </>
-                        )}
-                      </select>
-                    </div>
-
-                    {/* 2. Key Nickname / Label */}
-                    <div>
-                      <label className="block text-[11px] font-extrabold text-slate-800 mb-1">
-                        2. Key Label (Optional):
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. Primary Key, Personal Free Key"
-                        value={quickAddKeyLabel}
-                        onChange={(e) => setQuickAddKeyLabel(e.target.value)}
-                        className="w-full text-xs font-medium bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl p-2.5 text-slate-900 shadow-2xs focus:outline-none"
-                      />
-                    </div>
-
-                    {/* 3. API Key Secret Input */}
-                    <div>
-                      <div className="flex items-center justify-between mb-1">
-                        <label className="block text-[11px] font-extrabold text-slate-800">
-                          3. Secret API Key:
-                        </label>
-                        {(() => {
-                          const help = getProviderHelp(quickAddProviderId);
-                          if (!help?.apiKeyUrl) return null;
-                          return (
-                            <button
-                              type="button"
-                              onClick={() => setFreeKeyModalProvider(help)}
-                              className="text-[10px] font-extrabold text-blue-700 hover:text-blue-900 underline flex items-center gap-0.5 cursor-pointer"
-                            >
-                              <span>Get Free Key</span>
-                              <ExternalLink className="w-2.5 h-2.5" />
-                            </button>
-                          );
-                        })()}
-                      </div>
-                      <div className="relative">
-                        <input
-                          type={showQuickAddSecret ? "text" : "password"}
-                          placeholder={
-                            quickAddProviderId === "gemini"
-                              ? "AIzaSy..."
-                              : quickAddProviderId === "groq"
-                              ? "gsk_..."
-                              : quickAddProviderId === "openrouter"
-                              ? "sk-or-..."
-                              : quickAddProviderId === "custom"
-                              ? "Optional key (or leave empty for local)"
-                              : "Enter raw API key (sk-...)"
-                          }
-                          value={quickAddKeySecret}
-                          onChange={(e) => setQuickAddKeySecret(e.target.value)}
-                          className="w-full text-xs font-mono bg-white border-2 border-slate-300 focus:border-blue-600 rounded-xl p-2.5 pr-9 text-slate-900 shadow-2xs focus:outline-none"
-                        />
+                    {(() => {
+                      const help = getProviderHelp(quickAddProviderId);
+                      if (!help?.apiKeyUrl) return null;
+                      return (
                         <button
                           type="button"
-                          onClick={() => setShowQuickAddSecret(!showQuickAddSecret)}
-                          className="absolute right-2.5 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-700 p-1 cursor-pointer"
-                          title={showQuickAddSecret ? "Hide key" : "Show key"}
+                          onClick={() => setFreeKeyModalProvider(help)}
+                          className="text-xs font-medium text-blue-700 hover:text-blue-900 flex items-center gap-1 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
                         >
-                          {showQuickAddSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                          <span>Get free key</span>
+                          <ExternalLink className="w-3 h-3" />
                         </button>
-                      </div>
-                    </div>
+                      );
+                    })()}
                   </div>
 
-                  {/* Optional conditional fields: Custom Endpoint or Cloudflare Account ID */}
-                  {quickAddProviderId === "custom" && (
-                    <div className="p-3 bg-white/90 rounded-xl border border-blue-200 space-y-1.5">
-                      <label className="block text-[11px] font-extrabold text-slate-800">
-                        Custom Endpoint URL (OpenAI-compatible / Ollama / LM Studio):
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="http://localhost:11434/v1/chat/completions"
-                        value={quickAddCustomEndpoint}
-                        onChange={(e) => setQuickAddCustomEndpoint(e.target.value)}
-                        className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800"
-                      />
-                      <p className="text-[10px] text-slate-500">
-                        Works with Ollama, LM Studio, LocalAI, vLLM, or any custom reverse proxy endpoint.
-                      </p>
-                    </div>
-                  )}
+                  <form onSubmit={handleQuickAddAPIKey} className="space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      <div>
+                        <label htmlFor="quick-add-provider" className="block text-xs font-medium text-slate-700 mb-1">Provider</label>
+                        <select
+                          id="quick-add-provider"
+                          value={quickAddProviderId}
+                          onChange={(e) => setQuickAddProviderId(e.target.value)}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                        >
+                          {providers.map((p) => (
+                            <option key={p.id} value={p.id}>
+                              {p.name}
+                            </option>
+                          ))}
+                        </select>
+                      </div>
 
-                  {quickAddProviderId === "cloudflare" && (
-                    <div className="p-3 bg-white/90 rounded-xl border border-blue-200 space-y-1.5">
-                      <label className="block text-[11px] font-extrabold text-slate-800">
-                        Cloudflare Account ID:
-                      </label>
-                      <input
-                        type="text"
-                        placeholder="e.g. 7f3b890a..."
-                        value={quickAddAccountId}
-                        onChange={(e) => setQuickAddAccountId(e.target.value)}
-                        className="w-full text-xs font-mono bg-slate-50 border border-slate-300 rounded-lg p-2 text-slate-800"
-                      />
-                    </div>
-                  )}
+                      <div>
+                        <label htmlFor="quick-add-label" className="block text-xs font-medium text-slate-700 mb-1">Key Label (Optional)</label>
+                        <input
+                          id="quick-add-label"
+                          type="text"
+                          placeholder="e.g. Primary Key"
+                          value={quickAddKeyLabel}
+                          onChange={(e) => setQuickAddKeyLabel(e.target.value)}
+                          className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                        />
+                      </div>
 
-                  {/* Action and Helper Bar */}
-                  <div className="flex flex-wrap items-center justify-between gap-2 pt-1">
-                    <div className="flex items-center gap-2 text-xs text-slate-600">
-                      {(() => {
-                        const targetProv = providers.find((p) => p.id === quickAddProviderId);
-                        if (!targetProv) return null;
-                        const activeCount = (targetProv.apiKeys || []).filter((k) => k.enabled).length;
-                        return (
-                          <span className="inline-flex items-center gap-1.5">
-                            <span
-                              className={`w-2 h-2 rounded-full ${
-                                targetProv.enabled && activeCount > 0
-                                  ? "bg-emerald-500 animate-pulse"
-                                  : "bg-slate-300"
-                              }`}
-                            />
-                            <span className="font-semibold text-slate-700">
-                              Current Status:{" "}
-                              {targetProv.enabled && activeCount > 0
-                                ? `${activeCount} Key Active (ON) • Ready to Polish`
-                                : "No Active Key (Add key to activate)"}
-                            </span>
-                          </span>
-                        );
-                      })()}
-                    </div>
-
-                    <div className="flex items-center gap-2">
-                      {(() => {
-                        const help = getProviderHelp(quickAddProviderId);
-                        if (!help?.apiKeyUrl) return null;
-                        return (
+                      <div>
+                        <label htmlFor="quick-add-secret" className="block text-xs font-medium text-slate-700 mb-1">Secret Key</label>
+                        <div className="relative">
+                          <input
+                            id="quick-add-secret"
+                            type={showQuickAddSecret ? "text" : "password"}
+                            placeholder="Enter raw API key..."
+                            value={quickAddKeySecret}
+                            onChange={(e) => setQuickAddKeySecret(e.target.value)}
+                            className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg p-2 pr-8 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors"
+                          />
                           <button
                             type="button"
-                            onClick={() => setFreeKeyModalProvider(help)}
-                            className="px-3 py-2 rounded-xl text-xs font-bold text-blue-700 bg-white hover:bg-blue-50 border border-blue-300 transition-colors cursor-pointer shadow-2xs inline-flex items-center gap-1.5"
+                            onClick={() => setShowQuickAddSecret(!showQuickAddSecret)}
+                            className="absolute right-2 top-1/2 -translate-y-1/2 text-slate-500 hover:text-slate-800 p-1 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+                            aria-label={showQuickAddSecret ? "Hide secret key" : "Show secret key"}
                           >
-                            <HelpCircle className="w-3.5 h-3.5 text-blue-600" />
-                            <span>How to get key</span>
+                            {showQuickAddSecret ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
                           </button>
-                        );
-                      })()}
+                        </div>
+                      </div>
+                    </div>
+
+                    {quickAddProviderId === "custom" && (
+                      <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                        <label htmlFor="quick-add-endpoint" className="block text-xs font-medium text-slate-700">Custom Endpoint URL</label>
+                        <input
+                          id="quick-add-endpoint"
+                          type="text"
+                          placeholder="http://localhost:11434/v1/chat/completions"
+                          value={quickAddCustomEndpoint}
+                          onChange={(e) => setQuickAddCustomEndpoint(e.target.value)}
+                          className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg p-1.5 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        />
+                      </div>
+                    )}
+
+                    {quickAddProviderId === "cloudflare" && (
+                      <div className="p-2.5 bg-slate-50 rounded-lg border border-slate-200 space-y-1">
+                        <label htmlFor="quick-add-account" className="block text-xs font-medium text-slate-700">Cloudflare Account ID</label>
+                        <input
+                          id="quick-add-account"
+                          type="text"
+                          placeholder="e.g. 7f3b890a..."
+                          value={quickAddAccountId}
+                          onChange={(e) => setQuickAddAccountId(e.target.value)}
+                          className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg p-1.5 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                        />
+                      </div>
+                    )}
+
+                    <div className="flex items-center justify-end gap-2 pt-1">
+                      <button
+                        type="button"
+                        onClick={() => setShowQuickAddDrawer(false)}
+                        className="px-3 py-1.5 text-xs font-medium text-slate-600 hover:text-slate-900 rounded-lg cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300"
+                      >
+                        Cancel
+                      </button>
                       <button
                         type="submit"
                         disabled={isSubmittingQuickKey}
-                        className="px-4 py-2 rounded-xl text-xs font-black text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 shadow-xs transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5"
+                        className="px-3.5 py-1.5 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] transition-all cursor-pointer disabled:opacity-50 inline-flex items-center gap-1.5 shadow-xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none"
                       >
                         {isSubmittingQuickKey ? (
                           <>
-                            <RefreshCw className="w-3.5 h-3.5 animate-spin" />
-                            <span>Saving & Connecting...</span>
+                            <RefreshCw className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" />
+                            <span>Connecting...</span>
                           </>
                         ) : (
                           <>
-                            <Plus className="w-3.5 h-3.5 stroke-[3]" />
-                            <span>Save & Connect AI API</span>
+                            <Plus className="w-3.5 h-3.5" />
+                            <span>Connect & Save</span>
                           </>
                         )}
                       </button>
                     </div>
-                  </div>
-                </form>
-              </div>
+                  </form>
+                </div>
+              )}
 
-              {/* SECTION 3: CONFIGURABLE PROVIDER GRID */}
-              <div className="space-y-3">
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div>
-                    <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                      <Server className="w-4 h-4 text-blue-600" />
-                      Configured AI Providers
-                    </h3>
-                    <p className="text-xs text-slate-500">
-                      Explicit ON/OFF switch per provider. Providers are strictly bypassed when turned OFF.
-                    </p>
-                  </div>
-                  <div className="text-xs text-slate-600 bg-slate-100 px-3 py-1 rounded-full border border-slate-200">
-                    <span className="font-bold text-slate-900">
-                      {providers.filter((p) => p.enabled).length} of {providers.length}
-                    </span>{" "}
-                    Providers Active
-                  </div>
+              {/* Provider List Header & "Add AI API" button */}
+              <div className="flex items-center justify-between gap-2">
+                <div>
+                  <h3 className="text-sm font-semibold text-slate-900">AI Providers</h3>
+                  <p className="text-xs text-slate-600">Configure credentials, models, and priority fallback.</p>
                 </div>
 
+                <div className="flex items-center gap-2">
+                  <button
+                    type="button"
+                    onClick={handleTestAll}
+                    disabled={testingKeyId === "all"}
+                    className="inline-flex items-center gap-1.5 px-2.5 py-1.5 rounded-lg text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 transition-all cursor-pointer shadow-xs active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 motion-reduce:transform-none"
+                    title="Test connection for all enabled providers"
+                  >
+                    <RefreshCw className={`w-3.5 h-3.5 ${testingKeyId === "all" ? "animate-spin text-blue-600 motion-reduce:animate-none" : "text-slate-400"}`} />
+                    <span className="hidden sm:inline">{testingKeyId === "all" ? "Testing..." : "Test Active"}</span>
+                  </button>
+                  <button
+                    type="button"
+                    onClick={() => setShowQuickAddDrawer((prev) => !prev)}
+                    className="inline-flex items-center gap-1.5 px-3 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all cursor-pointer shadow-xs active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none"
+                  >
+                    <Plus className="w-3.5 h-3.5" />
+                    <span>Add AI API</span>
+                  </button>
+                </div>
+              </div>
+
+              {/* Clean Vertical Provider List */}
+              <div className="bg-white rounded-xl border border-slate-200 shadow-xs divide-y divide-slate-100 overflow-hidden">
                 {providers.length === 0 ? (
-                  <div className="p-8 text-center bg-slate-50 rounded-2xl border-2 border-dashed border-slate-300 space-y-3">
-                    <Server className="w-10 h-10 text-slate-400 mx-auto" />
-                    <h4 className="text-sm font-bold text-slate-800">Initializing AI Providers...</h4>
-                    <p className="text-xs text-slate-500 max-w-md mx-auto">
-                      AI providers list is ready to be restored. Click below to load all 10 AI providers (Google Gemini, Groq, OpenRouter, Mistral, Cohere, OpenAI, Claude, Hugging Face, Cloudflare, Custom).
+                  <div className="p-8 text-center bg-white space-y-3">
+                    <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-500">
+                      <Inbox className="w-6 h-6" />
+                    </div>
+                    <h4 className="text-sm font-semibold text-slate-900">No AI Providers Found</h4>
+                    <p className="text-xs text-slate-600 max-w-sm mx-auto">
+                      Restore default providers or connect a custom AI API endpoint to get started.
                     </p>
                     <button
                       type="button"
@@ -1560,167 +1062,183 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                         resetAllUserData();
                         await fetchAIConfig();
                       }}
-                      className="px-4 py-2 bg-blue-600 hover:bg-blue-700 text-white text-xs font-bold rounded-xl cursor-pointer shadow-xs inline-flex items-center gap-1.5"
+                      className="px-3.5 py-1.5 bg-blue-600 hover:bg-blue-700 text-white text-xs font-semibold rounded-lg cursor-pointer shadow-xs inline-flex items-center gap-1.5 active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
                       <RotateCcw className="w-3.5 h-3.5" />
-                      <span>Restore All AI Providers</span>
+                      <span>Restore Default Providers</span>
                     </button>
                   </div>
                 ) : (
-                  /* 4/2/1 Responsive Grid */
-                  <div className="grid grid-cols-1 md:grid-cols-2 xl:grid-cols-4 gap-4">
-                    {providers.map((p, idx) => {
-                      const helpConfig = getProviderHelp(p.id);
-                      const activeKeysCount = p.apiKeys.filter((k) => k.enabled).length;
-                      const theme = getAIProviderTheme(p.id);
+                  providers.map((p, idx) => {
+                    const isExpanded = expandedProviderId === p.id;
+                    const activeKeysCount = p.apiKeys.filter((k) => k.enabled).length;
+                    const hasKeys = p.apiKeys.length > 0;
+                    const helpConfig = getProviderHelp(p.id);
 
-                      return (
-                        <div
-                          key={p.id}
-                          className={`rounded-2xl border-2 flex flex-col justify-between transition-all duration-200 shadow-xs overflow-hidden ${
-                            p.enabled
-                              ? `${theme.cardBorder} ${theme.activeRing} bg-white`
-                              : "border-slate-200 bg-slate-50/70 opacity-80"
-                          }`}
-                        >
-                        {/* Top AI Brand Gradient Strip */}
-                        <div className={`h-1.5 w-full ${p.enabled ? theme.topBarGradient : "bg-slate-300"}`} />
+                    // Status indicator
+                    const statusKind = !p.enabled
+                      ? "disabled"
+                      : p.status === "active" && activeKeysCount > 0
+                      ? "active"
+                      : hasKeys
+                      ? "ready"
+                      : "needs_key";
 
-                        {/* Provider Header Card with Branded Tint */}
-                        <div className={`p-3.5 border-b border-slate-200/90 space-y-2.5 ${p.enabled ? theme.headerBg : "bg-slate-100/70"}`}>
-                          <div className="flex items-center justify-between gap-2">
-                            <div className="flex items-center gap-2 min-w-0">
-                              {/* Priority Badge */}
-                              <div className="flex items-center gap-0.5 bg-white/95 px-1.5 py-0.5 rounded border border-slate-200 text-[11px] font-bold text-slate-700 shrink-0 shadow-2xs">
-                                <span>#{p.priority}</span>
-                                <div className="flex flex-col ml-0.5">
+                    return (
+                      <div key={p.id} className="transition-colors">
+                        {/* Main Provider Row */}
+                        <div className="p-3 sm:p-3.5 flex items-center justify-between gap-2.5 sm:gap-3 hover:bg-slate-50/60 transition-colors">
+                          {/* Provider Logo + Name */}
+                          <div className="flex items-center gap-2.5 min-w-0 w-36 sm:w-56 shrink-0">
+                            <div className="p-1 rounded bg-slate-50 border border-slate-200 shrink-0">
+                              <AIBrandLogo providerId={p.id} size="sm" />
+                            </div>
+                            <div className="min-w-0">
+                              <div className="flex items-center gap-1.5">
+                                <span className="text-xs sm:text-sm font-semibold text-slate-900 truncate" title={p.name}>
+                                  {p.name}
+                                </span>
+                                <span className="text-xs text-slate-500 font-mono">#{p.priority}</span>
+                              </div>
+                              <div className="text-xs text-slate-500 truncate">
+                                {hasKeys ? `${p.apiKeys.length} key (${activeKeysCount} ON)` : "No keys"}
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Selected Model */}
+                          <div className="hidden sm:block min-w-0 flex-1 truncate text-xs text-slate-600 font-mono">
+                            {p.selectedModel || "—"}
+                          </div>
+
+                          {/* Status Dot */}
+                          <div className="shrink-0">
+                            {statusKind === "active" ? (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-emerald-800">
+                                <span className="w-2 h-2 rounded-full bg-emerald-500 shadow-2xs" />
+                                <span className="hidden xs:inline">Active</span>
+                              </span>
+                            ) : statusKind === "ready" ? (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-600">
+                                <span className="w-2 h-2 rounded-full bg-slate-400" />
+                                <span className="hidden xs:inline">Ready</span>
+                              </span>
+                            ) : statusKind === "needs_key" ? (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-amber-800">
+                                <span className="w-2 h-2 rounded-full bg-amber-400" />
+                                <span className="hidden xs:inline">Needs key</span>
+                              </span>
+                            ) : (
+                              <span className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-500">
+                                <span className="w-2 h-2 rounded-full bg-slate-300" />
+                                <span className="hidden xs:inline">Disabled</span>
+                              </span>
+                            )}
+                          </div>
+
+                          {/* Enable Switch Toggle */}
+                          <div className="shrink-0 flex items-center">
+                            <button
+                              type="button"
+                              role="switch"
+                              aria-checked={p.enabled}
+                              onClick={() => handleUpdateProvider(p.id, { enabled: !p.enabled })}
+                              className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                                p.enabled ? "bg-blue-600" : "bg-slate-300"
+                              }`}
+                              title={`Toggle ${p.name} ON/OFF`}
+                              aria-label={`Toggle ${p.name} ON or OFF`}
+                            >
+                              <span
+                                className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition-transform duration-150 ease-in-out ${
+                                  p.enabled ? "translate-x-4" : "translate-x-0"
+                                }`}
+                              />
+                            </button>
+                          </div>
+
+                          {/* Configure Accordion Button */}
+                          <div className="shrink-0">
+                            <button
+                              type="button"
+                              onClick={() => setExpandedProviderId(isExpanded ? null : p.id)}
+                              className={`px-2.5 py-1 text-xs font-medium rounded-lg border transition-all cursor-pointer flex items-center gap-1 active:scale-[0.98] focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                                isExpanded
+                                  ? "bg-blue-50 text-blue-700 border-blue-200"
+                                  : "bg-white text-slate-700 border-slate-200 hover:bg-slate-50"
+                              }`}
+                              aria-expanded={isExpanded}
+                              aria-label={`Configure ${p.name}`}
+                            >
+                              <span>Configure</span>
+                              <ChevronDown className={`w-3.5 h-3.5 transition-transform duration-150 motion-reduce:transition-none ${isExpanded ? "rotate-180" : ""}`} />
+                            </button>
+                          </div>
+                        </div>
+
+                        {/* Expandable Configuration Drawer/Panel (Full Width) */}
+                        {isExpanded && (
+                          <div className="p-3.5 sm:p-4 bg-slate-50/90 border-t border-slate-100 space-y-3.5 transition-all duration-150 ease-out motion-reduce:transition-none">
+                            {/* Priority reordering & Get Free Key */}
+                            <div className="flex flex-wrap items-center justify-between gap-2 text-xs">
+                              <div className="flex items-center gap-2">
+                                <span className="text-slate-600 font-medium">Priority Order:</span>
+                                <div className="flex items-center gap-1">
                                   <button
                                     type="button"
                                     onClick={() => handleMovePriority(p.id, "up")}
                                     disabled={idx === 0}
-                                    className="text-slate-400 hover:text-blue-600 disabled:opacity-20 cursor-pointer leading-none"
+                                    className="p-1 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
                                     title="Increase Priority"
+                                    aria-label="Increase priority"
                                   >
-                                    <ArrowUp className="w-2.5 h-2.5" />
+                                    <ArrowUp className="w-3.5 h-3.5" />
                                   </button>
+                                  <span className="font-semibold text-slate-800">#{p.priority}</span>
                                   <button
                                     type="button"
                                     onClick={() => handleMovePriority(p.id, "down")}
                                     disabled={idx === providers.length - 1}
-                                    className="text-slate-400 hover:text-blue-600 disabled:opacity-20 cursor-pointer leading-none"
+                                    className="p-1 rounded hover:bg-slate-200 disabled:opacity-30 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
                                     title="Decrease Priority"
+                                    aria-label="Decrease priority"
                                   >
-                                    <ArrowDown className="w-2.5 h-2.5" />
+                                    <ArrowDown className="w-3.5 h-3.5" />
                                   </button>
                                 </div>
                               </div>
 
-                              {/* AI Brand Logo & Name */}
-                              <div className="flex items-center gap-2 min-w-0">
-                                <div className="p-1 rounded-lg bg-white shadow-2xs border border-slate-200 shrink-0 flex items-center justify-center">
-                                  <AIBrandLogo providerId={p.id} size="md" />
-                                </div>
-                                <div className="min-w-0">
-                                  <h4 className={`text-xs font-extrabold truncate ${p.enabled ? theme.titleColor : "text-slate-700"}`} title={p.name}>
-                                    {p.name}
-                                  </h4>
-                                  <span className={`inline-block text-[9px] px-1.5 py-0.2 rounded font-bold border ${p.enabled ? theme.badgeStyle : "bg-slate-200 text-slate-600 border-slate-300"}`}>
-                                    {theme.badgeLabel}
-                                  </span>
-                                </div>
-                              </div>
+                              {helpConfig?.apiKeyUrl && (
+                                <button
+                                  type="button"
+                                  onClick={() => setFreeKeyModalProvider(helpConfig)}
+                                  className="text-xs font-medium text-blue-700 hover:text-blue-900 hover:underline flex items-center gap-1 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+                                >
+                                  <span>Get free API key for {p.name}</span>
+                                  <ExternalLink className="w-3 h-3" />
+                                </button>
+                              )}
                             </div>
 
-                            {/* ON/OFF Switch with AI Brand Color */}
-                            <div
-                              onClick={() => handleUpdateProvider(p.id, { enabled: !p.enabled })}
-                              className={`w-11 h-6 flex items-center rounded-full p-0.5 cursor-pointer transition-colors shrink-0 ${
-                                p.enabled ? theme.switchActiveBg : "bg-slate-300"
-                              }`}
-                              title={`Toggle ${p.name} ON/OFF`}
-                            >
-                              <div
-                                className={`bg-white w-5 h-5 rounded-full shadow-xs transform transition-transform flex items-center justify-center text-[8px] font-bold ${
-                                  p.enabled ? "translate-x-5 text-slate-900" : "translate-x-0 text-slate-400"
-                                }`}
-                              >
-                                {p.enabled ? "ON" : "OFF"}
-                              </div>
-                            </div>
-                          </div>
-
-                          {/* Status & Free Tier / Get Key Link */}
-                          <div className="flex items-center justify-between gap-1 text-[10px]">
-                            <span
-                              className={`px-1.5 py-0.5 rounded-full font-semibold border truncate ${
-                                !p.enabled
-                                  ? "bg-slate-100 text-slate-600 border-slate-200"
-                                  : p.status === "active"
-                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200 font-bold"
-                                  : p.status === "rate_limited"
-                                  ? "bg-amber-50 text-amber-800 border-amber-200 font-bold"
-                                  : "bg-rose-50 text-rose-800 border-rose-200 font-bold"
-                              }`}
-                            >
-                              {!p.enabled
-                                ? "○ Disabled"
-                                : p.status === "active"
-                                ? "✓ Active"
-                                : p.status === "rate_limited"
-                                ? "⚠ Rate Limit"
-                                : "✕ Invalid Key"}
-                            </span>
-                            <span className="text-slate-500 font-medium">
-                              {p.apiKeys.length} key{p.apiKeys.length === 1 ? "" : "s"} ({activeKeysCount} ON)
-                            </span>
-                          </div>
-
-                          {/* Free Key / Manual Config Info Line */}
-                          {p.id === "custom" ? (
-                            <div className="text-[10px] text-slate-600 bg-white/90 px-2 py-1 rounded-md border border-slate-200 italic font-mono">
-                              Custom endpoint — configure manually
-                            </div>
-                          ) : helpConfig ? (
-                            <div className="flex items-center justify-between gap-1 text-[11px] bg-white/90 px-2 py-1 rounded-md border border-slate-200/90 shadow-2xs">
-                              <span className="text-[10px] text-emerald-800 font-bold truncate" title={helpConfig.freeLabel}>
-                                {helpConfig.freeLabel}
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setFreeKeyModalProvider(helpConfig)}
-                                className={`inline-flex items-center gap-1 text-[10px] font-bold hover:underline shrink-0 cursor-pointer ${theme.accentText}`}
-                              >
-                                <span>Get Free API Key</span>
-                                <ExternalLink className="w-2.5 h-2.5" />
-                              </button>
-                            </div>
-                          ) : null}
-                        </div>
-
-                        {/* Provider Card Body */}
-                        <div className="p-3.5 space-y-3 flex-1 flex flex-col justify-between">
-                          <div className="space-y-2.5">
-                            {/* Model Selector with Dynamic Catalog Refresh */}
-                            <div>
-                              <div className="flex items-center justify-between mb-1">
-                                <label className="text-[11px] font-bold text-slate-700">
-                                  Selected Model:
-                                </label>
+                            {/* Model Selection */}
+                            <div className="space-y-1.5">
+                              <div className="flex items-center justify-between">
+                                <label htmlFor={`select-model-${p.id}`} className="text-xs font-medium text-slate-700">Selected Model</label>
                                 <button
                                   type="button"
                                   onClick={() => handleRefreshModels(p.id)}
                                   disabled={refreshingProviderId === p.id}
-                                  className="inline-flex items-center gap-1 text-[10px] text-blue-600 hover:text-blue-800 font-semibold cursor-pointer disabled:opacity-50"
-                                  title="Fetch latest models from provider catalog"
+                                  className="text-xs text-slate-600 hover:text-slate-900 flex items-center gap-1 cursor-pointer disabled:opacity-50 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
                                 >
-                                  <RefreshCw className={`w-2.5 h-2.5 ${refreshingProviderId === p.id ? "animate-spin" : ""}`} />
-                                  <span>{refreshingProviderId === p.id ? "Fetching..." : "Refresh"}</span>
+                                  <RefreshCw className={`w-3 h-3 ${refreshingProviderId === p.id ? "animate-spin text-blue-600 motion-reduce:animate-none" : ""}`} />
+                                  <span>{refreshingProviderId === p.id ? "Refreshing..." : "Refresh Catalog"}</span>
                                 </button>
                               </div>
                               <select
+                                id={`select-model-${p.id}`}
                                 value={p.selectedModel}
                                 onChange={(e) => handleUpdateProvider(p.id, { selectedModel: e.target.value })}
-                                className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800 focus:ring-1 focus:ring-blue-500"
+                                className="w-full text-xs bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                               >
                                 {(() => {
                                   const canonical = canonicalProviderId(p.id);
@@ -1728,8 +1246,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                   const readyList = (testReport?.readyModels || []).filter(
                                     (m) => canonicalProviderId(m.provider) === canonical
                                   );
-
-                                  // Strictly provider-scoped candidates
                                   const registryModels = getActiveModels(p.id);
                                   const catalogModels = getCatalogModels(p.id);
                                   const availableFallback = (p.availableModels || []).filter(
@@ -1739,7 +1255,6 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                   const seen = new Set<string>();
                                   const modelsToRender: Array<{ id: string; name: string; isReady: boolean; isFree: boolean }> = [];
 
-                                  // 1. Ready to deploy models for THIS provider strictly at top
                                   for (const m of readyList) {
                                     if (!seen.has(m.id)) {
                                       seen.add(m.id);
@@ -1752,12 +1267,12 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                     }
                                   }
 
-                                  // 2. Additional available models for this provider
-                                  const basePool = registryModels.length > 0
-                                    ? registryModels
-                                    : availableFallback.length > 0
-                                    ? availableFallback
-                                    : catalogModels;
+                                  const basePool =
+                                    registryModels.length > 0
+                                      ? registryModels
+                                      : availableFallback.length > 0
+                                      ? availableFallback
+                                      : catalogModels;
 
                                   for (const m of basePool) {
                                     if (!seen.has(m.id)) {
@@ -1772,176 +1287,184 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                   }
 
                                   if (modelsToRender.length === 0) {
-                                    return (
-                                      <option value="" disabled>
-                                        No models configured for {p.name}
-                                      </option>
-                                    );
+                                    return <option value="" disabled>No models configured</option>;
                                   }
 
                                   return modelsToRender.map((m) => (
                                     <option key={m.id} value={m.id}>
-                                      {m.isReady ? `✓ [Ready to Deploy] ${m.name}` : m.name} {m.isFree ? "(Free tier)" : "(Paid)"}
+                                      {m.isReady ? `✓ ${m.name}` : m.name} {m.isFree ? "(Free)" : "(Paid)"}
                                     </option>
                                   ));
                                 })()}
                               </select>
                             </div>
 
-                            {/* Cloudflare Account ID */}
-                            {p.id === "cloudflare" && (
-                              <div>
-                                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                  Account ID:
-                                </label>
-                                <input
-                                  type="text"
-                                  placeholder="e.g. 7f3b8..."
-                                  value={p.accountId || ""}
-                                  onChange={(e) => handleUpdateProvider(p.id, { accountId: e.target.value })}
-                                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800"
-                                />
-                              </div>
-                            )}
-
-                            {/* Custom AI Endpoint */}
+                            {/* Custom Endpoint / Account ID */}
                             {p.id === "custom" && (
-                              <div>
-                                <label className="block text-[11px] font-bold text-slate-700 mb-1">
-                                  Custom Endpoint URL:
-                                </label>
+                              <div className="space-y-1">
+                                <label htmlFor="cfg-custom-endpoint" className="text-xs font-medium text-slate-700 block">Custom Endpoint URL</label>
                                 <input
+                                  id="cfg-custom-endpoint"
                                   type="text"
                                   placeholder="http://localhost:11434/v1/..."
                                   value={p.customEndpoint || ""}
                                   onChange={(e) => handleUpdateProvider(p.id, { customEndpoint: e.target.value })}
-                                  className="w-full text-xs bg-slate-50 border border-slate-300 rounded-md p-1.5 text-slate-800 font-mono text-[11px]"
+                                  className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                 />
                               </div>
                             )}
-                          </div>
 
-                          {/* API Keys Header and List */}
-                          <div className="space-y-2 pt-2 border-t border-slate-100">
-                            <div className="flex items-center justify-between">
-                              <span className="text-xs font-bold text-slate-800 flex items-center gap-1">
-                                <Key className={`w-3.5 h-3.5 ${theme.accentText}`} />
-                                API Keys ({p.apiKeys.length})
-                              </span>
-                              <button
-                                type="button"
-                                onClick={() => setShowAddKeyFor(showAddKeyFor === p.id ? null : p.id)}
-                                className={`inline-flex items-center gap-0.5 text-xs font-semibold hover:underline cursor-pointer ${theme.accentText}`}
-                              >
-                                <Plus className="w-3 h-3" />
-                                <span>{showAddKeyFor === p.id ? "Cancel" : "Add Key"}</span>
-                              </button>
-                            </div>
-
-                            {/* Add key input form */}
-                            {showAddKeyFor === p.id && (
-                              <div className="p-2.5 bg-slate-50/90 rounded-lg border border-slate-200 space-y-2">
+                            {p.id === "cloudflare" && (
+                              <div className="space-y-1">
+                                <label htmlFor="cfg-cf-account" className="text-xs font-medium text-slate-700 block">Cloudflare Account ID</label>
                                 <input
+                                  id="cfg-cf-account"
                                   type="text"
-                                  placeholder="Key Label (e.g. Primary)"
-                                  value={newKeyInputs[p.id]?.name || ""}
-                                  onChange={(e) =>
-                                    setNewKeyInputs((prev) => ({
-                                      ...prev,
-                                      [p.id]: { ...(prev[p.id] || { key: "", name: "" }), name: e.target.value },
-                                    }))
-                                  }
-                                  className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800"
+                                  placeholder="e.g. 7f3b8..."
+                                  value={p.accountId || ""}
+                                  onChange={(e) => handleUpdateProvider(p.id, { accountId: e.target.value })}
+                                  className="w-full text-xs font-mono bg-white border border-slate-200 rounded-lg p-2 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                 />
-                                <input
-                                  type="password"
-                                  placeholder="Enter raw secret key..."
-                                  value={newKeyInputs[p.id]?.key || ""}
-                                  onChange={(e) =>
-                                    setNewKeyInputs((prev) => ({
-                                      ...prev,
-                                      [p.id]: { ...(prev[p.id] || { key: "", name: "" }), key: e.target.value },
-                                    }))
-                                  }
-                                  className="w-full text-xs bg-white border border-slate-300 rounded p-1.5 text-slate-800 font-mono"
-                                />
-                                <div className="flex justify-end">
-                                  <button
-                                    type="button"
-                                    onClick={() => handleAddKey(p.id)}
-                                    className={`px-2.5 py-1 rounded text-white text-xs font-semibold cursor-pointer shadow-2xs ${theme.switchActiveBg}`}
-                                  >
-                                    Save Key
-                                  </button>
-                                </div>
                               </div>
                             )}
 
-                            {/* Internal Scrollable API Key List (max-height & overflow-y: auto) */}
-                            <div className="max-h-[160px] overflow-y-auto pr-0.5 space-y-1.5">
-                              {p.apiKeys.length === 0 ? (
-                                <div className="p-2.5 bg-slate-50 rounded-lg border border-dashed border-slate-300 text-center text-[11px] text-slate-500">
-                                  No API keys configured.
-                                </div>
-                              ) : (
-                                p.apiKeys.map((k) => {
-                                  const testKey = `${p.id}-${k.id}`;
-                                  const isTestingThis = testingKeyId === testKey;
+                            {/* API Keys List */}
+                            <div className="space-y-2 pt-2 border-t border-slate-200">
+                              <div className="flex items-center justify-between">
+                                <span className="text-xs font-semibold text-slate-800">
+                                  API Keys ({p.apiKeys.length})
+                                </span>
+                                <button
+                                  type="button"
+                                  onClick={() => setShowAddKeyFor(showAddKeyFor === p.id ? null : p.id)}
+                                  className="text-xs font-medium text-blue-700 hover:text-blue-900 cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded px-1"
+                                >
+                                  {showAddKeyFor === p.id ? "Cancel" : "+ Add Key"}
+                                </button>
+                              </div>
 
-                                  return (
-                                    <div
-                                      key={k.id}
-                                      className={`p-2 rounded-lg border flex flex-col gap-1 text-xs transition-colors ${
-                                        k.enabled
-                                          ? "bg-white border-slate-200 shadow-2xs"
-                                          : "bg-slate-50/80 border-slate-200 text-slate-500"
-                                      }`}
+                              {showAddKeyFor === p.id && (
+                                <div className="p-3 bg-white rounded-lg border border-slate-200 space-y-2">
+                                  <label htmlFor={`new-key-name-${p.id}`} className="sr-only">Key Label</label>
+                                  <input
+                                    id={`new-key-name-${p.id}`}
+                                    type="text"
+                                    placeholder="Key Label (e.g. Primary)"
+                                    value={newKeyInputs[p.id]?.name || ""}
+                                    onChange={(e) =>
+                                      setNewKeyInputs((prev) => ({
+                                        ...prev,
+                                        [p.id]: { ...(prev[p.id] || { key: "", name: "" }), name: e.target.value },
+                                      }))
+                                    }
+                                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md p-1.5 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  />
+                                  <label htmlFor={`new-key-secret-${p.id}`} className="sr-only">Secret Key</label>
+                                  <input
+                                    id={`new-key-secret-${p.id}`}
+                                    type="password"
+                                    placeholder="Enter secret API key..."
+                                    value={newKeyInputs[p.id]?.key || ""}
+                                    onChange={(e) =>
+                                      setNewKeyInputs((prev) => ({
+                                        ...prev,
+                                        [p.id]: { ...(prev[p.id] || { key: "", name: "" }), key: e.target.value },
+                                      }))
+                                    }
+                                    className="w-full text-xs bg-slate-50 border border-slate-200 rounded-md p-1.5 text-slate-800 font-mono focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                                  />
+                                  <div className="flex justify-end">
+                                    <button
+                                      type="button"
+                                      onClick={() => handleAddKey(p.id)}
+                                      className="px-3 py-1 bg-blue-600 hover:bg-blue-700 text-white rounded-md text-xs font-semibold cursor-pointer shadow-xs active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                                     >
-                                      {/* Key info row */}
-                                      <div className="flex items-center justify-between gap-1">
-                                        <span className="font-bold text-slate-900 truncate max-w-[90px]" title={k.name}>
-                                          {k.name}
-                                        </span>
-                                        <code className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-[10px] text-slate-700 truncate">
-                                          {k.maskedKey}
-                                        </code>
-                                      </div>
+                                      Save Key
+                                    </button>
+                                  </div>
+                                </div>
+                              )}
 
-                                      {/* Controls row */}
-                                      <div className="flex items-center justify-between gap-1 pt-1 border-t border-slate-100">
-                                        {/* Status & Latency */}
-                                        <div className="flex items-center gap-1">
-                                          <span
-                                            className={`px-1 py-0.2 text-[9px] font-bold rounded border ${
-                                              !k.enabled
-                                                ? "bg-slate-100 text-slate-500 border-slate-200"
-                                                : k.status === "active"
-                                                ? "bg-emerald-50 text-emerald-700 border-emerald-200"
-                                                : k.status === "rate_limited"
-                                                ? "bg-amber-50 text-amber-800 border-amber-200"
-                                                : "bg-rose-50 text-rose-700 border-rose-200"
-                                            }`}
-                                          >
-                                            {!k.enabled ? "OFF" : k.status === "active" ? "Active" : k.status || "Ready"}
+                              <div className="space-y-1.5">
+                                {p.apiKeys.length === 0 ? (
+                                  <div className="p-4 bg-white rounded-lg border border-dashed border-slate-200 text-center text-xs text-slate-600 flex flex-col items-center gap-2">
+                                    <div className="w-8 h-8 rounded-full bg-slate-100 flex items-center justify-center text-slate-500">
+                                      <Key className="w-4 h-4 text-slate-400" />
+                                    </div>
+                                    <span className="font-medium text-slate-800">No API keys yet — Add your first provider key</span>
+                                    <button
+                                      type="button"
+                                      onClick={() => setShowAddKeyFor(p.id)}
+                                      className="px-2.5 py-1 text-xs font-semibold text-blue-700 hover:text-blue-900 bg-blue-50 hover:bg-blue-100 border border-blue-200 rounded-md cursor-pointer transition-colors"
+                                    >
+                                      + Add API Key
+                                    </button>
+                                  </div>
+                                ) : (
+                                  p.apiKeys.map((k) => {
+                                    const testKey = `${p.id}-${k.id}`;
+                                    const isTestingThis = testingKeyId === testKey;
+                                    const isRevealed = Boolean(revealedKeyIds[k.id]);
+                                    const rawSecret = isRevealed
+                                      ? getUserProviders().find((u) => u.id === p.id)?.apiKeys?.find((uk) => uk.id === k.id)?.key || ""
+                                      : "";
+
+                                    return (
+                                      <div
+                                        key={k.id}
+                                        className="p-2.5 rounded-lg border border-slate-200 bg-white flex flex-col sm:flex-row sm:items-center justify-between gap-2 text-xs"
+                                      >
+                                        <div className="flex items-center gap-2 min-w-0">
+                                          <span className="font-medium text-slate-900 truncate" title={k.name}>
+                                            {k.name}
                                           </span>
-                                          {k.lastTestLatencyMs && (
-                                            <span className="text-[9px] text-slate-400">
-                                              {k.lastTestLatencyMs}ms
-                                            </span>
-                                          )}
+                                          <code className="px-1.5 py-0.5 rounded bg-slate-100 border border-slate-200 font-mono text-xs text-slate-600 truncate">
+                                            {isRevealed && rawSecret ? rawSecret : k.maskedKey}
+                                          </code>
+                                          <button
+                                            type="button"
+                                            onClick={() =>
+                                              setRevealedKeyIds((prev) => ({ ...prev, [k.id]: !prev[k.id] }))
+                                            }
+                                            className="text-slate-400 hover:text-slate-700 cursor-pointer p-0.5 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+                                            title={isRevealed ? "Hide key" : "Show key"}
+                                            aria-label={isRevealed ? "Hide API key" : "Show API key"}
+                                          >
+                                            {isRevealed ? <EyeOff className="w-3.5 h-3.5" /> : <Eye className="w-3.5 h-3.5" />}
+                                          </button>
                                         </div>
 
-                                        {/* Actions: ON/OFF, Test, Delete */}
-                                        <div className="flex items-center gap-1">
+                                        <div className="flex items-center gap-1.5 shrink-0 justify-end">
+                                          {isTestingThis ? (
+                                            <span className="inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium bg-blue-50 text-blue-700 border border-blue-200 animate-pulse">
+                                              <RefreshCw className="w-3 h-3 animate-spin mr-1 text-blue-600 motion-reduce:animate-none" />
+                                              Probing...
+                                            </span>
+                                          ) : (
+                                            <span
+                                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border ${
+                                                !k.enabled
+                                                  ? "bg-slate-100 text-slate-600 border-slate-200"
+                                                  : k.status === "active"
+                                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                                  : k.status === "rate_limited"
+                                                  ? "bg-amber-50 text-amber-800 border-amber-200"
+                                                  : "bg-rose-50 text-rose-800 border-rose-200"
+                                              }`}
+                                            >
+                                              {!k.enabled ? "OFF" : k.status === "active" ? "Active" : k.status || "Ready"}
+                                            </span>
+                                          )}
+
                                           <button
                                             type="button"
                                             onClick={() => handleToggleKey(p.id, k.id, k.enabled)}
-                                            className={`px-1.5 py-0.5 rounded text-[10px] font-bold transition-colors cursor-pointer border ${
+                                            className={`px-2 py-0.5 rounded text-xs font-medium transition-all cursor-pointer border active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 ${
                                               k.enabled
-                                                ? "bg-emerald-50 hover:bg-emerald-100 text-emerald-800 border-emerald-300"
-                                                : "bg-slate-100 hover:bg-slate-200 text-slate-600 border-slate-300"
+                                                ? "bg-slate-100 hover:bg-slate-200 text-slate-800 border-slate-200"
+                                                : "bg-white hover:bg-slate-50 text-slate-600 border-slate-200"
                                             }`}
-                                            title="Toggle key ON/OFF"
+                                            aria-label={`Toggle key ${k.name} ${k.enabled ? "OFF" : "ON"}`}
                                           >
                                             {k.enabled ? "ON" : "OFF"}
                                           </button>
@@ -1950,179 +1473,225 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                             type="button"
                                             onClick={() => handleTestKey(p.id, k.id, p.selectedModel)}
                                             disabled={isTestingThis}
-                                            className="px-1.5 py-0.5 rounded text-[10px] font-semibold bg-blue-50 hover:bg-blue-100 text-blue-800 border border-blue-200 cursor-pointer disabled:opacity-50 inline-flex items-center gap-0.5"
-                                            title="Test key connection"
+                                            className="px-2 py-0.5 rounded text-xs font-medium bg-white hover:bg-slate-50 text-slate-700 border border-slate-200 cursor-pointer disabled:opacity-50 inline-flex items-center gap-1 shadow-xs active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                                            aria-label={`Test connection for key ${k.name}`}
                                           >
-                                            <RefreshCw className={`w-2.5 h-2.5 ${isTestingThis ? "animate-spin text-blue-600" : ""}`} />
-                                            <span>{isTestingThis ? "..." : "Test"}</span>
+                                            <RefreshCw className={`w-3 h-3 ${isTestingThis ? "animate-spin text-blue-600 motion-reduce:animate-none" : "text-slate-400"}`} />
+                                            <span>{isTestingThis ? "Testing..." : "Test"}</span>
                                           </button>
 
                                           <button
                                             type="button"
                                             onClick={() => handleRemoveKey(p.id, k.id)}
-                                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer"
+                                            className="p-1 text-slate-400 hover:text-rose-600 transition-colors cursor-pointer rounded focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-rose-500"
                                             title="Remove key"
+                                            aria-label={`Remove key ${k.name}`}
                                           >
-                                            <Trash2 className="w-3 h-3" />
+                                            <Trash2 className="w-3.5 h-3.5" />
                                           </button>
                                         </div>
                                       </div>
+                                    );
+                                  })
+                                )}
+                              </div>
+                            </div>
 
-                                      {/* Key Error details if any */}
-                                      {k.lastError && (
-                                        <div className="mt-1 p-1.5 rounded bg-rose-50 border border-rose-200 text-[10px] text-rose-700 leading-tight">
-                                          {k.lastErrorCode && <span className="font-bold mr-1">[{k.lastErrorCode}]</span>}
-                                          {k.lastError}
-                                          {k.lastTestedModel && (
-                                            <span className="block text-[9px] text-rose-500 mt-0.5 font-mono">
-                                              Model: {k.lastTestedModel}
-                                            </span>
-                                          )}
-                                        </div>
-                                      )}
-
-                                      {/* Safe Diagnostic Info (Requirement 20) */}
-                                      {testResults[testKey]?.diagnostic && (
-                                        <div className="mt-1 p-1.5 rounded bg-slate-900 text-slate-100 font-mono text-[9px] space-y-0.5 leading-tight">
-                                          <div className="text-amber-400 font-bold">Diagnostic:</div>
-                                          <div className="truncate">Provider: {testResults[testKey].diagnostic?.provider}</div>
-                                          <div className="truncate">Model: {testResults[testKey].diagnostic?.modelId}</div>
-                                          <div className="truncate">Key: {testResults[testKey].diagnostic?.maskedKey}</div>
-                                          <div className="truncate">Result: {testResults[testKey].diagnostic?.result} ({testResults[testKey].latencyMs}ms)</div>
-                                        </div>
-                                      )}
-                                    </div>
+                            {/* Universal Model Tester */}
+                            <div className="pt-2 border-t border-slate-200">
+                              <UniversalModelTesterPanel
+                                providerId={p.id}
+                                providerName={p.name}
+                                apiKey={(() => {
+                                  const userProvs = getUserProviders();
+                                  const up = userProvs.find((u) => u.id === p.id);
+                                  return (
+                                    up?.apiKeys?.find((k) => k.enabled && k.key)?.key ||
+                                    up?.apiKeys?.[0]?.key ||
+                                    ""
                                   );
-                                })
-                              )}
+                                })()}
+                                customEndpoint={p.customEndpoint}
+                                accountId={p.accountId}
+                                selectedModelId={p.selectedModel}
+                                onSelectModel={(newModelId) => {
+                                  handleUpdateProvider(p.id, { selectedModel: newModelId });
+                                  if (config?.activeProviderId === p.id) {
+                                    handleUpdateConfig({ activeModel: newModelId });
+                                  }
+                                  showToast(`Selected ${newModelId} for ${p.name}`);
+                                }}
+                              />
                             </div>
                           </div>
-
-                          {/* Universal Model Tester & Discovery Engine */}
-                          <UniversalModelTesterPanel
-                            providerId={p.id}
-                            providerName={p.name}
-                            apiKey={(() => {
-                              const userProvs = getUserProviders();
-                              const up = userProvs.find((u) => u.id === p.id);
-                              return (
-                                up?.apiKeys?.find((k) => k.enabled && k.key)?.key ||
-                                up?.apiKeys?.[0]?.key ||
-                                ""
-                              );
-                            })()}
-                            customEndpoint={p.customEndpoint}
-                            accountId={p.accountId}
-                            selectedModelId={p.selectedModel}
-                            onSelectModel={(newModelId) => {
-                              handleUpdateProvider(p.id, { selectedModel: newModelId });
-                              if (config?.activeProviderId === p.id) {
-                                handleUpdateConfig({ activeModel: newModelId });
-                              }
-                              showStatus(`Selected ${newModelId} for ${p.name}`);
-                            }}
-                          />
-                        </div>
+                        )}
                       </div>
                     );
-                  })}
-                </div>
-              )}
+                  })
+                )}
+              </div>
             </div>
-            </>
-          ) : activeTab === "fallback" ? (
-            /* TAB 2: FALLBACK RULES & STRATEGY */
-            <div className="bg-white rounded-xl border border-slate-200 p-6 shadow-xs space-y-6">
+          ) : activeTab === "settings" ? (
+            /* TAB 2: SETTINGS (3 Simple rows in one card + reliability options) */
+            <div className="space-y-4 transition-opacity duration-150 ease-out motion-reduce:transition-none">
               <div>
-                <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                  <ShieldCheck className="w-4 h-4 text-emerald-600" />
-                  Fallback Engine & Routing Rules
-                </h3>
-                <p className="text-xs text-slate-500 mt-1">
-                  How the Central AI Request Manager automatically routes requests and protects against disruptions.
+                <h3 className="text-sm font-semibold text-slate-900">AI Execution & Routing Settings</h3>
+                <p className="text-xs text-slate-600">
+                  Configure global scheduling, automatic failover rules, and billing cost guardrails.
                 </p>
               </div>
 
-              <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
-                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                    <CheckCircle2 className="w-4 h-4 text-emerald-600" />
-                    Automatic Fallback Triggers
-                  </h4>
-                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                    <li><strong>HTTP 429 & Rate Limit:</strong> Rotates to next active key, then falls back to next enabled provider.</li>
-                    <li><strong>Provider Outages (500/502/503):</strong> Instantly fails over to the next priority provider.</li>
-                    <li><strong>Request Timeouts:</strong> Configured timeout (default 45s) interrupts hung queries and transfers execution.</li>
-                    <li><strong>Context Limits:</strong> If a note exceeds window, falls back to a larger context model automatically.</li>
-                  </ul>
+              {/* Single unified card with 3 simple setting rows */}
+              <div className="bg-white rounded-xl border border-slate-200 divide-y divide-slate-100 shadow-xs">
+                {/* Row 1: Execution Mode */}
+                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">Execution Mode</div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Automatic prioritizes your fallback chain; Manual locks requests to your chosen active provider.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="settings_mode"
+                        checked={config?.mode === "automatic"}
+                        onChange={() => handleUpdateConfig({ mode: "automatic" })}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Automatic</span>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="settings_mode"
+                        checked={config?.mode === "manual"}
+                        onChange={() => handleUpdateConfig({ mode: "manual" })}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Manual</span>
+                    </label>
+                  </div>
                 </div>
 
-                <div className="p-4 rounded-xl border border-slate-200 bg-slate-50/60 space-y-3">
-                  <h4 className="text-xs font-bold text-slate-800 flex items-center gap-2">
-                    <AlertTriangle className="w-4 h-4 text-amber-600" />
-                    Non-Retryable Errors (Fast Failover)
-                  </h4>
-                  <ul className="text-xs text-slate-600 space-y-1.5 list-disc list-inside">
-                    <li><strong>HTTP 401 Invalid Key:</strong> Permanently marks the individual key as invalid and immediately skips further retries.</li>
-                    <li><strong>HTTP 403 Forbidden:</strong> Immediately steps to secondary provider without wasteful repeated attempts.</li>
-                    <li><strong>Disabled Providers/Keys:</strong> OFF providers and OFF keys are never called.</li>
-                  </ul>
+                {/* Row 2: Automatic Fallback */}
+                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="text-sm font-medium text-slate-900">Automatic Fallback</div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Automatically step down to secondary providers on rate-limits (429), timeouts, or server outages.
+                    </p>
+                  </div>
+                  <div className="shrink-0 flex items-center">
+                    <button
+                      type="button"
+                      role="switch"
+                      aria-checked={Boolean(config?.enableFallback)}
+                      onClick={() => handleUpdateConfig({ enableFallback: !config?.enableFallback })}
+                      className={`relative inline-flex h-5 w-9 shrink-0 cursor-pointer rounded-full border-2 border-transparent transition-colors duration-150 ease-in-out focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 ${
+                        config?.enableFallback ? "bg-blue-600" : "bg-slate-300"
+                      }`}
+                      aria-label="Toggle Automatic Fallback"
+                    >
+                      <span
+                        className={`pointer-events-none inline-block h-4 w-4 transform rounded-full bg-white shadow-xs transition-transform duration-150 ease-in-out ${
+                          config?.enableFallback ? "translate-x-4" : "translate-x-0"
+                        }`}
+                      />
+                    </button>
+                  </div>
+                </div>
+
+                {/* Row 3: Billing Mode */}
+                <div className="p-4 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+                  <div>
+                    <div className="flex items-center gap-2">
+                      <span className="text-sm font-medium text-slate-900">Billing Mode</span>
+                      <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-slate-100 text-slate-700 border border-slate-200">
+                        Zero Spend Guard
+                      </span>
+                    </div>
+                    <p className="text-xs text-slate-600 mt-0.5">
+                      Restricts requests strictly to free models & free tiers. Never switches to paid endpoints.
+                    </p>
+                  </div>
+                  <div className="flex items-center gap-3 shrink-0">
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="settings_billing"
+                        checked={config?.freeOnlyMode || config?.billingMode === "free_only"}
+                        onChange={() => handleUpdateConfig({ freeOnlyMode: true, billingMode: "free_only" })}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Free Only</span>
+                    </label>
+                    <label className="inline-flex items-center gap-1.5 text-xs font-medium text-slate-800 cursor-pointer">
+                      <input
+                        type="radio"
+                        name="settings_billing"
+                        checked={!config?.freeOnlyMode && config?.billingMode === "free_and_paid"}
+                        onChange={() => handleUpdateConfig({ freeOnlyMode: false, billingMode: "free_and_paid" })}
+                        className="text-blue-600 focus:ring-blue-500"
+                      />
+                      <span>Free + Paid</span>
+                    </label>
+                  </div>
                 </div>
               </div>
 
-              {/* Advanced Strategy Options */}
-              <div className="border-t border-slate-200 pt-5 space-y-4">
-                <h4 className="text-xs font-bold text-slate-900">Advanced Fallback Controls</h4>
+              {/* Advanced Fallback Rules card */}
+              <div className="bg-white rounded-xl border border-slate-200 p-4 shadow-xs space-y-3">
+                <h4 className="text-xs font-semibold text-slate-900">Failover Rules & Reliability</h4>
                 <div className="space-y-3">
-                  <label className="flex items-center gap-2.5 text-xs text-slate-800 cursor-pointer">
+                  <label className="flex items-center gap-2 text-xs text-slate-800 cursor-pointer">
                     <input
                       type="checkbox"
                       checked={Boolean(config?.enableModelFallback)}
                       onChange={(e) => handleUpdateConfig({ enableModelFallback: e.target.checked })}
-                      className="rounded text-blue-600 focus:ring-blue-500 w-4 h-4"
+                      className="rounded border-slate-300 text-blue-600 focus:ring-blue-500 w-4 h-4"
                     />
                     <div>
-                      <span className="font-semibold block">Intra-Provider Model Fallback</span>
-                      <span className="text-slate-500 text-[11px]">
-                        Try larger or alternative models within the same provider before hopping to another provider.
+                      <span className="font-medium block">Intra-Provider Model Fallback</span>
+                      <span className="text-slate-600 text-xs">
+                        Try alternative models within the same provider before hopping to another provider.
                       </span>
                     </div>
                   </label>
 
-                  <div className="flex items-center gap-3 pt-2">
-                    <label className="text-xs font-bold text-slate-700">Default Request Timeout:</label>
+                  <div className="flex items-center gap-3 pt-1 border-t border-slate-100">
+                    <label htmlFor="settings-req-timeout" className="text-xs font-medium text-slate-700">Request Timeout:</label>
                     <select
+                      id="settings-req-timeout"
                       value={config?.defaultTimeoutMs || 45000}
                       onChange={(e) => handleUpdateConfig({ defaultTimeoutMs: Number(e.target.value) })}
-                      className="text-xs bg-slate-50 border border-slate-300 rounded-md p-2 text-slate-800"
+                      className="text-xs bg-white border border-slate-200 rounded-lg p-1.5 text-slate-800 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                     >
                       <option value={20000}>20 Seconds (Fast Fail)</option>
                       <option value={35000}>35 Seconds (Balanced)</option>
-                      <option value={45000}>45 Seconds (Standard for Long Notes)</option>
+                      <option value={45000}>45 Seconds (Standard)</option>
                       <option value={60000}>60 Seconds (Maximum Patience)</option>
                     </select>
                   </div>
                 </div>
               </div>
             </div>
-          ) : activeTab === "stats" ? (
+          ) : activeTab === "usage" ? (
             /* TAB 3: USAGE & TELEMETRY */
-            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs space-y-6">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div className="space-y-4 transition-opacity duration-150 ease-out motion-reduce:transition-none">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <Activity className="w-4 h-4 text-emerald-600" />
-                    Provider Telemetry & Health Metrics
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">Live operational performance, latency benchmarks, and quota telemetry.</p>
+                  <h3 className="text-sm font-semibold text-slate-900">Provider Telemetry & Health</h3>
+                  <p className="text-xs text-slate-600">Live operational performance, latency benchmarks, and rate limit telemetry.</p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => {
                       fetchAIConfig();
-                      showStatus("Telemetry data refreshed.");
+                      showToast("Telemetry data refreshed.");
                     }}
-                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer text-slate-700 shadow-2xs"
+                    className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer text-slate-700 shadow-xs active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
                     <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
                     <span>Refresh</span>
@@ -2130,32 +1699,31 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                   <button
                     onClick={handleTestAll}
                     disabled={testingKeyId !== null}
-                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-blue-600 hover:bg-blue-700 active:bg-blue-800 text-white flex items-center gap-1.5 cursor-pointer shadow-2xs"
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
-                    <Zap className="w-3.5 h-3.5" />
-                    <span>Probe All Providers</span>
+                    <Sparkles className="w-3.5 h-3.5" />
+                    <span>{testingKeyId !== null ? "Probing..." : "Probe All"}</span>
                   </button>
                   <button
                     onClick={handleResetTelemetry}
-                    className="px-2 py-1.5 text-xs font-medium rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 cursor-pointer"
-                    title="Reset metrics to initial baseline"
+                    className="px-2.5 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300"
                   >
                     Reset
                   </button>
                 </div>
               </div>
 
-              {/* KPI Cards */}
+              {/* KPI Summary Cards */}
               <div className="grid grid-cols-2 sm:grid-cols-4 gap-3">
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Total Requests</div>
-                  <div className="text-xl font-black text-slate-900 mt-1">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="text-xs font-medium text-slate-600">Total Requests</div>
+                  <div className="text-lg font-semibold text-slate-900 mt-1">
                     {stats.reduce((acc, s) => acc + (s.requestCount || 0), 0)}
                   </div>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Avg Success Rate</div>
-                  <div className="text-xl font-black text-emerald-600 mt-1">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="text-xs font-medium text-slate-600">Avg Success Rate</div>
+                  <div className="text-lg font-semibold text-emerald-700 mt-1">
                     {(() => {
                       const totalReq = stats.reduce((acc, s) => acc + (s.requestCount || 0), 0);
                       const totalSuccess = stats.reduce((acc, s) => acc + (s.successCount || 0), 0);
@@ -2163,15 +1731,15 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     })()}%
                   </div>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Rate Limits (429)</div>
-                  <div className="text-xl font-black text-amber-600 mt-1">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="text-xs font-medium text-slate-600">Rate Limits (429)</div>
+                  <div className="text-lg font-semibold text-amber-700 mt-1">
                     {stats.reduce((acc, s) => acc + (s.rateLimitCount || 0), 0)}
                   </div>
                 </div>
-                <div className="bg-slate-50 p-3 rounded-xl border border-slate-200">
-                  <div className="text-[11px] font-semibold text-slate-500 uppercase tracking-wide">Average Latency</div>
-                  <div className="text-xl font-black text-blue-600 mt-1">
+                <div className="bg-white p-3 rounded-xl border border-slate-200 shadow-xs">
+                  <div className="text-xs font-medium text-slate-600">Average Latency</div>
+                  <div className="text-lg font-semibold text-blue-700 mt-1">
                     {(() => {
                       const activeWithLat = stats.filter((s) => (s.requestCount || 0) > 0 && (s.averageLatencyMs || 0) > 0);
                       if (activeWithLat.length === 0) return "14 ms";
@@ -2184,17 +1752,17 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                 </div>
               </div>
 
-              {/* Table */}
-              <div className="overflow-x-auto rounded-xl border border-slate-200">
-                <table className="w-full text-left text-xs">
-                  <thead className="bg-slate-100/80 text-slate-700 font-extrabold border-b border-slate-200">
+              {/* Clean Table with Sticky Header */}
+              <div className="overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-xs max-h-[360px]">
+                <table className="w-full text-left text-[13px]">
+                  <thead className="sticky top-0 bg-slate-50 text-slate-700 font-semibold border-b border-slate-200 z-10">
                     <tr>
                       <th className="p-3">Provider</th>
                       <th className="p-3">Requests</th>
                       <th className="p-3">Success Rate</th>
                       <th className="p-3">429 Caught</th>
                       <th className="p-3">Avg Latency</th>
-                      <th className="p-3">Est. Tokens</th>
+                      <th className="p-3">Tokens</th>
                       <th className="p-3 text-right">Quick Probe</th>
                     </tr>
                   </thead>
@@ -2207,47 +1775,39 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                       const isProbingThis = testingKeyId === s.providerId;
 
                       return (
-                        <tr key={s.providerId} className="hover:bg-slate-50/70 transition-colors">
-                          <td className="p-3 font-bold text-slate-900">
+                        <tr key={s.providerId} className="hover:bg-slate-50/60 transition-colors">
+                          <td className="p-3 font-medium text-slate-900">
                             <div className="flex items-center gap-2">
                               <AIBrandLogo providerId={s.providerId.toLowerCase()} size="sm" />
                               <div className="min-w-0">
                                 <div className="truncate">{s.providerName}</div>
                                 {s.lastErrorMessage && (
-                                  <div className="text-[10px] text-rose-500 font-normal truncate max-w-xs">
-                                    Last error: {s.lastErrorMessage}
+                                  <div className="text-xs text-rose-600 font-normal truncate max-w-xs">
+                                    {s.lastErrorMessage}
                                   </div>
                                 )}
                               </div>
                             </div>
                           </td>
-                          <td className="p-3 font-semibold">{reqCount}</td>
+                          <td className="p-3">{reqCount}</td>
                           <td className="p-3">
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[11px] font-bold ${
+                              className={`inline-flex items-center px-1.5 py-0.5 rounded text-xs font-medium border ${
                                 reqCount === 0
-                                  ? "bg-slate-100 text-slate-600"
+                                  ? "bg-slate-100 text-slate-700 border-slate-200"
                                   : successRate >= 90
-                                  ? "bg-emerald-100 text-emerald-800 border border-emerald-200"
-                                  : "bg-amber-100 text-amber-800 border border-amber-200"
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  : "bg-amber-50 text-amber-800 border-amber-200"
                               }`}
                             >
                               {reqCount === 0 ? "Ready" : `${successRate}%`}
                             </span>
                           </td>
-                          <td className="p-3">
-                            <span
-                              className={`font-semibold ${
-                                (s.rateLimitCount || 0) > 0 ? "text-amber-700 font-bold" : "text-slate-500"
-                              }`}
-                            >
-                              {s.rateLimitCount || 0}
-                            </span>
-                          </td>
-                          <td className="p-3 font-mono text-slate-800 font-medium">
+                          <td className="p-3">{s.rateLimitCount || 0}</td>
+                          <td className="p-3 font-mono text-slate-700">
                             {s.averageLatencyMs ? `${s.averageLatencyMs} ms` : "—"}
                           </td>
-                          <td className="p-3 text-slate-500">
+                          <td className="p-3 text-slate-600">
                             {totalTokens > 0 ? `${(totalTokens / 1000).toFixed(1)}k` : "0"}
                           </td>
                           <td className="p-3 text-right">
@@ -2259,12 +1819,13 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                                 handleTestKey(s.providerId, activeKey?.id || "default", prov?.selectedModel);
                               }}
                               disabled={testingKeyId !== null}
-                              className="px-2 py-1 text-[11px] font-bold rounded-md border border-slate-200 hover:border-blue-400 hover:bg-blue-50 text-slate-700 hover:text-blue-700 transition-colors cursor-pointer inline-flex items-center gap-1 shadow-2xs"
+                              className="px-2.5 py-1 text-xs font-medium rounded-md border border-slate-200 hover:bg-slate-50 text-slate-700 transition-all cursor-pointer inline-flex items-center gap-1 shadow-xs active:scale-[0.98] focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500"
+                              aria-label={`Probe provider ${s.providerName}`}
                             >
                               {isProbingThis ? (
-                                <RefreshCw className="w-3 h-3 animate-spin text-blue-600" />
+                                <RefreshCw className="w-3 h-3 animate-spin text-blue-600 motion-reduce:animate-none" />
                               ) : (
-                                <Zap className="w-3 h-3 text-amber-500" />
+                                <Sparkles className="w-3 h-3 text-slate-500" />
                               )}
                               <span>Probe</span>
                             </button>
@@ -2278,69 +1839,74 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
             </div>
           ) : (
             /* TAB 4: AUDIT LOGS */
-            <div className="bg-white rounded-xl border border-slate-200 p-4 sm:p-6 shadow-xs space-y-4">
-              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3 border-b border-slate-200 pb-4">
+            <div className="space-y-4 transition-opacity duration-150 ease-out motion-reduce:transition-none">
+              <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
                 <div>
-                  <h3 className="text-sm font-bold text-slate-900 flex items-center gap-2">
-                    <ScrollText className="w-4 h-4 text-purple-600" />
-                    AI Execution & Failover Audit Logs
-                  </h3>
-                  <p className="text-xs text-slate-500 mt-0.5">
-                    Step-by-step trace of model routing, 429 rate limit recoveries, key rotation, and multi-hop provider fallbacks.
+                  <h3 className="text-sm font-semibold text-slate-900">Failover & Routing Audit Logs</h3>
+                  <p className="text-xs text-slate-600">
+                    Step-by-step trace of model routing, 429 recoveries, and multi-hop provider fallbacks.
                   </p>
                 </div>
                 <div className="flex items-center gap-2 flex-wrap">
                   <button
                     onClick={() => {
                       fetchAIConfig();
-                      showStatus("Audit logs refreshed.");
+                      showToast("Audit logs refreshed.");
                     }}
-                    className="px-2.5 py-1.5 text-xs font-semibold rounded-lg border border-slate-300 hover:bg-slate-100 flex items-center gap-1.5 cursor-pointer text-slate-700 shadow-2xs"
+                    className="px-2.5 py-1.5 text-xs font-medium rounded-lg border border-slate-200 bg-white hover:bg-slate-50 flex items-center gap-1.5 cursor-pointer text-slate-700 shadow-xs active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
                   >
                     <RefreshCw className="w-3.5 h-3.5 text-slate-500" />
                     <span>Refresh</span>
                   </button>
                   <button
                     onClick={handleSimulateFailoverProbe}
-                    className="px-2.5 py-1.5 text-xs font-bold rounded-lg bg-purple-600 hover:bg-purple-700 active:bg-purple-800 text-white flex items-center gap-1.5 cursor-pointer shadow-2xs"
-                    title="Simulate a real multi-hop failover audit trace"
+                    className="px-3 py-1.5 text-xs font-semibold rounded-lg bg-blue-600 hover:bg-blue-700 text-white flex items-center gap-1.5 cursor-pointer shadow-xs active:scale-[0.98] transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2"
                   >
                     <Sparkles className="w-3.5 h-3.5" />
-                    <span>Simulate Failover Probe</span>
+                    <span>Simulate Probe</span>
                   </button>
                   <button
                     onClick={handleClearAuditLogs}
-                    className="px-2 py-1.5 text-xs font-medium rounded-lg text-slate-500 hover:text-rose-600 hover:bg-rose-50 border border-slate-200 cursor-pointer"
-                    title="Clear recent logs"
+                    className="px-2.5 py-1.5 text-xs font-medium rounded-lg text-slate-600 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-slate-300"
                   >
                     Clear Logs
                   </button>
                 </div>
               </div>
 
-              {/* Status Signal Guide compact legend beside / above logs */}
-              <StatusSignalGuide className="mb-3" />
+              {/* Collapsible Status Signal Guide (Collapsed by default) */}
+              <div className="border border-slate-200 rounded-xl overflow-hidden bg-white shadow-xs">
+                <button
+                  type="button"
+                  onClick={() => setShowStatusGuide(!showStatusGuide)}
+                  className="w-full px-4 py-2.5 bg-slate-50 hover:bg-slate-100 flex items-center justify-between text-xs font-medium text-slate-700 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  aria-expanded={showStatusGuide}
+                >
+                  <div className="flex items-center gap-2">
+                    <HelpCircle className="w-4 h-4 text-slate-500" />
+                    <span>How to read audit logs and status signals</span>
+                  </div>
+                  <ChevronDown className={`w-4 h-4 text-slate-500 transition-transform duration-150 motion-reduce:transition-none ${showStatusGuide ? "rotate-180" : ""}`} />
+                </button>
+                {showStatusGuide && (
+                  <div className="p-4 border-t border-slate-200 bg-white transition-opacity duration-150 ease-out motion-reduce:transition-none">
+                    <StatusSignalGuide />
+                  </div>
+                )}
+              </div>
 
               {logs.length === 0 ? (
-                <div className="text-center py-12 text-xs text-slate-400 border-2 border-dashed border-slate-200 rounded-xl space-y-3">
-                  <ScrollText className="w-8 h-8 text-slate-300 mx-auto" />
-                  <div>
-                    <p className="font-bold text-slate-700">No fallback audit logs recorded yet.</p>
-                    <p className="text-slate-400 mt-0.5">
-                      Polish notes or click "Simulate Failover Probe" above to observe the failover pipeline in action.
-                    </p>
+                <div className="text-center py-12 text-xs text-slate-500 border border-dashed border-slate-200 bg-white rounded-xl space-y-2">
+                  <div className="w-12 h-12 rounded-full bg-slate-100 flex items-center justify-center mx-auto text-slate-500">
+                    <ScrollText className="w-6 h-6" />
                   </div>
-                  <button
-                    type="button"
-                    onClick={handleSimulateFailoverProbe}
-                    className="px-3 py-1.5 text-xs font-bold rounded-lg bg-purple-100 text-purple-800 hover:bg-purple-200 border border-purple-300 cursor-pointer inline-flex items-center gap-1.5"
-                  >
-                    <Sparkles className="w-3.5 h-3.5" />
-                    <span>Generate Sample Multi-Hop Trace</span>
-                  </button>
+                  <p className="font-semibold text-slate-900">No fallback audit logs recorded yet.</p>
+                  <p className="text-slate-600 text-xs max-w-sm mx-auto">
+                    Format academic notes or click "Simulate Probe" above to observe the failover pipeline in action.
+                  </p>
                 </div>
               ) : (
-                <div className="space-y-3 max-h-[500px] overflow-y-auto pr-1">
+                <div className="space-y-3 max-h-[460px] overflow-y-auto pr-1">
                   {logs.map((log) => {
                     const finalProviderId = (log.finalProvider || "formatai").toLowerCase();
                     const chain = log.chain || [];
@@ -2352,120 +1918,74 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
                     return (
                       <div
                         key={log.id}
-                        className="p-3.5 rounded-xl border border-slate-200 bg-slate-50/80 hover:bg-slate-50 transition-colors text-xs space-y-3 shadow-2xs"
+                        className="p-3.5 rounded-xl border border-slate-200 bg-white hover:border-slate-300 transition-colors text-[13px] space-y-2.5 shadow-xs"
                       >
-                        {/* 1. User-Friendly Summary at the top of every log entry */}
-                        <div
-                          className={`p-2.5 rounded-xl border flex items-center justify-between gap-2 flex-wrap ${
-                            summary.badgeColor === "emerald"
-                              ? "bg-emerald-50/90 border-emerald-300 text-emerald-950"
-                              : summary.badgeColor === "amber"
-                              ? "bg-amber-50/90 border-amber-300 text-amber-950"
-                              : summary.badgeColor === "blue"
-                              ? "bg-blue-50/90 border-blue-300 text-blue-950"
-                              : "bg-rose-50/90 border-rose-300 text-rose-950"
-                          }`}
-                        >
+                        <div className="flex items-center justify-between gap-2 flex-wrap">
                           <div className="flex items-center gap-2 min-w-0">
-                            <span className="text-base shrink-0 leading-none">{summary.badgeIcon}</span>
+                            <span className="text-sm shrink-0 leading-none">{summary.badgeIcon}</span>
                             <div className="min-w-0">
-                              <div className="flex items-center gap-1.5 flex-wrap">
-                                <span className="font-black text-xs uppercase tracking-wider">
-                                  {summary.badgeLabel}
-                                </span>
-                                <span className="font-bold text-xs">
-                                  — {summary.headline}
-                                </span>
-                              </div>
-                              <p className="text-[11px] opacity-90 font-medium truncate mt-0.5">
-                                {summary.detailLine}
-                              </p>
+                              <span className="font-semibold text-slate-900">{summary.headline}</span>
+                              <span className="text-slate-600 ml-2 text-xs">{summary.detailLine}</span>
                             </div>
                           </div>
-                          <div className="text-[10px] font-mono opacity-80 bg-white/80 px-2 py-0.5 rounded border border-black/10 shrink-0">
-                            {timeStr}
-                          </div>
+                          <span className="text-xs font-mono text-slate-500 shrink-0">{timeStr}</span>
                         </div>
 
-                        {/* 2. Technical Header Row */}
-                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 border-b border-slate-200/70 pb-2">
+                        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pt-2 border-t border-slate-100 text-xs">
                           <div className="flex items-center gap-2 min-w-0">
                             <AIBrandLogo providerId={finalProviderId} size="sm" />
-                            <div className="min-w-0">
-                              <span className="font-extrabold text-slate-900 block leading-tight truncate">
-                                {log.requestSummary || "Academic Notes Polish"}
-                              </span>
-                              <span className="text-[10px] text-slate-500 font-mono">
-                                Resolved via {log.finalProvider} ({log.finalModel}) • {timeStr}
-                              </span>
-                            </div>
+                            <span className="text-slate-700 truncate">
+                              Resolved via <span className="font-semibold text-slate-900">{log.finalProvider}</span> ({log.finalModel})
+                            </span>
                           </div>
                           <div className="flex items-center gap-2 shrink-0">
                             {log.hopsCount > 0 && (
-                              <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-amber-100 text-amber-900 border border-amber-300">
-                                {log.hopsCount} Failover Hop{log.hopsCount > 1 ? "s" : ""}
+                              <span className="px-1.5 py-0.5 rounded text-xs font-medium bg-amber-50 text-amber-800 border border-amber-200">
+                                {log.hopsCount} Hop{log.hopsCount > 1 ? "s" : ""}
                               </span>
                             )}
                             <span
-                              className={`px-2 py-0.5 rounded-full text-[10px] font-extrabold tracking-wide uppercase ${
-                                summary.badgeColor === "blue"
-                                  ? "bg-blue-100 text-blue-900 border border-blue-300"
-                                  : log.success
-                                  ? "bg-emerald-100 text-emerald-900 border border-emerald-300"
-                                  : "bg-rose-100 text-rose-900 border border-rose-300"
+                              className={`px-1.5 py-0.5 rounded text-xs font-medium border ${
+                                log.success
+                                  ? "bg-emerald-50 text-emerald-800 border-emerald-200"
+                                  : "bg-rose-50 text-rose-800 border-rose-200"
                               }`}
                             >
-                              {summary.badgeColor === "blue" ? "SIMULATION" : log.success ? "SUCCESS" : "FAILED"}
+                              {log.success ? "Success" : "Failed"}
                             </span>
-                            <span className="text-slate-600 font-mono font-bold text-[11px] bg-white px-2 py-0.5 rounded border border-slate-200">
+                            <span className="text-slate-600 font-mono text-xs">
                               {log.totalLatencyMs || 0}ms
                             </span>
                           </div>
                         </div>
 
-                        {/* Hop Trace Pipeline */}
-                        <div className="space-y-1.5">
-                          <div className="text-[10px] font-bold uppercase tracking-wider text-slate-500">
-                            Execution Pipeline & Rotation Trace:
-                          </div>
-                          <div className="flex flex-wrap items-center gap-1.5 pt-0.5">
+                        {chain.length > 0 && (
+                          <div className="flex flex-wrap items-center gap-1.5 pt-1">
                             {chain.map((step, idx) => {
                               const stepProviderId = (step.providerId || "formatai").toLowerCase();
                               const isStepSuccess = step.status === "success";
-                              const isStepRateLimit = step.status === "rate_limited";
 
                               return (
                                 <React.Fragment key={idx}>
                                   <div
-                                    className={`px-2.5 py-1.5 rounded-xl border text-[11px] font-medium flex items-center gap-2 shadow-2xs ${
+                                    className={`px-2 py-1 rounded-md border text-xs font-medium flex items-center gap-1.5 ${
                                       isStepSuccess
-                                        ? "bg-emerald-50 text-emerald-950 border-emerald-300"
-                                        : isStepRateLimit
-                                        ? "bg-amber-50 text-amber-950 border-amber-300"
-                                        : "bg-rose-50 text-rose-950 border-rose-300"
+                                        ? "bg-emerald-50 text-emerald-900 border-emerald-200"
+                                        : "bg-amber-50 text-amber-900 border-amber-200"
                                     }`}
                                   >
                                     <AIBrandLogo providerId={stepProviderId} size="sm" />
-                                    <div className="min-w-0">
-                                      <div className="font-bold flex items-center gap-1">
-                                        <span>{step.providerName || step.providerId}</span>
-                                        <span className="text-[9px] px-1 py-0.2 rounded font-extrabold uppercase border">
-                                          [{step.status}]
-                                        </span>
-                                      </div>
-                                      <div className="text-[10px] opacity-75 truncate max-w-[200px]">
-                                        {step.keyName || step.keyMasked || "Active Key"} • {step.latencyMs || 0}ms
-                                      </div>
-                                    </div>
+                                    <span>{step.providerName || step.providerId}</span>
+                                    <span className="text-slate-500">({step.latencyMs || 0}ms)</span>
                                   </div>
                                   {idx < chain.length - 1 && (
-                                    <span className="text-slate-400 font-black text-sm px-0.5">→</span>
+                                    <span className="text-slate-400 text-xs font-bold">→</span>
                                   )}
                                 </React.Fragment>
                               );
                             })}
                           </div>
-                        </div>
+                        )}
                       </div>
                     );
                   })}
@@ -2475,19 +1995,63 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           )}
         </div>
 
-        {/* Modal Footer */}
-        <div className="shrink-0 px-3 sm:px-6 py-2.5 sm:py-3.5 border-t border-slate-200 flex items-center justify-between gap-2 bg-slate-50 text-xs">
-          <div className="flex items-center gap-1.5 text-slate-500 text-[11px] sm:text-xs min-w-0">
+        {/* Modal Footer (Fixed / Sticky) */}
+        <div className="shrink-0 px-4 sm:px-5 py-3 border-t border-slate-200 flex items-center justify-between gap-3 bg-white">
+          <div className="flex items-center gap-2 text-xs text-slate-600 min-w-0">
             <ShieldCheck className="w-4 h-4 text-emerald-600 shrink-0" />
-            <span className="truncate sm:whitespace-normal">Server-side isolated: Raw API keys protected.</span>
+            <span className="truncate">Browser-isolated keys · Zero server retention · 10 providers</span>
           </div>
-          <button
-            onClick={onClose}
-            className="shrink-0 px-3.5 py-1.5 sm:px-4 sm:py-2 rounded-xl font-extrabold text-slate-800 bg-white border-2 border-slate-300 hover:bg-slate-100 transition-colors cursor-pointer shadow-2xs text-xs whitespace-nowrap"
-          >
-            Close
-          </button>
+
+          <div className="flex items-center gap-2 shrink-0">
+            <button
+              type="button"
+              onClick={handleResetSettings}
+              className="px-3 py-1.5 text-xs font-medium text-slate-700 hover:text-slate-900 hover:bg-slate-100 rounded-lg transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-300 active:scale-[0.98] motion-reduce:transform-none"
+            >
+              Reset
+            </button>
+            <button
+              type="button"
+              onClick={handleSaveSettings}
+              disabled={isSaving}
+              className="px-4 py-1.5 text-xs font-semibold bg-blue-600 hover:bg-blue-700 text-white rounded-lg transition-all cursor-pointer shadow-xs disabled:opacity-50 inline-flex items-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 active:scale-[0.98] motion-reduce:transform-none"
+            >
+              {isSaving ? (
+                <>
+                  <RefreshCw className="w-3.5 h-3.5 animate-spin motion-reduce:animate-none" />
+                  <span>Saving...</span>
+                </>
+              ) : (
+                <>
+                  <Save className="w-3.5 h-3.5" />
+                  <span>Save AI Settings</span>
+                </>
+              )}
+            </button>
+          </div>
         </div>
+
+        {/* Sleek Floating Non-Blocking Toast Notification */}
+        {toast && (
+          <div
+            className={`fixed sm:absolute bottom-16 left-1/2 -translate-x-1/2 z-50 px-4 py-2 rounded-xl text-xs font-medium shadow-lg border flex items-center gap-2 transition-all duration-150 ease-out motion-reduce:transition-none ${
+              toast.type === "error"
+                ? "bg-rose-900 text-rose-100 border-rose-800"
+                : toast.type === "info"
+                ? "bg-slate-900 text-slate-100 border-slate-800"
+                : "bg-slate-900 text-emerald-300 border-slate-800"
+            }`}
+          >
+            {toast.type === "error" ? (
+              <AlertCircle className="w-4 h-4 text-rose-400 shrink-0" />
+            ) : toast.type === "info" ? (
+              <Sparkles className="w-4 h-4 text-blue-400 shrink-0" />
+            ) : (
+              <Check className="w-4 h-4 text-emerald-400 shrink-0" />
+            )}
+            <span>{toast.text}</span>
+          </div>
+        )}
       </div>
 
       {/* Get Free API Key Modal */}

@@ -20,8 +20,68 @@ html, body {
   animation: splashEnter 450ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
 }
 
+/* Modal, Sheet & Popover Animations (150-200ms ease-out) */
+@keyframes modalBackdropFadeIn {
+  0% { opacity: 0; }
+  100% { opacity: 1; }
+}
+
+@keyframes modalContentEnter {
+  0% {
+    opacity: 0;
+    transform: scale(0.98) translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: scale(1) translateY(0);
+  }
+}
+
+@keyframes bottomSheetEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(100%);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+@keyframes popoverDropdownEnter {
+  0% {
+    opacity: 0;
+    transform: translateY(4px);
+  }
+  100% {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+
+.animate-popover-in {
+  animation: popoverDropdownEnter 150ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+.animate-modal-backdrop {
+  animation: modalBackdropFadeIn 150ms ease-out forwards;
+}
+
+.animate-modal-content {
+  animation: modalContentEnter 180ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}
+
+@media (max-width: 639px) {
+  .animate-modal-content {
+    animation: bottomSheetEnter 200ms cubic-bezier(0.16, 1, 0.3, 1) forwards;
+  }
+}
+
 @media (prefers-reduced-motion: reduce) {
-  .animate-splash-enter {
+  .animate-splash-enter,
+  .animate-popover-in,
+  .animate-modal-backdrop,
+  .animate-modal-content {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;

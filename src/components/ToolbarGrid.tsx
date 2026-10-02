@@ -54,7 +54,7 @@ interface ToolbarGridProps {
   // Samples
   onSelectSample: (sample: SampleNote) => void;
   // AI Settings Modal trigger
-  onOpenAISettings?: () => void;
+  onOpenAISettings?: (tab?: "control" | "fallback" | "stats" | "logs" | "providers" | "settings" | "usage") => void;
   // Flagged Blocks Repair
   failedBlockCount?: number;
   onRepairFlagged?: () => void;

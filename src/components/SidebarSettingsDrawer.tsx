@@ -38,7 +38,7 @@ import {
   ACADEMIC_SYSTEM_WORKFLOW,
   FORMATTING_ORDER_COMMANDS,
   RECOMMENDED_ACADEMIC_SYSTEM_PROMPT,
-} from "../shared/academicWorkflow";
+} from "../shared/academicWorkflow.ts";
 
 
 interface SidebarSettingsDrawerProps {
@@ -541,7 +541,7 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             {showWorkflow ? (
               <div className="space-y-2 pt-1">
                 <div className="bg-slate-50 rounded-xl p-2.5 border border-slate-200 space-y-1">
-                  {ACADEMIC_SYSTEM_WORKFLOW.map((step, idx) => (
+                  {(ACADEMIC_SYSTEM_WORKFLOW as readonly string[]).map((step: string, idx: number) => (
                     <div key={step} className="flex flex-col items-center">
                       <div className="w-full flex items-center gap-2 px-2.5 py-1.5 bg-white rounded-lg border border-slate-200 text-[11px] font-bold text-slate-800 shadow-2xs">
                         <span className="w-4 h-4 rounded-full bg-indigo-100 text-indigo-800 flex items-center justify-center text-[10px] font-extrabold shrink-0">
@@ -563,7 +563,7 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
                     <span>Formatting Order</span>
                   </span>
                   <ul className="space-y-1 pl-1 text-slate-700 text-[10.5px]">
-                    {FORMATTING_ORDER_COMMANDS.map((cmd) => (
+                    {(FORMATTING_ORDER_COMMANDS as readonly string[]).map((cmd: string) => (
                       <li key={cmd} className="flex items-start gap-1.5">
                         <span className="text-amber-600 font-bold">•</span>
                         <span>{cmd}</span>

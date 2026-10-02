@@ -1,18 +1,9 @@
-import React, { useState, useEffect, useMemo } from "react";
+import React, { useState, useEffect, useMemo, useRef } from "react";
 import {
   Sparkles,
   Loader2,
-  Check,
   AlertTriangle,
-  Key,
-  ExternalLink,
   Settings2,
-  ChevronDown,
-  Info,
-  ShieldCheck,
-  CheckCircle2,
-  XCircle,
-  Clock,
   X,
 } from "lucide-react";
 import {
@@ -20,21 +11,13 @@ import {
   saveUserSettings,
   getUserProviders,
   saveUserProviders,
-  getUserStats,
 } from "../utils/userLocalStorage";
-import { UserProviderConfig, ManagerConfig, ProviderStats } from "../types/ai";
-import { AIBrandLogo, getAIProviderTheme } from "./AIBrandLogo";
-import { getProviderHelp, ProviderHelpConfig } from "../data/providerHelp";
-import { isModelSelectable, canonicalProviderId, getCatalogModels } from "../shared/centralModelCatalog";
+import { UserProviderConfig, ManagerConfig } from "../types/ai";
+import { AIBrandLogo } from "./AIBrandLogo";
 import { getActiveModels } from "../config/modelRegistry";
+import { canonicalProviderId, getCatalogModels } from "../shared/centralModelCatalog";
 import { getCachedModelTestReport } from "../services/UniversalModelTester";
-
-export type AISignalType =
-  | "available"     // 🟢 Available & Ready (green)
-  | "quota_low"     // 🟡 Quota Almost Finished / Warning (yellow)
-  | "rate_limited"  // 🔴 Free Tier Ended / Rate Limit (red)
-  | "connection_err"// ⚠️ Connection Failed / Key Invalid (warning)
-  | "no_key";       // 🔑 Needs Free Key / Not Configured (gray/neutral)
+import { ProviderHelpConfig } from "../data/providerHelp";
 
 interface AIPolishDropdownProps {
   isAiPolishing: boolean;
@@ -43,7 +26,7 @@ interface AIPolishDropdownProps {
   isNoAI?: boolean;
   onProviderChange?: (providerId: string) => void;
   onClose: () => void;
-  onOpenAISettings?: () => void;
+  onOpenAISettings?: (tab?: "control" | "fallback" | "stats" | "logs" | "providers" | "settings" | "usage") => void;
   onOpenFreeKeyModal?: (helpConfig: ProviderHelpConfig) => void;
 }
 
@@ -55,26 +38,95 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
   onProviderChange,
   onClose,
   onOpenAISettings,
-  onOpenFreeKeyModal,
 }) => {
+  const popoverRef = useRef<HTMLDivElement>(null);
   const [providers, setProviders] = useState<UserProviderConfig[]>([]);
   const [managerConfig, setManagerConfig] = useState<ManagerConfig | null>(null);
-  const [stats, setStats] = useState<ProviderStats[]>([]);
   const [selectedProviderId, setSelectedProviderId] = useState<string>("gemini");
   const [selectedModelId, setSelectedModelId] = useState<string>("");
-  const [showModelPicker, setShowModelPicker] = useState<boolean>(false);
+  const [activeEngineMode, setActiveEngineMode] = useState<"offline" | "ai">("ai");
 
-  // Load user settings, providers, and stats
-  const refreshState = () => {
+  // Collision detection placement
+  const [placement, setPlacement] = useState<{
+    vertical: "bottom" | "top";
+    horizontal: "right" | "left";
+  }>({
+    vertical: "bottom",
+    horizontal: "right",
+  });
+
+  // Calculate collision detection on mount & window resize
+  useEffect(() => {
+    const el = popoverRef.current;
+    if (!el) return;
+
+    const updatePlacement = () => {
+      const parent = el.parentElement;
+      if (!parent) return;
+
+      const parentRect = parent.getBoundingClientRect();
+      const popoverHeight = 360;
+      const popoverWidth = 320;
+
+      // Vertical flip detection
+      const spaceBelow = window.innerHeight - parentRect.bottom;
+      const spaceAbove = parentRect.top;
+      const vertical = spaceBelow < popoverHeight && spaceAbove > spaceBelow ? "top" : "bottom";
+
+      // Horizontal shift detection
+      const spaceRight = window.innerWidth - parentRect.left;
+      const horizontal = spaceRight < popoverWidth ? "right" : "left";
+
+      setPlacement({ vertical, horizontal });
+    };
+
+    updatePlacement();
+    window.addEventListener("resize", updatePlacement);
+    window.addEventListener("scroll", updatePlacement, true);
+    return () => {
+      window.removeEventListener("resize", updatePlacement);
+      window.removeEventListener("scroll", updatePlacement, true);
+    };
+  }, []);
+
+  // Close on outside click and Escape key
+  useEffect(() => {
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.preventDefault();
+        onClose();
+      }
+    };
+
+    const handlePointerDown = (e: MouseEvent | TouchEvent) => {
+      const el = popoverRef.current;
+      if (el && !el.contains(e.target as Node) && !el.parentElement?.contains(e.target as Node)) {
+        onClose();
+      }
+    };
+
+    window.addEventListener("keydown", handleKeyDown);
+    document.addEventListener("mousedown", handlePointerDown);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.removeEventListener("mousedown", handlePointerDown);
+    };
+  }, [onClose]);
+
+  // Load user settings and providers
+  useEffect(() => {
     try {
       const cfg = getUserSettings();
       const provs = getUserProviders();
-      const st = getUserStats();
       setManagerConfig(cfg);
       setProviders(provs);
-      setStats(st);
 
-      const activeId = cfg.activeProviderId || (isNoAI ? "formatai" : "gemini");
+      const isOfflineInit = cfg.activeProviderId === "formatai" || cfg.activeProviderId === "local" || isNoAI;
+      setActiveEngineMode(isOfflineInit ? "offline" : "ai");
+
+      const activeId = isOfflineInit
+        ? "formatai"
+        : cfg.activeProviderId || "gemini";
       setSelectedProviderId(activeId);
 
       const currentP = provs.find((p) => p.id === activeId);
@@ -84,124 +136,34 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     } catch (err) {
       console.warn("Failed to load AI state in dropdown:", err);
     }
+  }, [isNoAI]);
+
+  // Handle switching between FormatAI (Offline) and AI Models
+  const handleSwitchEngineMode = (mode: "offline" | "ai") => {
+    setActiveEngineMode(mode);
+    if (mode === "offline") {
+      setSelectedProviderId("formatai");
+      setSelectedModelId("standard-academic");
+      const updatedCfg: ManagerConfig = {
+        ...(managerConfig || getUserSettings()),
+        activeProviderId: "formatai",
+        activeModel: "standard-academic",
+        mode: "manual",
+      };
+      setManagerConfig(updatedCfg);
+      saveUserSettings(updatedCfg);
+      onProviderChange?.("formatai");
+    } else {
+      const nonLocal = providers.find((p) => p.id !== "formatai" && p.id !== "local") || providers[0];
+      const targetId = selectedProviderId !== "formatai" && selectedProviderId !== "local"
+        ? selectedProviderId
+        : nonLocal?.id || "gemini";
+      const targetP = providers.find((p) => p.id === targetId);
+      if (targetP) {
+        handleSelectProvider(targetP);
+      }
+    }
   };
-
-  useEffect(() => {
-    refreshState();
-  }, []);
-
-  // Compute status signal for a given provider
-  const getProviderSignal = (p: UserProviderConfig): {
-    signal: AISignalType;
-    label: string;
-    description: string;
-    badgeBg: string;
-    dotColor: string;
-    icon: React.ReactNode;
-  } => {
-    const pStats = stats.find((s) => s.providerId === p.id);
-    const activeKeys = (p.apiKeys || []).filter((k) => k.enabled && k.key.trim().length > 0);
-    const hasActiveKey = activeKeys.length > 0;
-    const isGemini = p.id === "gemini";
-
-    // 1. Check if Rate Limited / Free Tier Ended (Red signal 🔴)
-    const isRateLimited =
-      p.status === "rate_limited" ||
-      Boolean(pStats && pStats.rateLimitCount > 0) ||
-      (p.apiKeys || []).some((k) => k.status === "rate_limited");
-
-    if (isRateLimited) {
-      return {
-        signal: "rate_limited",
-        label: "Free Tier Ended",
-        description: "Rate limit / quota exceeded (429). Auto-fallback will route to backup.",
-        badgeBg: "bg-rose-50 text-rose-800 border-rose-300",
-        dotColor: "bg-rose-500 ring-2 ring-rose-200",
-        icon: <span className="w-2.5 h-2.5 rounded-full bg-rose-500 shadow-xs animate-pulse" />,
-      };
-    }
-
-    // 2. Check Connection Error / Invalid Key (Warning sign ⚠️)
-    const hasConnectionError =
-      p.status === "invalid_key" ||
-      p.status === "offline" ||
-      (p.lastError && p.lastError.toLowerCase().includes("fail")) ||
-      (p.apiKeys || []).some((k) => k.status === "invalid");
-
-    if (hasConnectionError) {
-      return {
-        signal: "connection_err",
-        label: "Connection Failed",
-        description: "Cannot reach provider or invalid API key. Please check key in settings.",
-        badgeBg: "bg-orange-50 text-orange-900 border-orange-300",
-        dotColor: "bg-orange-500 ring-2 ring-orange-200",
-        icon: <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />,
-      };
-    }
-
-    // 3. Check if Quota Almost Finished / Warning (Yellow signal 🟡)
-    const isQuotaLow =
-      p.status === "degraded" ||
-      (pStats && pStats.requestCount > 50 && pStats.failureCount > 3) ||
-      (pStats && pStats.requestCount > 0 && pStats.successCount / pStats.requestCount < 0.75);
-
-    if (isQuotaLow) {
-      return {
-        signal: "quota_low",
-        label: "Quota Low / Warning",
-        description: "Approaching free quota limit or experiencing higher latency.",
-        badgeBg: "bg-amber-50 text-amber-900 border-amber-300",
-        dotColor: "bg-amber-400 ring-2 ring-amber-200",
-        icon: <span className="w-2.5 h-2.5 rounded-full bg-amber-400 shadow-xs" />,
-      };
-    }
-
-    // 4. Check if Available & Ready (Green signal 🟢)
-    // Gemini has built-in server-side free fallback even without a user key
-    if (isGemini) {
-      return {
-        signal: "available",
-        label: hasActiveKey ? "Available (Custom Key)" : "Available (Free Tier)",
-        description: "Ready to polish academic notes & mathematical equations instantly.",
-        badgeBg: "bg-emerald-50 text-emerald-800 border-emerald-300",
-        dotColor: "bg-emerald-500 ring-2 ring-emerald-200",
-        icon: <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />,
-      };
-    }
-
-    // Other providers with configured keys
-    if (hasActiveKey) {
-      return {
-        signal: "available",
-        label: "Available & Ready",
-        description: `${activeKeys.length} active key(s) ready for requests.`,
-        badgeBg: "bg-emerald-50 text-emerald-800 border-emerald-300",
-        dotColor: "bg-emerald-500 ring-2 ring-emerald-200",
-        icon: <span className="w-2.5 h-2.5 rounded-full bg-emerald-500 shadow-xs" />,
-      };
-    }
-
-    // 5. No key added yet (Key icon 🔑)
-    return {
-      signal: "no_key",
-      label: "Needs Free Key",
-      description: "Free API access available. Click to configure or add a free key.",
-      badgeBg: "bg-slate-100 text-slate-700 border-slate-200",
-      dotColor: "bg-slate-300",
-      icon: <Key className="w-3 h-3 text-slate-500 shrink-0" />,
-    };
-  };
-
-  // Currently selected provider (null if FormatAI / local / deselected)
-  const selectedProvider = useMemo(() => {
-    if (selectedProviderId === "formatai" || selectedProviderId === "local") {
-      return null;
-    }
-    return providers.find((p) => p.id === selectedProviderId) || null;
-  }, [providers, selectedProviderId]);
-
-  const selectedSignal = selectedProvider ? getProviderSignal(selectedProvider) : null;
-  const selectedTheme = selectedProvider ? getAIProviderTheme(selectedProvider.id) : null;
 
   // Handle selecting an AI provider
   const handleSelectProvider = (p: UserProviderConfig) => {
@@ -209,7 +171,6 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     const newModel = p.selectedModel || p.availableModels?.[0]?.id || "";
     setSelectedModelId(newModel);
 
-    // Save to user settings immediately
     const updatedCfg: ManagerConfig = {
       ...(managerConfig || getUserSettings()),
       activeProviderId: p.id,
@@ -219,7 +180,6 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     setManagerConfig(updatedCfg);
     saveUserSettings(updatedCfg);
 
-    // Also update provider selection
     const updatedProvs = providers.map((item) =>
       item.id === p.id ? { ...item, selectedModel: newModel } : item
     );
@@ -228,26 +188,9 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     onProviderChange?.(p.id);
   };
 
-  // Handle deselecting an AI provider (reverting to FormatAI / No AI)
-  const handleDeselectProvider = (_p?: UserProviderConfig) => {
-    setSelectedProviderId("formatai");
-    setSelectedModelId("standard-academic");
-
-    const updatedCfg: ManagerConfig = {
-      ...(managerConfig || getUserSettings()),
-      activeProviderId: "formatai",
-      activeModel: "standard-academic",
-      mode: "manual",
-    };
-    setManagerConfig(updatedCfg);
-    saveUserSettings(updatedCfg);
-    onProviderChange?.("formatai");
-  };
-
-  // Handle selecting a model for the chosen AI
+  // Handle model change
   const handleSelectModel = (modelId: string) => {
     setSelectedModelId(modelId);
-    setShowModelPicker(false);
 
     if (managerConfig) {
       const updatedCfg: ManagerConfig = {
@@ -267,9 +210,9 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     }
   };
 
-  // Execute polish or FormatAI
+  // Execute polish
   const handleRunPolish = () => {
-    if (selectedProviderId === "formatai" || selectedProviderId === "local") {
+    if (activeEngineMode === "offline" || selectedProviderId === "formatai" || selectedProviderId === "local") {
       const updatedCfg: ManagerConfig = {
         ...(managerConfig || getUserSettings()),
         activeProviderId: "formatai",
@@ -286,7 +229,6 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
       return;
     }
 
-    // Ensure the selected provider is saved
     if (selectedProvider) {
       const updatedCfg: ManagerConfig = {
         ...(managerConfig || getUserSettings()),
@@ -301,500 +243,291 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
     onTriggerAiPolish();
   };
 
-  const isFormatAiActive = selectedProviderId === "formatai" || selectedProviderId === "local" || isNoAI;
+  // Currently selected AI provider
+  const selectedProvider = useMemo(() => {
+    if (activeEngineMode === "offline") return null;
+    return providers.find((p) => p.id === selectedProviderId) || null;
+  }, [providers, selectedProviderId, activeEngineMode]);
+
+  // Check if selected provider has an active key
+  const selectedHasKey = useMemo(() => {
+    if (activeEngineMode === "offline") return true;
+    if (!selectedProvider) return false;
+    if (selectedProvider.id === "gemini") return true; // Gemini has built-in free tier
+    const activeKeys = (selectedProvider.apiKeys || []).filter(
+      (k) => k.enabled && k.key && k.key.trim().length > 0
+    );
+    return activeKeys.length > 0;
+  }, [selectedProvider, activeEngineMode]);
+
+  // Model list for selected provider
+  const modelOptions = useMemo(() => {
+    if (!selectedProvider) return [];
+    const canonical = canonicalProviderId(selectedProvider.id);
+    const activeModels = getActiveModels(selectedProvider.id);
+    const catalogModels = getCatalogModels(selectedProvider.id);
+    const testReport = getCachedModelTestReport(selectedProvider.id);
+    const readyList = (testReport?.readyModels || []).filter(
+      (m) => canonicalProviderId(m.provider) === canonical
+    );
+
+    const seen = new Set<string>();
+    const list: Array<{ id: string; name: string; isReady: boolean; isFree: boolean }> = [];
+
+    for (const m of readyList) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        list.push({ id: m.id, name: m.name || m.id, isReady: true, isFree: m.isFree });
+      }
+    }
+
+    const basePool =
+      activeModels.length > 0
+        ? activeModels
+        : (selectedProvider.availableModels || []).length > 0
+        ? selectedProvider.availableModels.filter((m) => !m.deprecated && !m.retired)
+        : catalogModels;
+
+    for (const m of basePool) {
+      if (!seen.has(m.id)) {
+        seen.add(m.id);
+        list.push({
+          id: m.id,
+          name: m.name || m.id,
+          isReady: false,
+          isFree: Boolean(m.free || (m as any).isFree),
+        });
+      }
+    }
+    return list;
+  }, [selectedProvider]);
 
   return (
-    <div className="absolute right-0 top-full mt-2 w-[calc(100vw-2rem)] sm:w-96 max-w-md max-h-[calc(100vh-140px)] overflow-y-auto bg-white rounded-2xl shadow-2xl border-2 border-slate-300 p-3.5 sm:p-4 z-50 animate-in fade-in zoom-in-95 space-y-3.5">
-      {/* Header */}
-      <div className="flex items-center justify-between border-b border-slate-200/90 pb-2.5">
-        <div className="min-w-0 pr-2">
-          <div className="text-[10px] font-extrabold uppercase tracking-wider text-slate-500">
-            {isNoAI ? "Academic Normalizer" : "Multi-Provider Engine & FormatAI"}
-          </div>
-          <h3 className="text-xs font-black text-slate-900 flex items-center gap-1.5 flex-wrap">
-            <span>{isNoAI ? "FormatAI Engine" : "Select Engine"}</span>
-            {isFormatAiActive ? (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                Active: FormatAI (No AI)
-              </span>
-            ) : selectedProvider ? (
-              <span className="text-[10px] font-bold px-1.5 py-0.5 rounded-full bg-blue-50 text-blue-800 border border-blue-200">
-                Active: {selectedProvider.name.replace("Google ", "")}
-              </span>
-            ) : null}
-          </h3>
+    <div
+      ref={popoverRef}
+      role="dialog"
+      aria-label="Formatting Engine Selector"
+      className={`absolute z-50 w-[320px] max-h-[70vh] flex flex-col bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs animate-popover-in motion-reduce:transition-none motion-reduce:transform-none ${
+        placement.vertical === "top" ? "bottom-full mb-2" : "top-full mt-2"
+      } ${
+        placement.horizontal === "right" ? "right-0" : "left-0"
+      }`}
+    >
+      {/* 1. Header with Close Button */}
+      <div className="shrink-0 p-3 pb-2 flex items-center justify-between border-b border-slate-100">
+        <span className="font-semibold text-slate-900 text-xs">Formatting Engine</span>
+        <button
+          type="button"
+          onClick={onClose}
+          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-colors cursor-pointer"
+          aria-label="Close engine selector"
+        >
+          <X className="w-3.5 h-3.5" />
+        </button>
+      </div>
+
+      {/* 2. Scrollable Content Area */}
+      <div className="flex-1 min-h-0 overflow-y-auto p-3 space-y-3">
+        {/* 2.1 Segmented Control: "FormatAI (Offline)" | "AI Models" */}
+        <div className="p-0.5 bg-slate-100 rounded-lg flex items-center" role="group" aria-label="Engine Mode">
+          <button
+            type="button"
+            onClick={() => handleSwitchEngineMode("offline")}
+            aria-pressed={activeEngineMode === "offline"}
+            className={`flex-1 py-1.5 px-2 rounded-md font-medium text-xs transition-all cursor-pointer text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              activeEngineMode === "offline"
+                ? "bg-white text-slate-900 shadow-xs font-semibold"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            FormatAI (Offline)
+          </button>
+          <button
+            type="button"
+            onClick={() => handleSwitchEngineMode("ai")}
+            aria-pressed={activeEngineMode === "ai"}
+            className={`flex-1 py-1.5 px-2 rounded-md font-medium text-xs transition-all cursor-pointer text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+              activeEngineMode === "ai"
+                ? "bg-white text-slate-900 shadow-xs font-semibold"
+                : "text-slate-600 hover:text-slate-900"
+            }`}
+          >
+            AI Models
+          </button>
         </div>
 
-        <div className="flex items-center gap-1.5 shrink-0">
-          {onOpenAISettings && (
+        {/* 2.2 Offline Mode Details */}
+        {activeEngineMode === "offline" ? (
+          <div className="p-3 bg-slate-50 rounded-lg border border-slate-200/80 space-y-1 text-slate-600">
+            <div className="font-semibold text-slate-900 flex items-center gap-1.5">
+              <Sparkles className="w-3.5 h-3.5 text-blue-600" />
+              <span>Deterministic LaTeX Normalizer</span>
+            </div>
+            <p className="text-slate-600 leading-relaxed text-xs">
+              Fast, zero-latency formatting using built-in academic typesetting rules. Works completely offline with zero API keys required.
+            </p>
+          </div>
+        ) : (
+          /* 2.3 AI Models Section: Provider List + Model Select */
+          <div className="space-y-3">
+            {/* Provider List: Compact Rows with Radio-style Selection */}
+            <div className="space-y-1.5 max-h-[190px] overflow-y-auto pr-0.5" role="radiogroup" aria-label="Select AI Provider">
+              {providers
+                .filter((p) => p.id !== "formatai" && p.id !== "local")
+                .map((p) => {
+                  const isSelected = selectedProviderId === p.id;
+                  const activeKeys = (p.apiKeys || []).filter(
+                    (k) => k.enabled && k.key && k.key.trim().length > 0
+                  );
+                  const isGemini = p.id === "gemini";
+                  const hasKey = isGemini || activeKeys.length > 0;
+
+                  return (
+                    <div
+                      key={p.id}
+                      role="radio"
+                      aria-checked={isSelected}
+                      tabIndex={0}
+                      onKeyDown={(e) => {
+                        if (e.key === "Enter" || e.key === " ") {
+                          e.preventDefault();
+                          handleSelectProvider(p);
+                        }
+                      }}
+                      onClick={() => handleSelectProvider(p)}
+                      className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 active:scale-[0.98] motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                        isSelected
+                          ? "border-blue-600 bg-blue-50/40 text-slate-900 shadow-xs"
+                          : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
+                      }`}
+                    >
+                      <div className="flex items-center gap-2 min-w-0">
+                        {/* Radio selection circle */}
+                        <div
+                          className={`w-3.5 h-3.5 rounded-full border flex items-center justify-center shrink-0 ${
+                            isSelected
+                              ? "border-blue-600 bg-blue-600"
+                              : "border-slate-300 bg-white"
+                          }`}
+                        >
+                          {isSelected && <div className="w-1.5 h-1.5 rounded-full bg-white" />}
+                        </div>
+
+                        <div className="p-0.5 rounded bg-white border border-slate-200 shrink-0">
+                          <AIBrandLogo providerId={p.id} size="sm" />
+                        </div>
+
+                        <span className="font-medium truncate">{p.name}</span>
+                      </div>
+
+                      {/* Status Dot */}
+                      <div className="shrink-0 flex items-center gap-1.5">
+                        <span
+                          className={`w-2 h-2 rounded-full ${
+                            hasKey
+                              ? p.enabled
+                                ? "bg-emerald-500"
+                                : "bg-slate-400"
+                              : "bg-slate-300"
+                          }`}
+                          title={
+                            hasKey
+                              ? p.enabled
+                                ? "Active & Ready"
+                                : "Ready (Disabled)"
+                              : "Needs API Key"
+                          }
+                        />
+                      </div>
+                    </div>
+                  );
+                })}
+            </div>
+
+            {/* Model Select (only shows for selected provider) */}
+            {selectedProvider && (
+              <div className="space-y-1">
+                <label htmlFor="select-provider-model" className="block text-slate-700 font-medium text-xs">
+                  Model ({selectedProvider.name})
+                </label>
+                <select
+                  id="select-provider-model"
+                  value={selectedModelId || selectedProvider.selectedModel}
+                  onChange={(e) => handleSelectModel(e.target.value)}
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                >
+                  {modelOptions.length === 0 ? (
+                    <option value="" disabled>No models configured</option>
+                  ) : (
+                    modelOptions.map((m) => (
+                      <option key={m.id} value={m.id}>
+                        {m.isReady ? `✓ ${m.name}` : m.name} {m.isFree ? "(Free)" : ""}
+                      </option>
+                    ))
+                  )}
+                </select>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      {/* 3. Footer: Inline Hint + ONE Run Button + Manage Link */}
+      <div className="shrink-0 p-3 pt-2 border-t border-slate-100 bg-white space-y-2">
+        {/* Inline Hint if provider has no key */}
+        {!selectedHasKey && selectedProvider && (
+          <div className="flex items-center justify-between text-xs text-slate-700 bg-amber-50/90 border border-amber-200 rounded-lg px-2.5 py-1.5">
+            <div className="flex items-center gap-1.5 min-w-0">
+              <AlertTriangle className="w-3.5 h-3.5 text-amber-600 shrink-0" />
+              <span className="truncate">No key for {selectedProvider.name}.</span>
+            </div>
             <button
               type="button"
               onClick={() => {
                 onClose();
-                onOpenAISettings();
+                if (onOpenAISettings) onOpenAISettings("providers");
               }}
-              className="inline-flex items-center gap-1 px-2 py-1 rounded-lg text-[11px] font-bold text-slate-700 hover:text-slate-950 bg-slate-100 hover:bg-slate-200 transition-colors border border-slate-300 cursor-pointer"
-              title="Open AI Control Panel"
+              className="font-medium text-blue-700 hover:text-blue-900 underline shrink-0 cursor-pointer ml-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
             >
-              <Settings2 className="w-3.5 h-3.5 text-slate-600" />
-              <span className="hidden min-[380px]:inline">Settings</span>
+              Add key →
             </button>
-          )}
+          </div>
+        )}
 
-          <button
-            type="button"
-            onClick={onClose}
-            className="p-1 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 transition-colors cursor-pointer border border-transparent hover:border-slate-200"
-            title="Close menu"
-            aria-label="Close"
-          >
-            <X className="w-4 h-4" />
-          </button>
-        </div>
-      </div>
-
-      {/* Top Quick-Run Bar for Instant 1-Click Execution (No Scrolling Needed on PC or Mobile) */}
-      <div className="bg-gradient-to-r from-blue-50 to-indigo-50/70 p-2.5 rounded-xl border border-blue-200 shadow-2xs space-y-1.5">
-        <div className="flex items-center justify-between text-[10px]">
-          <span className="font-extrabold uppercase tracking-wider text-blue-900 flex items-center gap-1">
-            <Sparkles className="w-3 h-3 text-amber-500" />
-            <span>{isFormatAiActive ? "FormatAI Engine" : `${selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"} Engine`}</span>
-          </span>
-          <span className="font-bold text-slate-500 truncate max-w-[150px]">
-            {isFormatAiActive ? "Deterministic / Offline" : selectedModelId || "Default Model"}
-          </span>
-        </div>
+        {/* ONE Primary Full-width Run Button */}
         <button
           type="button"
           onClick={handleRunPolish}
-          disabled={isAiPolishing}
-          className="w-full text-white text-xs font-black py-2 px-3 rounded-lg flex items-center justify-center gap-2 transition-all shadow-2xs cursor-pointer active:scale-98 disabled:opacity-50 bg-blue-600 hover:bg-blue-700"
+          disabled={isAiPolishing || !selectedHasKey}
+          className="w-full py-2 px-3 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none"
         >
           {isAiPolishing ? (
             <>
-              <Loader2 className="w-3.5 h-3.5 animate-spin text-white" />
-              <span>Normalizing Academic Notes...</span>
+              <Loader2 className="w-3.5 h-3.5 animate-spin text-white motion-reduce:animate-none" />
+              <span>Polishing Notes...</span>
             </>
           ) : (
             <>
-              <Sparkles className="w-3.5 h-3.5 text-amber-300" />
-              <span>
-                {isFormatAiActive
-                  ? "Run FormatAI Now (No AI)"
-                  : `Run Polish Now with ${selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"}`}
-              </span>
+              <Sparkles className="w-3.5 h-3.5" />
+              <span>Run Polish</span>
             </>
           )}
         </button>
-      </div>
 
-      {/* When running with No AI, display informative banner */}
-      {isNoAI && (
-        <div className="p-2.5 rounded-xl bg-blue-50/90 border border-blue-200 text-blue-950 text-xs flex items-start gap-2 shadow-2xs">
-          <Sparkles className="w-4 h-4 text-blue-600 shrink-0 mt-0.5" />
-          <div className="min-w-0 text-[11px] leading-snug">
-            <span className="font-extrabold block">No AI Mode Active</span>
-            <p className="text-[10px] text-blue-800 font-medium">
-              FormatAI cleans and normalizes your notes & equations instantly using local deterministic academic rules without needing API keys.
-            </p>
-          </div>
-        </div>
-      )}
-
-      {/* FormatAI Featured Option (Zero AI Required / Deterministic) */}
-      <div>
-        <div className="text-[10px] font-bold text-slate-600 mb-1 flex items-center justify-between">
-          <span>Standard Formatter (Offline / No AI):</span>
-          <span className="text-[9px] font-bold text-emerald-700 bg-emerald-50 px-1.5 py-0.2 rounded border border-emerald-200">
-            Free Forever
-          </span>
-        </div>
-        <div
-          onClick={() => {
-            setSelectedProviderId("formatai");
-            setSelectedModelId("standard-academic");
-            const updatedCfg: ManagerConfig = {
-              ...(managerConfig || getUserSettings()),
-              activeProviderId: "formatai",
-              activeModel: "standard-academic",
-              mode: "manual",
-            };
-            setManagerConfig(updatedCfg);
-            saveUserSettings(updatedCfg);
-            onProviderChange?.("formatai");
-          }}
-          className={`p-2.5 rounded-xl border-2 transition-all cursor-pointer flex items-center justify-between gap-2 text-left ${
-            isFormatAiActive
-              ? "border-blue-600 ring-2 ring-blue-300/50 bg-blue-50/90 shadow-2xs"
-              : "border-slate-200 hover:border-blue-400 bg-white hover:bg-slate-50/60"
-          }`}
-        >
-          <div className="flex items-center gap-2 min-w-0">
-            <div className="p-1 rounded-lg bg-blue-600 text-white shadow-2xs shrink-0">
-              <Sparkles className="w-4 h-4 text-amber-300" />
-            </div>
-            <div className="min-w-0">
-              <div className="flex items-center gap-1.5">
-                <span className="text-xs font-black text-slate-900">FormatAI</span>
-                <span className="text-[9px] font-extrabold px-1.5 py-0.2 rounded bg-blue-100 text-blue-800 border border-blue-200">
-                  No AI • Instant
-                </span>
-                {isFormatAiActive && (
-                  <span className="p-0.5 rounded-full bg-blue-600 text-white shrink-0">
-                    <Check className="w-2.5 h-2.5" />
-                  </span>
-                )}
-              </div>
-              <p className="text-[10px] text-slate-600 font-medium truncate">
-                Deterministic Academic LaTeX & Notes Typesetter
-              </p>
-            </div>
-          </div>
-          <div className="shrink-0">
-            <span className="inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border bg-emerald-50 text-emerald-800 border-emerald-200">
-              <CheckCircle2 className="w-2.5 h-2.5 text-emerald-600" />
-              <span>Ready</span>
-            </span>
-          </div>
-        </div>
-      </div>
-
-      {/* AI Provider Selection List */}
-      <div className="space-y-1.5 max-h-48 overflow-y-auto pr-1 border-t border-slate-200/80 pt-2">
-        <div className="text-[10px] font-bold text-slate-600 mb-1 flex items-center justify-between">
-          <span>Multi-Provider AI Engines:</span>
-          <span className="text-[9px] text-blue-700 bg-blue-50 px-1.5 py-0.5 rounded font-semibold border border-blue-200">
-            Double-click to deselect
-          </span>
-        </div>
-
-        {providers.map((p) => {
-          const isSelected = selectedProviderId === p.id;
-          const theme = getAIProviderTheme(p.id);
-          const sig = getProviderSignal(p);
-          const help = getProviderHelp(p.id);
-
-          return (
-            <div
-              key={p.id}
-              onClick={() => {
-                if (isSelected) {
-                  handleDeselectProvider(p);
-                } else {
-                  handleSelectProvider(p);
-                }
-              }}
-              onDoubleClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                handleDeselectProvider(p);
-              }}
-              title={
-                isSelected
-                  ? "Double-click (or click) to deselect and switch to FormatAI (No AI)"
-                  : "Click to select, double-click to deselect"
-              }
-              className={`p-2.5 rounded-xl border transition-all cursor-pointer flex items-center justify-between gap-2 text-left ${
-                isSelected
-                  ? `${theme.cardBorder} ${theme.activeRing} bg-slate-50/90 shadow-2xs`
-                  : "border-slate-200 hover:border-slate-300 bg-white hover:bg-slate-50/60"
-              }`}
-            >
-              {/* Left AI Identity */}
-              <div className="flex items-center gap-2 min-w-0">
-                <div className="p-1 rounded-lg bg-white shadow-2xs border border-slate-200 shrink-0">
-                  <AIBrandLogo providerId={p.id} size="sm" />
-                </div>
-                <div className="min-w-0">
-                  <div className="flex items-center gap-1.5 flex-wrap">
-                    <span
-                      className={`text-xs font-bold truncate ${
-                        isSelected ? "text-slate-950" : "text-slate-800"
-                      }`}
-                    >
-                      {p.name}
-                    </span>
-                    {isSelected && (
-                      <>
-                        <span className="p-0.5 rounded-full bg-blue-600 text-white shrink-0" title="Selected">
-                          <Check className="w-2.5 h-2.5" />
-                        </span>
-                        <button
-                          type="button"
-                          onClick={(e) => {
-                            e.stopPropagation();
-                            handleDeselectProvider(p);
-                          }}
-                          className="px-1.5 py-0.2 rounded text-[9px] font-bold bg-slate-200 hover:bg-rose-100 text-slate-700 hover:text-rose-700 border border-slate-300 transition-colors cursor-pointer"
-                          title="Click to deselect"
-                        >
-                          ✕ Deselect
-                        </button>
-                      </>
-                    )}
-                  </div>
-                  <div className="text-[10px] text-slate-500 truncate font-mono">
-                    {p.selectedModel || p.availableModels?.[0]?.name || "Default"}
-                  </div>
-                </div>
-              </div>
-
-              {/* Right Status & Warning Indicator */}
-              <div className="flex items-center gap-1.5 shrink-0">
-                <span
-                  className={`inline-flex items-center gap-1 px-1.5 py-0.5 rounded-md text-[10px] font-bold border ${sig.badgeBg}`}
-                  title={sig.description}
-                >
-                  {sig.icon}
-                  <span>{sig.label}</span>
-                </span>
-
-                {/* If needs a key and modal opener provided */}
-                {sig.signal === "no_key" && help && onOpenFreeKeyModal && (
-                  <button
-                    type="button"
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      onClose();
-                      onOpenFreeKeyModal(help);
-                    }}
-                    className="p-1 rounded bg-slate-100 hover:bg-blue-50 text-blue-600 hover:text-blue-800 border border-slate-200 text-[10px] font-bold cursor-pointer"
-                    title="Get Free API Key"
-                  >
-                    <ExternalLink className="w-2.5 h-2.5" />
-                  </button>
-                )}
-              </div>
-            </div>
-          );
-        })}
-
-        {/* Direct Button to Add AI API Keys (বাকি AI API যোগ করুন) */}
-        <div className="pt-1.5 border-t border-slate-200">
+        {/* Small text link to open the Control Panel modal on Providers tab */}
+        <div className="flex items-center justify-center pt-0.5">
           <button
             type="button"
             onClick={() => {
               onClose();
-              if (onOpenAISettings) onOpenAISettings();
+              if (onOpenAISettings) onOpenAISettings("providers");
             }}
-            className="w-full flex items-center justify-between p-2 rounded-xl bg-blue-50/90 hover:bg-blue-100 text-blue-900 border border-blue-200 text-xs font-bold transition-all cursor-pointer shadow-2xs"
-            title="Open AI Control Panel to add API keys for Gemini, Groq, OpenAI, Claude, DeepSeek..."
+            className="text-xs text-slate-600 hover:text-blue-700 transition-colors flex items-center gap-1 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded p-0.5"
           >
-            <span className="flex items-center gap-1.5">
-              <Key className="w-3.5 h-3.5 text-blue-600" />
-              <span>+ Add AI API Key (Gemini, Groq, Claude, OpenAI...)</span>
-            </span>
-            <ExternalLink className="w-3 h-3 text-blue-600" />
+            <Settings2 className="w-3.5 h-3.5" />
+            <span>Manage API keys</span>
           </button>
         </div>
-      </div>
-
-      {/* Model Picker for the Selected AI */}
-      {selectedProvider && selectedProvider.availableModels.length > 0 && (
-        <div className="pt-1">
-          <div className="flex items-center justify-between mb-1">
-            <label className="text-[10px] font-bold text-slate-700">
-              Selected Model ({selectedProvider.name}):
-            </label>
-            <button
-              type="button"
-              onClick={() => setShowModelPicker(!showModelPicker)}
-              className="text-[10px] font-bold text-blue-600 hover:text-blue-800 flex items-center gap-0.5 cursor-pointer"
-            >
-              <span>{showModelPicker ? "Hide Models" : "Change Model"}</span>
-              <ChevronDown
-                className={`w-3 h-3 transition-transform ${showModelPicker ? "rotate-180" : ""}`}
-              />
-            </button>
-          </div>
-
-          {showModelPicker ? (
-            <div className="space-y-1 max-h-36 overflow-y-auto bg-slate-50 p-1.5 rounded-xl border border-slate-200">
-              {(() => {
-                const canonical = canonicalProviderId(selectedProvider.id);
-                const activeModels = getActiveModels(selectedProvider.id);
-                const catalogModels = getCatalogModels(selectedProvider.id);
-                const testReport = getCachedModelTestReport(selectedProvider.id);
-                const readyList = (testReport?.readyModels || []).filter(
-                  (m) => canonicalProviderId(m.provider) === canonical
-                );
-
-                const seen = new Set<string>();
-                const selectableModels: Array<{ id: string; name: string; isReady: boolean; isFree: boolean; freeTier?: string }> = [];
-
-                // 1. Ready to deploy models at the top
-                for (const m of readyList) {
-                  if (!seen.has(m.id)) {
-                    seen.add(m.id);
-                    selectableModels.push({
-                      id: m.id,
-                      name: m.name || m.id,
-                      isReady: true,
-                      isFree: m.isFree,
-                      freeTier: m.freeTier,
-                    });
-                  }
-                }
-
-                // 2. Base models for this provider
-                const basePool = activeModels.length > 0
-                  ? activeModels
-                  : (selectedProvider.availableModels || []).length > 0
-                  ? selectedProvider.availableModels.filter((m) => !m.deprecated && !m.retired)
-                  : catalogModels;
-
-                for (const m of basePool) {
-                  if (!seen.has(m.id)) {
-                    seen.add(m.id);
-                    selectableModels.push({
-                      id: m.id,
-                      name: m.name || m.id,
-                      isReady: false,
-                      isFree: Boolean(m.free || (m as any).isFree),
-                      freeTier: m.freeTier,
-                    });
-                  }
-                }
-
-                if (selectableModels.length === 0) {
-                  return (
-                    <div className="p-2 text-center text-[11px] text-slate-500 font-medium italic">
-                      No models configured for this provider
-                    </div>
-                  );
-                }
-
-                return selectableModels.map((m) => {
-                  return (
-                    <div
-                      key={m.id}
-                      onClick={() => handleSelectModel(m.id)}
-                      className={`px-2 py-1.5 rounded-lg text-xs font-semibold flex items-center justify-between cursor-pointer transition-colors ${
-                        (selectedModelId || selectedProvider.selectedModel) === m.id
-                          ? "bg-blue-600 text-white shadow-2xs"
-                          : "bg-white hover:bg-slate-100 text-slate-800 border border-slate-200"
-                      }`}
-                    >
-                      <div className="truncate flex items-center gap-1">
-                        <span>{m.name}</span>
-                        {m.isReady && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-600 text-white font-bold">
-                            ✓ Ready
-                          </span>
-                        )}
-                        {m.isFree && !m.isReady && (
-                          <span className="text-[9px] px-1 py-0.2 rounded bg-emerald-100 text-emerald-900 border border-emerald-300 font-bold" title={m.freeTier || "Free tier — subject to provider limits"}>
-                            Free tier
-                          </span>
-                        )}
-                      </div>
-                      {(selectedModelId || selectedProvider.selectedModel) === m.id && (
-                        <Check className="w-3.5 h-3.5 text-white shrink-0 ml-1" />
-                      )}
-                    </div>
-                  );
-                });
-              })()}
-            </div>
-          ) : (
-            <div className="px-2.5 py-1.5 rounded-lg bg-slate-100/80 border border-slate-200 text-xs font-bold text-slate-800 flex items-center justify-between">
-              <span className="truncate">
-                {selectedProvider.availableModels.find(
-                  (m) => m.id === (selectedModelId || selectedProvider.selectedModel)
-                )?.name || selectedModelId || "Default Model"}
-              </span>
-              <span className="text-[9px] px-1.5 py-0.5 rounded bg-white text-slate-600 border border-slate-200 font-mono">
-                Active
-              </span>
-            </div>
-          )}
-        </div>
-      )}
-
-      {/* Real-time Status Alert / Warning Message */}
-      {selectedSignal && (
-        <div
-          className={`p-2.5 rounded-xl border text-xs flex items-start gap-2 ${
-            selectedSignal.signal === "available"
-              ? "bg-emerald-50/80 border-emerald-200 text-emerald-900"
-              : selectedSignal.signal === "rate_limited"
-              ? "bg-rose-50 border-rose-300 text-rose-950 font-medium"
-              : selectedSignal.signal === "quota_low"
-              ? "bg-amber-50 border-amber-300 text-amber-950 font-medium"
-              : selectedSignal.signal === "connection_err"
-              ? "bg-orange-50 border-orange-300 text-orange-950 font-medium"
-              : "bg-slate-100 border-slate-300 text-slate-800"
-          }`}
-        >
-          <div className="mt-0.5 shrink-0">{selectedSignal.icon}</div>
-          <div className="min-w-0 text-[11px] leading-snug">
-            <div className="font-extrabold">{selectedSignal.label}</div>
-            <p className="text-[10px] opacity-90">{selectedSignal.description}</p>
-          </div>
-        </div>
-      )}
-
-      {/* Action Buttons: FormatAI vs AI Polish */}
-      <div className="space-y-2 pt-1">
-        {isFormatAiActive ? (
-          <button
-            type="button"
-            onClick={handleRunPolish}
-            disabled={isAiPolishing}
-            className="w-full text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer active:scale-98 disabled:opacity-50 bg-blue-600 hover:bg-blue-700"
-          >
-            {isAiPolishing ? (
-              <>
-                <Loader2 className="w-4 h-4 animate-spin text-white" />
-                <span>Normalizing with FormatAI...</span>
-              </>
-            ) : (
-              <>
-                <Sparkles className="w-4 h-4 text-amber-300" />
-                <span>Run FormatAI Now (No AI Needed)</span>
-              </>
-            )}
-          </button>
-        ) : (
-          <>
-            <button
-              type="button"
-              onClick={handleRunPolish}
-              disabled={isAiPolishing}
-              className={`w-full text-white text-xs font-extrabold py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 transition-all shadow-sm cursor-pointer active:scale-98 disabled:opacity-50 ${
-                selectedTheme?.switchActiveBg || "bg-blue-600 hover:bg-blue-700"
-              }`}
-            >
-              {isAiPolishing ? (
-                <>
-                  <Loader2 className="w-4 h-4 animate-spin text-white" />
-                  <span>Polishing Academic Notes...</span>
-                </>
-              ) : (
-                <>
-                  <Sparkles className="w-4 h-4 text-amber-300" />
-                  <span>
-                    Run AI Polish Now ({selectedProvider ? selectedProvider.name.replace("Google ", "") : "AI"})
-                  </span>
-                </>
-              )}
-            </button>
-
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                if (onTriggerFormatAI) onTriggerFormatAI();
-                else onTriggerAiPolish();
-              }}
-              disabled={isAiPolishing}
-              className="w-full text-slate-700 hover:text-slate-950 text-xs font-bold py-2 px-3 rounded-xl flex items-center justify-center gap-1.5 transition-all border border-slate-300 hover:bg-slate-100/80 cursor-pointer active:scale-98 disabled:opacity-50"
-            >
-              <Sparkles className="w-3.5 h-3.5 text-blue-600 shrink-0" />
-              <span>Or Run Instant FormatAI (No AI)</span>
-            </button>
-          </>
-        )}
       </div>
     </div>
   );

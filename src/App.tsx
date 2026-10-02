@@ -1455,7 +1455,14 @@ export default function App() {
             setCleanedMarkdown(null);
           }}
           onSelectSample={handleLoadSample}
-          onOpenAISettings={() => setIsAISettingsModalOpen(true)}
+          onOpenAISettings={(tab) => {
+            if (tab) {
+              setAiSettingsInitialTab(tab === "providers" ? "control" : (tab as any));
+            } else {
+              setAiSettingsInitialTab("control");
+            }
+            setIsAISettingsModalOpen(true);
+          }}
           failedBlockCount={detectedFailedBlockIds.length}
           onRepairFlagged={handleRepairFlaggedBlocks}
           isRepairing={isRepairing}

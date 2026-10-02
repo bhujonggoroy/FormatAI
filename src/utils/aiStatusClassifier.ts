@@ -1,4 +1,4 @@
-import { AIStatusNotification, AIStatusType, AIErrorCategory, FallbackLogEntry, FallbackStep } from "../types/ai";
+import type { AIStatusNotification, AIStatusType, AIErrorCategory, FallbackLogEntry, FallbackStep } from "../types/ai.ts";
 
 /**
  * Helper to classify human-readable error reasons from technical messages, category, or HTTP status into 7 distinct categories:
