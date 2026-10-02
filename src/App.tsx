@@ -1583,7 +1583,7 @@ export default function App() {
               {/* Editor Header Bar with 40px height */}
               <div className="h-10 px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100/90 shrink-0">
                 <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
-                  Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
+                  Raw Content
                 </span>
 
                 <div className="flex items-center gap-1.5 shrink-0">
@@ -1686,7 +1686,7 @@ export default function App() {
           <div className="bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
             <div className="h-10 px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100/90 shrink-0">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
-                Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
+                Raw Content
               </span>
               <div className="flex items-center gap-1.5 shrink-0">
                 <button

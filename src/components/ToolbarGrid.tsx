@@ -244,7 +244,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   return (
     <div
       ref={containerRef}
-      className="sticky top-[40px] z-20 w-full bg-white/95 backdrop-blur-xs border-b border-slate-200 select-none overflow-x-hidden"
+      className="sticky top-[40px] z-20 w-full bg-white/95 backdrop-blur-xs border-b border-slate-200 select-none overflow-visible"
     >
       {/* ===================== MOBILE LAYOUT (<640px) ===================== */}
       {/* Shows [☰ Tools ▾] on left and [✨ AI Polish] [⬇ Export] on right, 44px tall touch targets, single line */}
