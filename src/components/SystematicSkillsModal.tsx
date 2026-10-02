@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   X,
   GraduationCap,
@@ -149,6 +149,24 @@ export const SystematicSkillsModal: React.FC<SystematicSkillsModalProps> = ({
     } catch {}
   };
 
+  // Handle ESC key and lock body scroll when open
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen, onClose]);
+
   if (!isOpen) return null;
 
   const handleCopyInstruction = () => {
@@ -175,35 +193,47 @@ Text:
   };
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-4 bg-slate-900/60 animate-in fade-in duration-150">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 animate-modal-backdrop"
+    >
       <div
-        className="bg-white w-full max-w-3xl rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col max-h-[90vh]"
+        className="bg-white w-full max-w-3xl rounded-t-2xl sm:rounded-2xl shadow-2xl border-t sm:border border-slate-200 overflow-hidden flex flex-col h-[92vh] sm:h-auto sm:max-h-[90vh] animate-modal-content"
         role="dialog"
         aria-modal="true"
         aria-labelledby="skill-modal-title"
       >
+        {/* Mobile Drag Indicator Handle */}
+        <div className="sm:hidden flex justify-center pt-2.5 pb-1 shrink-0 bg-slate-900" aria-hidden="true">
+          <div className="w-10 h-1 bg-slate-600 rounded-full" />
+        </div>
+
         {/* Header */}
-        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white px-6 py-4 flex items-center justify-between border-b border-slate-800">
-          <div className="flex items-center gap-3">
-            <div className="w-9 h-9 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300">
-              <GraduationCap className="w-5 h-5" />
+        <div className="bg-gradient-to-r from-slate-900 via-blue-950 to-indigo-950 text-white px-4 sm:px-6 py-3 sm:py-4 flex items-center justify-between border-b border-slate-800 gap-2">
+          <div className="flex items-center gap-2.5 sm:gap-3 min-w-0">
+            <div className="w-8 h-8 sm:w-9 sm:h-9 rounded-xl bg-blue-600/30 border border-blue-400/40 flex items-center justify-center text-blue-300 shrink-0">
+              <GraduationCap className="w-4 h-4 sm:w-5 sm:h-5" />
             </div>
-            <div>
-              <h2 id="skill-modal-title" className="text-base font-bold text-white flex items-center gap-2">
-                Systematic Academic Formatting Skills
-                <span className="text-[11px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 font-medium">
-                  PDF Standard (Pages 5–11)
+            <div className="min-w-0">
+              <h2 id="skill-modal-title" className="text-sm sm:text-base font-bold text-white flex items-center gap-1.5 sm:gap-2 flex-wrap truncate">
+                <span>Systematic Academic Formatting</span>
+                <span className="text-[10px] sm:text-[11px] px-2 py-0.5 rounded-full bg-blue-500/20 text-blue-300 border border-blue-400/30 font-medium">
+                  PDF Standard
                 </span>
               </h2>
-              <p className="text-xs text-slate-300">
-                Transforms unstructured AI and lecture notes (ChatGPT, Gemini, Claude, NotebookLM) into publication-ready academic documents and Word files.
+              <p className="hidden sm:block text-xs text-slate-300 truncate">
+                Transforms unstructured AI and lecture notes into publication-ready academic documents and Word files.
               </p>
             </div>
           </div>
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 text-slate-400 hover:text-white rounded-lg hover:bg-white/10 transition-colors cursor-pointer"
+            className="min-h-[40px] min-w-[40px] p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer shrink-0 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"
             title="Close modal"
+            aria-label="Close modal"
           >
             <X className="w-5 h-5" />
           </button>

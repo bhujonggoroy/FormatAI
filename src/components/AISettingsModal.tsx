@@ -798,8 +798,9 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           </div>
 
           <button
+            type="button"
             onClick={onClose}
-            className="p-1.5 rounded-lg text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors cursor-pointer shrink-0"
+            className="min-h-[40px] min-w-[40px] p-2 rounded-xl text-slate-500 hover:text-slate-900 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors cursor-pointer shrink-0 flex items-center justify-center"
             aria-label="Close modal"
           >
             <X className="w-5 h-5" />
@@ -852,6 +853,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           id={`tabpanel-${activeTab}`}
           aria-labelledby={`tab-${activeTab}`}
           tabIndex={0}
+          style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
           className="flex-1 min-h-0 overflow-y-auto overflow-x-hidden p-3.5 sm:p-5 space-y-4 bg-slate-50/50 focus-visible:outline-none"
         >
           {isLoading ? (

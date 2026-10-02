@@ -7,6 +7,7 @@ interface HeaderProps {
   docTitle: string;
   onDocTitleChange: (title: string) => void;
   onToggleSidebar: () => void;
+  isSidebarOpen?: boolean;
   accentColor?: string;
 }
 
@@ -14,29 +15,32 @@ export const Header: React.FC<HeaderProps> = ({
   docTitle,
   onDocTitleChange,
   onToggleSidebar,
+  isSidebarOpen = false,
   accentColor = "#881337",
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const currentTheme = getAcademicTheme(accentColor);
 
   return (
-    <header className="h-10 border-b border-slate-300 bg-white sticky top-0 z-30 transition-all w-full select-none shrink-0 shadow-2xs">
-      <div className="max-w-7xl mx-auto px-3 sm:px-4 h-full flex items-center justify-between gap-2 sm:gap-4">
-        {/* Left: 3-Lines Bar (Hamburger) + Brand */}
-        <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
+    <header className="h-11 sm:h-10 border-b border-slate-300 bg-white sticky top-0 z-30 transition-all w-full select-none shrink-0 shadow-2xs" style={{ paddingLeft: "max(0px, env(safe-area-inset-left))", paddingRight: "max(0px, env(safe-area-inset-right))" }}>
+      <div className="max-w-7xl mx-auto px-2.5 sm:px-4 h-full flex items-center justify-between gap-1.5 sm:gap-4">
+        {/* Left: 3-Lines Bar (Hamburger / Menu Button) + Brand */}
+        <div className="flex items-center gap-1.5 sm:gap-2.5 shrink-0">
           <button
             id="btn-hamburger-menu"
             type="button"
             onClick={onToggleSidebar}
-            className="h-7 w-7 sm:h-7.5 sm:w-7.5 rounded-lg text-slate-700 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-300 transition-colors cursor-pointer shrink-0 flex items-center justify-center shadow-2xs"
-            title="Open Settings, AI Providers & Academic Skills Drawer"
-            aria-label="Open menu"
+            aria-expanded={isSidebarOpen}
+            aria-controls="sidebar-settings-drawer"
+            className="h-9 w-9 sm:h-8 sm:w-8 min-h-[36px] min-w-[36px] rounded-xl text-slate-800 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-300 transition-colors cursor-pointer shrink-0 flex items-center justify-center shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
+            title={isSidebarOpen ? "Close Navigation & Settings Menu (Esc)" : "Open Navigation, Settings & Academic Skills Menu"}
+            aria-label={isSidebarOpen ? "Close navigation menu" : "Open navigation and settings menu"}
           >
-            <Menu className="w-4 h-4 text-slate-900 stroke-[2.5]" />
+            <Menu className="w-4.5 h-4.5 text-slate-900 stroke-[2.5]" />
           </button>
 
           {/* Brand Logo & Name */}
-          <div className="flex items-center gap-2 shrink-0 select-none">
+          <div className="flex items-center gap-1.5 sm:gap-2 shrink-0 select-none">
             <FormatAILogo variant="icon" size="sm" />
             <div
               className="flex items-baseline tracking-normal leading-none"
@@ -69,7 +73,7 @@ export const Header: React.FC<HeaderProps> = ({
         </div>
 
         {/* Center/Right: Document title box (Merged app bar and file name: inline-editable text with pencil) */}
-        <div className="flex items-center gap-1.5 min-w-0 max-w-xs sm:max-w-md w-full justify-end">
+        <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] xs:max-w-xs sm:max-w-md w-full justify-end">
           <div className="relative flex items-center w-full group">
             <input
               id="header-doc-title"
@@ -79,8 +83,9 @@ export const Header: React.FC<HeaderProps> = ({
               onFocus={() => setIsEditingTitle(true)}
               onBlur={() => setIsEditingTitle(false)}
               placeholder="Untitled Document"
-              className="text-xs sm:text-[13px] font-semibold text-slate-800 bg-transparent hover:bg-slate-100 focus:bg-white border border-transparent hover:border-slate-300 focus:border-slate-400 rounded-lg px-2 py-1 transition-all truncate w-full pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] placeholder:text-slate-400 cursor-text"
+              className="text-xs sm:text-[13px] font-semibold text-slate-800 bg-transparent hover:bg-slate-100 focus:bg-white border border-transparent hover:border-slate-300 focus:border-slate-400 rounded-lg px-2 sm:px-2.5 py-1.5 transition-all truncate w-full pr-6 sm:pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] placeholder:text-slate-400 cursor-text min-h-[36px]"
               title="Click to rename document"
+              aria-label="Document Title"
             />
             <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none group-hover:text-slate-600 transition-colors shrink-0" />
           </div>

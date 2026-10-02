@@ -218,8 +218,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
       <span
         className={
           display
-            ? "block my-2 overflow-x-auto text-center"
-            : "inline-block px-1 align-baseline"
+            ? "block my-2 max-w-full overflow-x-auto text-center"
+            : "inline-block max-w-full overflow-x-auto px-1 align-baseline"
         }
         dangerouslySetInnerHTML={{ __html: html }}
       />
@@ -1087,8 +1087,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </button>
 
-          {/* Zoom controls with tap-percentage-to-reset */}
-          <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 text-xs text-slate-700 shadow-2xs shrink-0">
+          {/* Zoom controls with tap-percentage-to-reset (hidden on narrow mobile <380px for cleaner fit) */}
+          <div className="hidden min-[380px]:flex items-center bg-white border border-slate-200 rounded-lg p-0.5 text-xs text-slate-700 shadow-2xs shrink-0">
             <button
               type="button"
               onClick={() => setZoomLevel((z) => Math.max(75, z - 10))}

@@ -464,6 +464,24 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
     };
   }, [isOpen]);
   
+  // Handle ESC key and lock body scroll when open
+  useEffect(() => {
+    if (!isOpen) return;
+    const handleKeyDown = (e: KeyboardEvent) => {
+      if (e.key === "Escape") {
+        e.stopPropagation();
+        onClose();
+      }
+    };
+    window.addEventListener("keydown", handleKeyDown);
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+    };
+  }, [isOpen, onClose]);
+
   // Search & Filter
   const [searchQuery, setSearchQuery] = useState("");
   const [categoryFilter, setCategoryFilter] = useState<string>("all");
@@ -841,8 +859,23 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5 bg-slate-900/65 overflow-y-auto">
-      <div className="relative w-full max-w-5xl bg-white sm:rounded-2xl rounded-none shadow-2xl sm:border sm:border-slate-200/90 overflow-hidden flex flex-col h-full sm:h-auto sm:max-h-[92vh] transition-all">
+    <div
+      onClick={(e) => {
+        if (e.target === e.currentTarget) onClose();
+      }}
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-5 bg-slate-900/65 overflow-hidden animate-modal-backdrop"
+    >
+      <div
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby="skills-manager-modal-title"
+        className="relative w-full max-w-5xl bg-white rounded-t-2xl sm:rounded-2xl shadow-2xl sm:border sm:border-slate-200/90 overflow-hidden flex flex-col h-[94vh] sm:h-auto sm:max-h-[92vh] transition-all animate-modal-content"
+      >
+        {/* Mobile Drag Indicator Handle */}
+        <div className="sm:hidden flex justify-center pt-2.5 pb-1 shrink-0 bg-slate-900" aria-hidden="true">
+          <div className="w-10 h-1 bg-slate-600 rounded-full" />
+        </div>
+
         {/* Header */}
         <div className="px-3 sm:px-6 py-2.5 sm:py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2">
           <div className="flex items-center gap-2 sm:gap-3 min-w-0">
@@ -851,7 +884,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
             </div>
             <div className="min-w-0">
               <div className="flex items-center gap-1.5 sm:gap-2.5 flex-wrap">
-                <h2 className="text-sm sm:text-lg font-extrabold text-white tracking-tight truncate sm:whitespace-normal">
+                <h2 id="skills-manager-modal-title" className="text-sm sm:text-lg font-extrabold text-white tracking-tight truncate sm:whitespace-normal">
                   <span className="hidden sm:inline">Academic Skills & Formatting Center</span>
                   <span className="sm:hidden">Skills & Formatting Center</span>
                 </h2>
@@ -870,9 +903,11 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
 
           <button
             id="close-skills-modal-btn"
+            type="button"
             onClick={onClose}
-            className="p-1.5 sm:p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0"
+            className="min-h-[40px] min-w-[40px] p-2 rounded-xl text-slate-400 hover:text-white hover:bg-white/10 transition-colors cursor-pointer shrink-0 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             title="Close modal"
+            aria-label="Close skills modal"
           >
             <X className="w-5 h-5" />
           </button>

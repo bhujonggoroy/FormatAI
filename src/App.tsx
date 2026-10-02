@@ -1446,7 +1446,8 @@ export default function App() {
       <Header
         docTitle={docTitle}
         onDocTitleChange={setDocTitle}
-        onToggleSidebar={() => setIsSidebarOpen(true)}
+        onToggleSidebar={() => setIsSidebarOpen((prev) => !prev)}
+        isSidebarOpen={isSidebarOpen}
         accentColor={accentColor}
       />
 
@@ -1535,7 +1536,7 @@ export default function App() {
               setViewLayout("split");
               setCollapsedPane("none");
             }}
-            className={`relative z-10 hidden sm:inline-flex flex-1 h-full items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
+            className={`relative z-10 hidden sm:inline-flex flex-1 h-full items-center justify-center gap-1.5 px-3 rounded-lg text-xs sm:text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "split"
                 ? "font-bold text-slate-950"
                 : "font-semibold text-slate-700 hover:text-slate-950"
@@ -1556,7 +1557,7 @@ export default function App() {
             aria-selected={viewLayout === "editor"}
             tabIndex={viewLayout === "editor" ? 0 : -1}
             onClick={() => setViewLayout("editor")}
-            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
+            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "editor"
                 ? "font-bold text-slate-950"
                 : "font-semibold text-slate-700 hover:text-slate-950"
@@ -1566,7 +1567,9 @@ export default function App() {
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "editor" ? currentTheme.hex : undefined }}
             />
-            <span className="truncate">Raw Editor</span>
+            <span className="truncate">
+              <span className="hidden min-[380px]:inline">Raw </span>Editor
+            </span>
           </button>
 
           {/* Tab 3: Document Sheet */}
@@ -1577,7 +1580,7 @@ export default function App() {
             aria-selected={viewLayout === "preview"}
             tabIndex={viewLayout === "preview" ? 0 : -1}
             onClick={() => setViewLayout("preview")}
-            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
+            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-2 sm:px-3 rounded-lg text-xs sm:text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "preview"
                 ? "font-bold text-slate-950"
                 : "font-semibold text-slate-700 hover:text-slate-950"
@@ -1587,7 +1590,9 @@ export default function App() {
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "preview" ? currentTheme.hex : undefined }}
             />
-            <span className="truncate">Document Sheet</span>
+            <span className="truncate">
+              <span className="hidden min-[380px]:inline">Document </span>Sheet
+            </span>
           </button>
         </div>
       </div>
@@ -1688,7 +1693,11 @@ export default function App() {
             {collapsedPane !== "editor" && (
               <div
                 style={{
-                  ...(collapsedPane === "none" ? { width: `calc(${splitRatio}% - 4px)` } : {}),
+                  ...(collapsedPane === "none"
+                    ? typeof window !== "undefined" && window.innerWidth >= 640
+                      ? { width: `calc(${splitRatio}% - 4px)` }
+                      : { width: "100%" }
+                    : {}),
                   ...(collapsedPane === "preview" ? { width: "100%", flex: "1 1 100%" } : {}),
                 }}
                 className={`bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col h-full min-h-0 overflow-hidden transition-[width] ${
@@ -1813,7 +1822,7 @@ export default function App() {
                 />
 
                 {/* Quick Academic Math Symbols Bar (Mobile & Narrow Screen Keyboard Accessory) */}
-                <div className="flex sm:hidden items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 overflow-x-auto shrink-0 select-none scrollbar-none">
+                <div className="flex sm:hidden items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 overflow-x-auto shrink-0 select-none no-scrollbar">
                   <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">Insert:</span>
                   {[
                     { label: "\\frac{}{}", snippet: "\\frac{a}{b}", offset: 6 },
@@ -1920,7 +1929,11 @@ export default function App() {
             {collapsedPane !== "preview" && (
               <div
                 style={{
-                  ...(collapsedPane === "none" ? { width: `calc(${100 - splitRatio}% - 4px)` } : {}),
+                  ...(collapsedPane === "none"
+                    ? typeof window !== "undefined" && window.innerWidth >= 640
+                      ? { width: `calc(${100 - splitRatio}% - 4px)` }
+                      : { width: "100%" }
+                    : {}),
                   ...(collapsedPane === "editor" ? { width: "100%", flex: "1 1 100%" } : {}),
                 }}
                 className={`h-full min-h-0 flex flex-col overflow-hidden transition-[width] ${
@@ -2015,7 +2028,7 @@ export default function App() {
             />
 
             {/* Quick Academic Math Symbols Bar (Mobile & Narrow Screen Keyboard Accessory) */}
-            <div className="flex sm:hidden items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 overflow-x-auto shrink-0 select-none scrollbar-none">
+            <div className="flex sm:hidden items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 overflow-x-auto shrink-0 select-none no-scrollbar">
               <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">Insert:</span>
               {[
                 { label: "\\frac{}{}", snippet: "\\frac{a}{b}", offset: 6 },
@@ -2108,6 +2121,7 @@ export default function App() {
       {/* Mobile Sticky Bottom Floating Action Dock (Mobile Users only, hidden on sm+) */}
       <div
         id="mobile-sticky-dock"
+        style={{ paddingLeft: "max(0.625rem, env(safe-area-inset-left))", paddingRight: "max(0.625rem, env(safe-area-inset-right))" }}
         className={`sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-slate-300 px-2.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-[1fr_2fr_1fr] items-center gap-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.12)] transition-transform duration-200 ${
           isEditorFocused ? "translate-y-full pointer-events-none" : "translate-y-0"
         }`}
@@ -2191,19 +2205,19 @@ export default function App() {
         </button>
       </div>
 
-      {/* Educational Dedication & Open Source Footer */}
-      <footer className="border-t-2 border-slate-300 bg-white py-4 px-4 sm:px-6 mt-8 pb-28 sm:pb-4">
-        <div className="max-w-7xl mx-auto flex flex-col sm:flex-row items-center justify-between gap-3 text-xs text-slate-500">
-          <div className="flex items-center gap-2 text-center sm:text-left flex-wrap justify-center sm:justify-start">
+      {/* Educational Dedication & Open Source Footer (Desktop/Tablet, accessible via hamburger drawer on mobile) */}
+      <footer className="hidden sm:block border-t border-slate-200 bg-white py-2 px-4 shrink-0">
+        <div className="max-w-7xl mx-auto flex items-center justify-between gap-3 text-xs text-slate-500">
+          <div className="flex items-center gap-2">
             <span className="font-semibold text-slate-700">FormatAI</span>
             <span>•</span>
             <span>AI to Academic DOCX Typesetter</span>
             <span>•</span>
-            <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200">
+            <span className="text-emerald-700 font-semibold bg-emerald-50 px-2 py-0.5 rounded-full border border-emerald-200 text-[11px]">
               Free for Students
             </span>
           </div>
-          <div className="flex items-center gap-3 flex-wrap justify-center">
+          <div className="flex items-center gap-3">
             <button
               type="button"
               onClick={() => {
@@ -2248,6 +2262,11 @@ export default function App() {
             setSkillsModalTab("license");
             setIsSkillsManagerModalOpen(true);
           }}
+          viewLayout={viewLayout}
+          onViewLayoutChange={setViewLayout}
+          onTriggerAiPolish={isNoAI ? handleRunFormatAI : handlePreviewClean}
+          isAiPolishing={isConverting}
+          onDownloadDocx={handleConvertToDocx}
           fontFamily={fontFamily}
           onFontFamilyChange={setFontFamily}
           accentColor={accentColor}

@@ -101,7 +101,7 @@ export const AIStatusBanner: React.FC<AIStatusBannerProps> = ({
       aria-live="polite"
       className={`w-full rounded-xl border px-3.5 py-2.5 shadow-2xs transition-all animate-fadeIn select-text ${themeStyles.container}`}
     >
-      <div className="flex items-center justify-between gap-2.5">
+      <div className="flex flex-wrap sm:flex-nowrap items-center justify-between gap-2 sm:gap-2.5">
         {/* Left icon + status header */}
         <div className="flex items-center gap-2.5 flex-1 min-w-0">
           <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${themeStyles.iconBg}`}>

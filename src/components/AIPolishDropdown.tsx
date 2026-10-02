@@ -307,8 +307,8 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
       ref={popoverRef}
       role="dialog"
       aria-label="Formatting Engine Selector"
-      className={`absolute z-50 w-[320px] max-h-[70vh] flex flex-col bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs animate-popover-in motion-reduce:transition-none motion-reduce:transform-none ${
-        placement.vertical === "top" ? "bottom-full mb-2" : "top-full mt-2"
+      className={`absolute z-50 w-[min(320px,calc(100vw-1rem))] max-w-[calc(100vw-1rem)] max-h-[70vh] flex flex-col bg-white rounded-xl shadow-xl border border-slate-200 overflow-hidden text-xs animate-popover-in motion-reduce:transition-none motion-reduce:transform-none ${
+        placement.vertical === "top" ? "bottom-full mb-1.5" : "top-full mt-1.5"
       } ${
         placement.horizontal === "right" ? "right-0" : "left-0"
       }`}
@@ -319,10 +319,10 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-150 ease-out cursor-pointer active:scale-95 motion-reduce:transform-none"
+          className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-150 ease-out cursor-pointer active:scale-95 motion-reduce:transform-none shrink-0"
           aria-label="Close engine selector"
         >
-          <X className="w-3.5 h-3.5" />
+          <X className="w-4 h-4" />
         </button>
       </div>
 

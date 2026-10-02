@@ -42,7 +42,6 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
   if (!isOpen || !providerHelp) return null;
 
   const handleOpenProviderUrl = () => {
-    window.open(providerHelp.apiKeyUrl, "_blank", "noopener,noreferrer");
     onClose();
   };
 
@@ -51,14 +50,14 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="free-key-modal-title"
-      className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 antialiased animate-in fade-in duration-150"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 antialiased animate-modal-backdrop"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
     >
       <div
         ref={modalRef}
-        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col scale-100 transition-all"
+        className="bg-white w-full max-w-md rounded-2xl shadow-2xl border border-slate-200 overflow-hidden flex flex-col scale-100 transition-all animate-modal-content"
         onClick={(e) => e.stopPropagation()}
       >
         {/* Header */}
@@ -80,7 +79,7 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
             type="button"
             onClick={onClose}
             aria-label="Close dialog"
-            className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-200/80 transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500"
+            className="min-h-[40px] min-w-[40px] p-2 rounded-xl text-slate-400 hover:text-slate-700 hover:bg-slate-200/80 transition-colors flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 cursor-pointer"
           >
             <X className="w-4 h-4" />
           </button>
@@ -110,24 +109,26 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
         </div>
 
         {/* Actions Footer */}
-        <div className="px-5 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-2">
+        <div className="px-4 sm:px-5 py-3.5 bg-slate-50/80 border-t border-slate-100 flex items-center justify-end gap-2">
           <button
             type="button"
             onClick={onClose}
-            className="px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition-colors focus:outline-none focus:ring-2 focus:ring-slate-400 cursor-pointer"
+            className="min-h-[40px] px-3.5 py-2 rounded-lg text-xs font-semibold text-slate-700 bg-white border border-slate-300 hover:bg-slate-100 transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-400 cursor-pointer flex items-center justify-center"
           >
             Cancel
           </button>
 
-          <button
-            ref={ctaButtonRef}
-            type="button"
+          <a
+            ref={ctaButtonRef as any}
+            href={providerHelp.apiKeyUrl}
+            target="_blank"
+            rel="noopener noreferrer"
             onClick={handleOpenProviderUrl}
-            className="inline-flex items-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition-colors focus:outline-none focus:ring-2 focus:ring-blue-500 focus:ring-offset-1 cursor-pointer"
+            className="min-h-[40px] inline-flex items-center justify-center gap-1.5 px-4 py-2 rounded-lg text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-1 cursor-pointer"
           >
             <span>Get Free API Key</span>
             <ExternalLink className="w-3.5 h-3.5" />
-          </button>
+          </a>
         </div>
       </div>
     </div>

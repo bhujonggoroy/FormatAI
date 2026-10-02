@@ -283,23 +283,23 @@ export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
       </div>
 
       {/* Footer Actions */}
-      <div className="bg-slate-100 border-t border-slate-200 px-4 py-2.5 flex items-center justify-between gap-3 shrink-0">
+      <div className="bg-slate-100 border-t border-slate-200 px-3 sm:px-4 py-2.5 flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2.5 shrink-0">
         <div className="text-[11px] text-slate-600 flex items-center gap-1.5">
-          <ShieldCheck className="w-4 h-4 text-indigo-600" />
+          <ShieldCheck className="w-4 h-4 text-indigo-600 shrink-0" />
           <span>Formulas, KaTeX notation, tables, headers, and bullet lists verified intact.</span>
         </div>
 
-        <div className="flex items-center gap-2">
+        <div className="flex items-center gap-2 w-full sm:w-auto">
           <button
             onClick={onKeepOriginal}
-            className="px-3.5 py-1.5 bg-white hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold rounded-lg transition-colors cursor-pointer"
+            className="flex-1 sm:flex-initial min-h-[40px] px-3.5 py-1.5 bg-white hover:bg-slate-200 text-slate-800 border border-slate-300 text-xs font-bold rounded-lg transition-colors cursor-pointer flex items-center justify-center"
           >
             Keep Original
           </button>
           <button
             onClick={onApplyChanges}
             disabled={!diffResult.hasChanges}
-            className="px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg flex items-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
+            className="flex-1 sm:flex-initial min-h-[40px] px-4 py-1.5 bg-indigo-600 hover:bg-indigo-700 disabled:opacity-50 disabled:cursor-not-allowed text-white text-xs font-bold rounded-lg flex items-center justify-center gap-1.5 transition-colors shadow-2xs cursor-pointer"
           >
             <Check className="w-4 h-4" />
             <span>Apply Polish</span>

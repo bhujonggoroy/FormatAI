@@ -18,6 +18,10 @@ import {
   Calculator,
   Layers,
   ShieldCheck,
+  Eye,
+  Columns,
+  FileDown,
+  Loader2,
 } from "lucide-react";
 import { FormatAILogo } from "./FormatAILogo";
 import { ACADEMIC_THEMES, getAcademicTheme } from "../utils/theme";
@@ -43,6 +47,12 @@ export interface SidebarSettingsDrawerProps {
   activeSkillsCount: number;
   onOpenSkillsModal: () => void;
   onOpenLicenseModal: () => void;
+  // Workspace Navigation & Actions
+  viewLayout?: "editor" | "preview" | "split";
+  onViewLayoutChange?: (layout: "editor" | "preview" | "split") => void;
+  onTriggerAiPolish?: () => void;
+  isAiPolishing?: boolean;
+  onDownloadDocx?: () => void;
   // Document Options
   fontFamily: string;
   onFontFamilyChange: (font: string) => void;
@@ -172,6 +182,11 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
   activeSkillsCount,
   onOpenSkillsModal,
   onOpenLicenseModal,
+  viewLayout,
+  onViewLayoutChange,
+  onTriggerAiPolish,
+  isAiPolishing = false,
+  onDownloadDocx,
   fontFamily,
   onFontFamilyChange,
   accentColor,
@@ -334,6 +349,7 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
 
   return (
     <div
+      id="sidebar-settings-drawer"
       role="dialog"
       aria-modal="true"
       aria-label="Settings and Tools"
@@ -414,6 +430,107 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
           className="flex-1 min-h-0 overflow-y-auto overscroll-contain px-4 sm:px-5 py-4 space-y-3.5"
           style={{ paddingBottom: "max(1.5rem, env(safe-area-inset-bottom))" }}
         >
+          {/* ================= WORKSPACE NAVIGATION & QUICK ACTIONS ================= */}
+          <div className="rounded-2xl border border-slate-300 bg-slate-50/80 p-3 space-y-2.5 shadow-2xs">
+            <div className="flex items-center justify-between">
+              <span className="text-xs font-bold text-slate-900 uppercase tracking-wide">
+                Workspace Views & Navigation
+              </span>
+              <span className="text-[11px] text-slate-500">Quick Access</span>
+            </div>
+
+            {/* View Switcher: Editor / Preview / Split */}
+            {onViewLayoutChange && (
+              <div className="grid grid-cols-2 sm:grid-cols-3 gap-1.5 p-1 bg-white rounded-xl border border-slate-200">
+                <button
+                  type="button"
+                  onClick={() => {
+                    onViewLayoutChange("editor");
+                    if (window.innerWidth < 640) requestClose();
+                  }}
+                  className={`min-h-[40px] px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    viewLayout === "editor"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                  }`}
+                  aria-pressed={viewLayout === "editor"}
+                >
+                  <FileText className="w-3.5 h-3.5 shrink-0" />
+                  <span>Editor</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onViewLayoutChange("preview");
+                    if (window.innerWidth < 640) requestClose();
+                  }}
+                  className={`min-h-[40px] px-2 py-1.5 rounded-lg text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    viewLayout === "preview"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                  }`}
+                  aria-pressed={viewLayout === "preview"}
+                >
+                  <Eye className="w-3.5 h-3.5 shrink-0" />
+                  <span>Preview</span>
+                </button>
+                <button
+                  type="button"
+                  onClick={() => {
+                    onViewLayoutChange("split");
+                    if (window.innerWidth < 640) requestClose();
+                  }}
+                  className={`hidden sm:flex min-h-[40px] px-2 py-1.5 rounded-lg text-xs font-bold items-center justify-center gap-1.5 transition-all cursor-pointer ${
+                    viewLayout === "split"
+                      ? "bg-slate-900 text-white shadow-xs"
+                      : "text-slate-700 hover:text-slate-950 hover:bg-slate-100"
+                  }`}
+                  aria-pressed={viewLayout === "split"}
+                >
+                  <Columns className="w-3.5 h-3.5 shrink-0" />
+                  <span>Split</span>
+                </button>
+              </div>
+            )}
+
+            {/* Primary Action Shortcuts inside Menu */}
+            <div className="grid grid-cols-2 gap-2 pt-0.5">
+              {onTriggerAiPolish && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    requestClose();
+                    onTriggerAiPolish();
+                  }}
+                  disabled={isAiPolishing}
+                  className="min-h-[44px] px-2.5 py-2 rounded-xl text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-[0.98] disabled:opacity-50"
+                  style={{ backgroundColor: currentTheme.btnPrimary }}
+                >
+                  {isAiPolishing ? (
+                    <Loader2 className="w-3.5 h-3.5 animate-spin" />
+                  ) : (
+                    <Sparkles className="w-3.5 h-3.5 text-amber-300" />
+                  )}
+                  <span>{isAiPolishing ? "Normalizing..." : "AI Polish"}</span>
+                </button>
+              )}
+
+              {onDownloadDocx && (
+                <button
+                  type="button"
+                  onClick={() => {
+                    requestClose();
+                    onDownloadDocx();
+                  }}
+                  className="min-h-[44px] px-2.5 py-2 rounded-xl bg-slate-900 hover:bg-black active:bg-slate-950 text-white text-xs font-bold flex items-center justify-center gap-1.5 transition-all cursor-pointer shadow-xs active:scale-[0.98]"
+                >
+                  <FileDown className="w-3.5 h-3.5 text-blue-300" />
+                  <span>Export DOCX</span>
+                </button>
+              )}
+            </div>
+          </div>
+
           {/* ================= GROUP 1: APPEARANCE ================= */}
           <GroupCard
             id="appearance"
@@ -836,20 +953,37 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             </div>
 
             {/* License & Upstream Repositories Button */}
-            <button
-              type="button"
-              onClick={() => {
-                onClose();
-                onOpenLicenseModal();
-              }}
-              className="min-h-[44px] w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
-            >
-              <div className="flex items-center gap-2 min-w-0">
-                <Scale className="w-4 h-4 text-slate-600 shrink-0" />
-                <span className="truncate">License & Upstream Repositories</span>
-              </div>
-              <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
-            </button>
+            <div className="space-y-2">
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenLicenseModal();
+                }}
+                className="min-h-[44px] w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Scale className="w-4 h-4 text-slate-600 shrink-0" />
+                  <span className="truncate">License & Upstream Repositories</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  onClose();
+                  onOpenSkillsModal();
+                }}
+                className="min-h-[44px] w-full flex items-center justify-between p-3 bg-slate-50 hover:bg-slate-100 border border-slate-200 rounded-xl text-slate-800 text-xs font-semibold transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
+              >
+                <div className="flex items-center gap-2 min-w-0">
+                  <Layers className="w-4 h-4 text-slate-600 shrink-0" />
+                  <span className="truncate">Modular Skills Pipeline</span>
+                </div>
+                <ChevronRight className="w-4 h-4 text-slate-400 shrink-0" />
+              </button>
+            </div>
           </GroupCard>
         </div>
       </div>
