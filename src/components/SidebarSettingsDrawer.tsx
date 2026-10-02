@@ -150,11 +150,16 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
       role="dialog"
       aria-modal="true"
       aria-label="Settings and Tools"
-      className="fixed inset-0 z-50 flex justify-end"
+      aria-hidden={!isOpen}
+      className={`fixed inset-0 z-50 flex justify-end ${
+        !isOpen ? "pointer-events-none invisible hidden" : ""
+      }`}
     >
       {/* Dark semi-transparent backdrop with blur and fade */}
       <div
-        className="fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-200 ease-out motion-reduce:transition-none"
+        className={`fixed inset-0 bg-slate-900/40 backdrop-blur-xs transition-opacity duration-200 ease-out motion-reduce:transition-none ${
+          !isOpen ? "opacity-0 pointer-events-none invisible" : "opacity-100"
+        }`}
         onClick={onClose}
         aria-hidden="true"
       />
@@ -162,7 +167,9 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
       {/* Drawer panel: Desktop right-side 400px, Mobile full-height bottom sheet with rounded top */}
       <div
         ref={drawerRef}
-        className="relative z-10 w-full sm:w-[400px] sm:max-w-[400px] bg-[#F8FAFC] h-[92vh] sm:h-full max-h-[92vh] sm:max-h-full rounded-t-2xl sm:rounded-none border-t sm:border-t-0 sm:border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden self-end sm:self-auto transition-transform duration-200 ease-out motion-reduce:transition-none"
+        className={`relative z-10 w-full sm:w-[400px] sm:max-w-[400px] bg-[#F8FAFC] h-[92vh] sm:h-full max-h-[92vh] sm:max-h-full rounded-t-2xl sm:rounded-none border-t sm:border-t-0 sm:border-l border-slate-200 shadow-2xl flex flex-col overflow-hidden self-end sm:self-auto transition-transform duration-200 ease-out motion-reduce:transition-none ${
+          !isOpen ? "pointer-events-none invisible" : ""
+        }`}
       >
         {/* Mobile Drag Handle */}
         <div className="w-12 h-1 bg-slate-300 rounded-full mx-auto my-2 sm:hidden shrink-0" aria-hidden="true" />

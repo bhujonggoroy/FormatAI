@@ -1411,7 +1411,7 @@ export default function App() {
           role="tablist"
           aria-label="Document view options"
           onKeyDown={handleViewSwitcherKeyDown}
-          className="sticky top-[84px] sm:static z-10 w-full h-9 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 relative flex items-center select-none shrink-0"
+          className="sticky top-[84px] sm:relative sm:top-auto z-10 w-full h-9 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 flex items-center select-none shrink-0"
         >
           {/* Sliding Active Tab Background Indicator */}
           <div
@@ -1898,72 +1898,78 @@ export default function App() {
       </footer>
 
       {/* 3-Lines (Hamburger) Drawer holding all configuration settings */}
-      <SidebarSettingsDrawer
-        isOpen={isSidebarOpen}
-        onClose={() => setIsSidebarOpen(false)}
-        readyProvidersCount={aiHealthInfo?.readyCount || 1}
-        aiProvidersSummary={aiHealthInfo?.providersSummary || []}
-        aiMode={aiHealthInfo?.mode || "failover"}
-        isFreeOnly={aiHealthInfo?.freeOnly || false}
-        onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
-        activeSkillsCount={activeSkillsCount}
-        onOpenSkillsModal={() => {
-          setSkillsModalTab("skills");
-          setIsSkillsManagerModalOpen(true);
-        }}
-        onOpenLicenseModal={() => {
-          setSkillsModalTab("license");
-          setIsSkillsManagerModalOpen(true);
-        }}
-        fontFamily={fontFamily}
-        onFontFamilyChange={setFontFamily}
-        accentColor={accentColor}
-        onAccentColorChange={setAccentColor}
-        equationFormat={equationFormat}
-        onEquationFormatChange={setEquationFormat}
-        formatMode={formatMode}
-        onFormatModeChange={(mode) => {
-          setFormatMode(mode);
-          setCleanedMarkdown(null);
-        }}
-        onPasteClipboard={handlePasteClipboard}
-        onClearText={() => {
-          setInputText("");
-          setDocTitle("FormatAI Document");
-          setCleanedMarkdown(null);
-        }}
-        charCount={charCount}
-        wordCount={wordCount}
-        isInstalled={isInstalled}
-        hasNativePrompt={hasNativePrompt}
-        onInstallApp={handleInstallApp}
-      />
+      {isSidebarOpen && (
+        <SidebarSettingsDrawer
+          isOpen={isSidebarOpen}
+          onClose={() => setIsSidebarOpen(false)}
+          readyProvidersCount={aiHealthInfo?.readyCount || 1}
+          aiProvidersSummary={aiHealthInfo?.providersSummary || []}
+          aiMode={aiHealthInfo?.mode || "failover"}
+          isFreeOnly={aiHealthInfo?.freeOnly || false}
+          onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
+          activeSkillsCount={activeSkillsCount}
+          onOpenSkillsModal={() => {
+            setSkillsModalTab("skills");
+            setIsSkillsManagerModalOpen(true);
+          }}
+          onOpenLicenseModal={() => {
+            setSkillsModalTab("license");
+            setIsSkillsManagerModalOpen(true);
+          }}
+          fontFamily={fontFamily}
+          onFontFamilyChange={setFontFamily}
+          accentColor={accentColor}
+          onAccentColorChange={setAccentColor}
+          equationFormat={equationFormat}
+          onEquationFormatChange={setEquationFormat}
+          formatMode={formatMode}
+          onFormatModeChange={(mode) => {
+            setFormatMode(mode);
+            setCleanedMarkdown(null);
+          }}
+          onPasteClipboard={handlePasteClipboard}
+          onClearText={() => {
+            setInputText("");
+            setDocTitle("FormatAI Document");
+            setCleanedMarkdown(null);
+          }}
+          charCount={charCount}
+          wordCount={wordCount}
+          isInstalled={isInstalled}
+          hasNativePrompt={hasNativePrompt}
+          onInstallApp={handleInstallApp}
+        />
+      )}
 
       {/* Multi-Provider AI Settings Modal */}
-      <AISettingsModal
-        isOpen={isAISettingsModalOpen}
-        initialTab={aiSettingsInitialTab}
-        onClose={() => {
-          setIsAISettingsModalOpen(false);
-          fetchAIHealth();
-        }}
-        onConfigChanged={fetchAIHealth}
-      />
+      {isAISettingsModalOpen && (
+        <AISettingsModal
+          isOpen={isAISettingsModalOpen}
+          initialTab={aiSettingsInitialTab}
+          onClose={() => {
+            setIsAISettingsModalOpen(false);
+            fetchAIHealth();
+          }}
+          onConfigChanged={fetchAIHealth}
+        />
+      )}
 
       {/* Systematic Formatting Skills Modal */}
-      <SystematicSkillsModal
-        isOpen={isSkillModalOpen}
-        onClose={() => setIsSkillModalOpen(false)}
-        activeMode={formatMode}
-        onSelectMode={(mode) => {
-          setFormatMode(mode);
-          setCleanedMarkdown(null);
-        }}
-        onLoadSample={() => {
-          handleLoadSample(SAMPLE_NOTES[0]);
-          setFormatMode("study_guide");
-        }}
-      />
+      {isSkillModalOpen && (
+        <SystematicSkillsModal
+          isOpen={isSkillModalOpen}
+          onClose={() => setIsSkillModalOpen(false)}
+          activeMode={formatMode}
+          onSelectMode={(mode) => {
+            setFormatMode(mode);
+            setCleanedMarkdown(null);
+          }}
+          onLoadSample={() => {
+            handleLoadSample(SAMPLE_NOTES[0]);
+            setFormatMode("study_guide");
+          }}
+        />
+      )}
 
       {/* Modular GitHub Skills Manager Modal */}
       <ErrorBoundary fallbackTitle="Academic Skills Modal Paused">

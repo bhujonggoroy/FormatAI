@@ -95,6 +95,11 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
     // Trigger smooth fade out
     const timer = setTimeout(() => {
       setIsFadingOut(true);
+      // Safety fallback: unmount after animation duration in case transitionend is cancelled or motion is reduced
+      setTimeout(() => {
+        setShouldRender(false);
+        onFinished?.();
+      }, 550);
     }, 180);
 
     return () => clearTimeout(timer);
@@ -118,7 +123,7 @@ export const SplashScreen: React.FC<SplashScreenProps> = ({
       aria-live="polite"
       onTransitionEnd={handleTransitionEnd}
       className={`fixed inset-0 z-[100000] flex flex-col items-center justify-center bg-[#FAF7F2] select-none transition-opacity duration-500 ease-out px-4 overflow-hidden ${
-        isFadingOut ? "opacity-0 pointer-events-none" : "opacity-100"
+        isFadingOut ? "opacity-0 pointer-events-none invisible" : "opacity-100"
       }`}
     >
       <div className="flex flex-col items-center text-center max-w-sm sm:max-w-md w-full animate-splash-enter motion-reduce:animate-none">

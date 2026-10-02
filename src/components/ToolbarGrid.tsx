@@ -212,9 +212,14 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
   // Reusable bottom sheet wrapper for mobile
   const renderBottomSheet = (title: string, children: React.ReactNode) => (
-    <div className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-2xs flex items-end justify-center p-0 animate-modal-backdrop motion-reduce:transition-none">
+    <div
+      className="fixed inset-0 z-50 bg-slate-900/40 backdrop-blur-2xs flex items-end justify-center p-0 animate-modal-backdrop motion-reduce:transition-none cursor-pointer"
+      onClick={() => setOpenCard(null)}
+      aria-modal="true"
+      role="dialog"
+    >
       <div
-        className="w-full max-h-[85vh] bg-white rounded-t-2xl border-t border-slate-200 p-4 shadow-xl overflow-y-auto animate-modal-content motion-reduce:transition-none"
+        className="w-full max-h-[85vh] bg-white rounded-t-2xl border-t border-slate-200 p-4 shadow-xl overflow-y-auto animate-modal-content motion-reduce:transition-none cursor-default"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex justify-center pb-2.5" aria-hidden="true">
