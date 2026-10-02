@@ -841,7 +841,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   if (!isOpen) return null;
 
   return (
-    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5 bg-slate-900/65 backdrop-blur-xs overflow-y-auto">
+    <div className="fixed inset-0 z-50 flex items-center justify-center p-0 sm:p-5 bg-slate-900/65 overflow-y-auto">
       <div className="relative w-full max-w-5xl bg-white sm:rounded-2xl rounded-none shadow-2xl sm:border sm:border-slate-200/90 overflow-hidden flex flex-col h-full sm:h-auto sm:max-h-[92vh] transition-all">
         {/* Header */}
         <div className="px-3 sm:px-6 py-2.5 sm:py-4 bg-gradient-to-r from-slate-900 via-indigo-950 to-slate-900 text-white flex items-center justify-between border-b border-slate-800 gap-2">

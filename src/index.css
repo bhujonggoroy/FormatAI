@@ -1,11 +1,84 @@
 @import "tailwindcss";
 
+:root {
+  /* Brand Theme: Crimson Burgundy Primary */
+  --color-primary: #881337;
+  --color-primary-hover: #700F2E;
+  --color-primary-active: #500A20;
+  --color-primary-surface: #FFF1F2;
+  --color-primary-border: #FECDD3;
+  --color-primary-ring: #F43F5E;
+
+  /* Surfaces & Canvas (Crisp Solid Surfaces - No Blurs/Glassmorphism) */
+  --color-canvas: #F8FAFC;
+  --color-surface: #FFFFFF;
+  --color-surface-subtle: #F1F5F9;
+  --color-surface-muted: #E2E8F0;
+
+  /* High-Contrast Borders */
+  --color-border: #CBD5E1;
+  --color-border-subtle: #E2E8F0;
+  --color-border-strong: #94A3B8;
+
+  /* Typography Colors (WCAG AA Compliant) */
+  --color-text: #0F172A;
+  --color-text-secondary: #334155;
+  --color-text-muted: #64748B;
+  --color-text-on-primary: #FFFFFF;
+
+  /* Semantic Status Colors */
+  --color-success: #059669;
+  --color-success-bg: #ECFDF5;
+  --color-success-border: #A7F3D0;
+  --color-success-text: #065F46;
+
+  --color-warning: #D97706;
+  --color-warning-bg: #FFFBEB;
+  --color-warning-border: #FDE68A;
+  --color-warning-text: #92400E;
+
+  --color-error: #DC2626;
+  --color-error-bg: #FEF2F2;
+  --color-error-border: #FECACA;
+  --color-error-text: #991B1B;
+
+  --color-info: #0284C7;
+  --color-info-bg: #F0F9FF;
+  --color-info-border: #BAE6FD;
+  --color-info-text: #0369A1;
+
+  /* Standard Transitions */
+  --ease-spring: cubic-bezier(0.16, 1, 0.3, 1);
+  --duration-fast: 150ms;
+  --duration-normal: 200ms;
+}
+
 html, body, #root {
   width: 100%;
   height: 100dvh;
   margin: 0;
   padding: 0;
   overflow: hidden;
+  background-color: var(--color-canvas);
+  color: var(--color-text);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+/* Universal High-Visibility Focus Ring */
+:focus-visible {
+  outline: 2px solid #881337;
+  outline-offset: 1px;
+}
+
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible,
+[role="tab"]:focus-visible,
+[role="button"]:focus-visible {
+  outline: none;
+  box-shadow: 0 0 0 2px #FFFFFF, 0 0 0 4px #881337;
 }
 
 /* Slim Elegant Scrollbars (8px, slate-300 thumb, hover dark, transparent track) */
@@ -36,6 +109,15 @@ html, body, #root {
   display: none;
   width: 0;
   height: 0;
+}
+
+/* Clean Horizontal Track Scroll Utility */
+.no-scrollbar::-webkit-scrollbar {
+  display: none;
+}
+.no-scrollbar {
+  -ms-overflow-style: none;
+  scrollbar-width: none;
 }
 
 @keyframes splashEnter {
@@ -129,15 +211,10 @@ html, body, #root {
 @keyframes drawerFadeIn { from { opacity: 0; } to { opacity: 1; } }
 @keyframes drawerFadeOut { from { opacity: 1; } to { opacity: 0; } }
 
-.animate-drawer-in { animation: drawerInUp 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
-.animate-drawer-out { animation: drawerOutDown 180ms ease-in both; }
-.animate-drawer-backdrop-in { animation: drawerFadeIn 200ms ease-out both; }
-.animate-drawer-backdrop-out { animation: drawerFadeOut 180ms ease-in both; }
-
-@media (min-width: 640px) {
-  .animate-drawer-in { animation-name: drawerInRight; }
-  .animate-drawer-out { animation-name: drawerOutRight; }
-}
+.animate-drawer-in { animation: drawerInRight 220ms cubic-bezier(0.16, 1, 0.3, 1) both; }
+.animate-drawer-out { animation: drawerOutRight 180ms ease-in both; }
+.animate-drawer-backdrop-in { animation: drawerFadeIn 180ms ease-out both; }
+.animate-drawer-backdrop-out { animation: drawerFadeOut 150ms ease-in both; }
 @media (prefers-reduced-motion: reduce) {
   .animate-drawer-in, .animate-drawer-out,
   .animate-drawer-backdrop-in, .animate-drawer-backdrop-out { animation: none !important; }

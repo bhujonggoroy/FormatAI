@@ -11,6 +11,7 @@ import {
   ZoomIn,
   ZoomOut,
   Maximize2,
+  Minimize2,
   RefreshCw,
   FileText,
   Printer,
@@ -71,6 +72,8 @@ interface FormattedPreviewProps {
   onRepairAllFlagged?: () => void;
   isRepairing?: boolean;
   repairProgress?: { current: number; total: number; currentBlockId?: string } | null;
+  onToggleMaximize?: () => void;
+  isMaximized?: boolean;
 }
 
 function getCssFontFamily(font: string): string {
@@ -94,7 +97,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   markdown,
   docTitle,
   fontFamily = "Times New Roman",
-  accentColor = "#1A365D",
+  accentColor = "#881337",
   equationFormat = "native",
   isAiPolished = false,
   validationAlert = null,
@@ -118,6 +121,8 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   onRepairAllFlagged,
   isRepairing = false,
   repairProgress = null,
+  onToggleMaximize,
+  isMaximized = false,
 }) => {
   const [copied, setCopied] = useState(false);
   const [internalViewMode, setInternalViewMode] = useState<"rendered" | "source" | "diff">("rendered");
@@ -967,78 +972,83 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
   const estimatedPages = Math.max(1, Math.ceil(wordCount / 380));
 
   return (
-    <div className="border border-slate-200/90 rounded-xl bg-white shadow-xs overflow-hidden flex flex-col h-full transition-all">
+    <div className="border border-slate-300 rounded-xl bg-white shadow-xs overflow-hidden flex flex-col h-full transition-all">
       {/* Top Seamless Toolbar - Single line max 44px, no overflow-x */}
-      <div className="h-10 px-3 bg-slate-50 border-b border-slate-200 flex items-center justify-between gap-2 shrink-0 flex-nowrap min-w-0 select-none overflow-hidden">
+      <div className="h-10 px-2 sm:px-3 bg-slate-100 border-b border-slate-300 flex items-center justify-between gap-1 sm:gap-2 shrink-0 flex-nowrap min-w-0 select-none overflow-hidden">
         {/* Left: Preview Title + ONE status badge */}
-        <div className="flex items-center gap-2 min-w-0 shrink">
-          <div className="flex items-center gap-1.5 text-slate-800 font-bold text-xs uppercase tracking-wider shrink-0">
-            <BookOpen className="w-3.5 h-3.5 text-blue-800" />
-            <span>Preview</span>
+        <div className="flex items-center gap-1.5 sm:gap-2 min-w-0 shrink">
+          <div className="flex items-center gap-1 sm:gap-1.5 text-slate-900 font-bold text-xs uppercase tracking-wider shrink-0">
+            <BookOpen className="w-3.5 h-3.5 text-slate-800" />
+            <span className="hidden min-[380px]:inline">Preview</span>
           </div>
 
           {/* Single Sync status indicator badge */}
           {isAiPolished ? (
-            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold shrink truncate border border-emerald-300">
+            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-emerald-100 text-emerald-800 font-bold shrink truncate border border-emerald-300">
               <Check className="w-3 h-3 text-emerald-600 shrink-0" />
-              <span className="truncate">FormatAI Result</span>
+              <span className="truncate hidden min-[480px]:inline">FormatAI Result</span>
+              <span className="min-[480px]:hidden text-[10px]">Ready</span>
             </span>
           ) : validationAlert?.failed ? (
             <span
-              className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold shrink truncate border border-amber-300"
+              className="inline-flex items-center gap-1 text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-amber-100 text-amber-900 font-bold shrink truncate border border-amber-300"
               title="AI Polish output failed validation and was discarded; FormatAI Result active"
             >
               <ShieldAlert className="w-3 h-3 text-amber-700 shrink-0" />
-              <span className="truncate">AI Discarded</span>
+              <span className="truncate hidden min-[480px]:inline">AI Discarded</span>
+              <span className="min-[480px]:hidden text-[10px]">Discarded</span>
             </span>
           ) : (
-            <span className="inline-flex items-center gap-1 text-[10px] px-2 py-0.5 rounded-full bg-blue-100 text-blue-900 font-bold shrink truncate border border-blue-200">
-              <Sparkles className="w-3 h-3 text-blue-700 shrink-0" />
-              <span className="truncate">FormatAI Result</span>
+            <span className="inline-flex items-center gap-1 text-[10px] px-1.5 sm:px-2 py-0.5 rounded-full bg-slate-200 text-slate-800 font-bold shrink truncate border border-slate-300">
+              <Sparkles className="w-3 h-3 text-slate-700 shrink-0" />
+              <span className="truncate hidden min-[480px]:inline">FormatAI Result</span>
+              <span className="min-[480px]:hidden text-[10px]">FormatAI</span>
             </span>
           )}
         </div>
 
-        {/* Right: view toggles + copy + zoom controls (always fully visible on far right) */}
-        <div className="flex items-center gap-1.5 shrink-0 ml-auto flex-nowrap">
+        {/* Right: view toggles + copy + zoom controls + panel maximize toggle */}
+        <div className="flex items-center gap-1 sm:gap-1.5 shrink-0 ml-auto flex-nowrap">
           {/* View Mode Toggle: Document Sheet vs LaTeX Code vs Polish Diff */}
-          <div className="flex items-center bg-slate-200/80 border border-slate-300 p-0.5 rounded-lg shadow-2xs shrink-0">
+          <div className="flex items-center bg-slate-200 border border-slate-300 p-0.5 rounded-lg shadow-2xs shrink-0">
             <button
               type="button"
               onClick={() => setViewMode("rendered")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
                 viewMode === "rendered"
-                  ? "bg-white text-blue-900 shadow-2xs font-extrabold"
+                  ? "bg-white text-slate-950 shadow-2xs font-extrabold"
                   : "text-slate-700 hover:text-slate-950 font-medium"
               }`}
+              title="Formatted Document Sheet View"
             >
-              <Eye className="w-3.5 h-3.5 text-blue-700 shrink-0" />
-              <span className="hidden sm:inline">Doc</span>
+              <Eye className="w-3.5 h-3.5 shrink-0" style={{ color: viewMode === "rendered" ? accentColor : undefined }} />
+              <span className="text-[11px] sm:text-xs">Doc</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode("source")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
                 viewMode === "source"
-                  ? "bg-white text-blue-900 shadow-2xs font-extrabold"
+                  ? "bg-white text-slate-950 shadow-2xs font-extrabold"
                   : "text-slate-700 hover:text-slate-950 font-medium"
               }`}
+              title="Raw LaTeX / Markdown Source View"
             >
               <Code className="w-3.5 h-3.5 text-slate-700 shrink-0" />
-              <span>TeX</span>
+              <span className="text-[11px] sm:text-xs">TeX</span>
             </button>
             <button
               type="button"
               onClick={() => setViewMode("diff")}
-              className={`inline-flex items-center gap-1 px-2 py-0.5 rounded-md text-xs transition-all cursor-pointer ${
+              className={`inline-flex items-center gap-1 px-2 sm:px-2.5 py-1 rounded-md text-xs transition-all cursor-pointer ${
                 viewMode === "diff"
-                  ? "bg-white text-indigo-950 shadow-2xs font-extrabold"
+                  ? "bg-white text-slate-950 shadow-2xs font-extrabold"
                   : "text-slate-700 hover:text-slate-950 font-medium"
               }`}
               title="Compare text before and after AI Polish"
             >
-              <Sparkles className="w-3.5 h-3.5 text-indigo-600 shrink-0" />
-              <span>Diff</span>
+              <Sparkles className="w-3.5 h-3.5 shrink-0" style={{ color: viewMode === "diff" ? accentColor : undefined }} />
+              <span className="text-[11px] sm:text-xs">Diff</span>
             </button>
           </div>
 
@@ -1077,30 +1087,55 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             <span className="hidden sm:inline">{copied ? "Copied" : "Copy"}</span>
           </button>
 
-          {/* Zoom controls - always fully visible on the far right */}
+          {/* Zoom controls with tap-percentage-to-reset */}
           <div className="flex items-center bg-white border border-slate-200 rounded-lg p-0.5 text-xs text-slate-700 shadow-2xs shrink-0">
             <button
               type="button"
               onClick={() => setZoomLevel((z) => Math.max(75, z - 10))}
               className="p-1 hover:text-slate-950 hover:bg-slate-100 rounded disabled:opacity-40 transition-colors cursor-pointer"
               disabled={zoomLevel <= 75}
-              title="Zoom out"
+              title="Zoom out (75% min)"
               aria-label="Zoom out"
             >
               <ZoomOut className="w-3.5 h-3.5" />
             </button>
-            <span className="px-1.5 text-[11px] font-mono font-bold select-none">{zoomLevel}%</span>
+            <button
+              type="button"
+              onClick={() => setZoomLevel(100)}
+              className="px-1 text-[11px] font-mono font-bold select-none hover:text-slate-950 hover:bg-slate-100 rounded cursor-pointer transition-colors"
+              title="Click to reset zoom to 100%"
+              aria-label="Reset zoom to 100%"
+            >
+              {zoomLevel}%
+            </button>
             <button
               type="button"
               onClick={() => setZoomLevel((z) => Math.min(130, z + 10))}
               className="p-1 hover:text-slate-950 hover:bg-slate-100 rounded disabled:opacity-40 transition-colors cursor-pointer"
               disabled={zoomLevel >= 130}
-              title="Zoom in"
+              title="Zoom in (130% max)"
               aria-label="Zoom in"
             >
               <ZoomIn className="w-3.5 h-3.5" />
             </button>
           </div>
+
+          {/* Panel Maximize/Restore Toggle in Split View */}
+          {onToggleMaximize && (
+            <button
+              type="button"
+              onClick={onToggleMaximize}
+              className="hidden sm:inline-flex items-center justify-center p-1.5 rounded-lg border border-slate-200 bg-white hover:bg-slate-100 text-slate-700 hover:text-slate-900 shadow-2xs transition-colors cursor-pointer shrink-0"
+              title={isMaximized ? "Restore split view" : "Maximize preview panel"}
+              aria-label={isMaximized ? "Restore split view" : "Maximize preview panel"}
+            >
+              {isMaximized ? (
+                <Minimize2 className="w-3.5 h-3.5" />
+              ) : (
+                <Maximize2 className="w-3.5 h-3.5" />
+              )}
+            </button>
+          )}
         </div>
       </div>
 
@@ -1117,25 +1152,25 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             ? `Scrolled: ${Math.round(scrollProgress)}% • Click anywhere to jump`
             : "Document top • 0% scrolled"
         }
-        className="group relative w-full h-[3px] hover:h-[5px] bg-slate-200/60 overflow-hidden shrink-0 transition-all duration-150 cursor-pointer no-print select-none z-10"
+        className="group relative w-full h-[3px] hover:h-[5px] bg-slate-200 overflow-hidden shrink-0 transition-all duration-150 cursor-pointer no-print select-none z-10"
       >
         <div
           className="h-full transition-[width] duration-150 ease-out rounded-r-full"
           style={{
             width: `${scrollProgress}%`,
-            backgroundColor: accentColor || "#1A365D",
-            boxShadow: scrollProgress > 0 ? `0 0 6px ${accentColor}66` : undefined,
+            backgroundColor: accentColor || "#881337",
+            boxShadow: scrollProgress > 0 ? `0 0 6px ${accentColor || "#881337"}66` : undefined,
           }}
         />
         {/* Subtle hover tooltip showing percentage */}
-        <div className="pointer-events-none absolute right-2 -bottom-6 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-30 bg-slate-900/90 text-white text-[10px] font-mono px-1.5 py-0.5 rounded shadow-xs">
+        <div className="pointer-events-none absolute right-2 -bottom-6 opacity-0 group-hover:opacity-100 transition-opacity duration-150 z-30 bg-slate-900 text-white text-[10px] font-mono px-1.5 py-0.5 rounded shadow-xs">
           {Math.round(scrollProgress)}% read
         </div>
       </div>
 
       {/* Main Preview Container */}
       {viewMode === "diff" ? (
-        <div className="p-2 sm:p-4 bg-slate-100/60 overflow-y-auto flex-1 flex flex-col items-center">
+        <div className="p-2 sm:p-4 bg-slate-100 overflow-y-auto flex-1 flex flex-col items-center">
           <div className="w-full max-w-[890px]">
             <TextDiffViewer
               originalText={diffData?.originalText || markdown}
@@ -1152,7 +1187,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="p-2 sm:p-5 md:p-8 bg-slate-100/60 overflow-y-auto flex-1 flex flex-col items-center"
+          className="p-2 sm:p-5 md:p-8 bg-slate-100 overflow-y-auto flex-1 flex flex-col items-center"
         >
           {/* Validation Failure Warning Banner */}
           {validationAlert?.failed && (
@@ -1255,18 +1290,18 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           <div
             id="academic-document-sheet"
             data-testid="preview-document-sheet"
-            className="academic-paper-sheet w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.08)] border border-slate-300/80 p-4 sm:p-8 md:p-12 text-slate-800 relative transition-transform duration-150 origin-top"
+            className="academic-paper-sheet w-full max-w-[816px] bg-white rounded-lg shadow-[0_8px_30px_rgb(0,0,0,0.06)] border border-slate-300/80 px-3.5 py-4 sm:p-8 md:p-12 text-slate-800 relative transition-transform duration-150 origin-top break-words"
             style={{
               fontFamily: getCssFontFamily(fontFamily),
               zoom: zoomLevel !== 100 ? `${zoomLevel}%` : undefined,
             }}
           >
             {/* Word Document Running Header */}
-            <div className="pb-4 mb-6 border-b border-slate-200 flex items-center justify-between text-xs text-slate-400 select-none">
-              <span className="font-serif italic text-slate-500 truncate max-w-sm">
+            <div className="pb-3 sm:pb-4 mb-4 sm:mb-6 border-b border-slate-200 flex items-center justify-between text-[11px] sm:text-xs text-slate-400 select-none gap-2">
+              <span className="font-serif italic text-slate-500 truncate max-w-[200px] sm:max-w-sm">
                 {docTitle || "Academic Notes"}
               </span>
-              <span className="text-[11px] font-sans tracking-wide uppercase text-slate-400">
+              <span className="text-[10px] sm:text-[11px] font-sans tracking-wide uppercase text-slate-400 shrink-0">
                 Word Document • {fontFamily}
               </span>
             </div>
@@ -1283,9 +1318,9 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
             </div>
 
             {/* Word Document Running Footer */}
-            <div className="pt-6 mt-10 border-t border-slate-200 flex items-center justify-between text-[11px] text-slate-400 select-none">
-              <span>Standard Academic Typesetting (Times New Roman / OMML)</span>
-              <span>Page 1 of {estimatedPages}</span>
+            <div className="pt-4 sm:pt-6 mt-8 sm:mt-10 border-t border-slate-200 flex items-center justify-between text-[10px] sm:text-[11px] text-slate-400 select-none gap-2">
+              <span className="truncate">Standard Academic Typesetting (Times New Roman / OMML)</span>
+              <span className="shrink-0">Page 1 of {estimatedPages}</span>
             </div>
           </div>
         </div>
@@ -1294,9 +1329,9 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
         <div
           ref={scrollContainerRef}
           onScroll={handleScroll}
-          className="p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto flex-1 leading-relaxed select-text"
+          className="p-3 sm:p-4 bg-slate-900 text-slate-100 font-mono text-xs overflow-y-auto flex-1 leading-relaxed select-text overscroll-contain"
         >
-          <pre className="whitespace-pre-wrap">{markdown}</pre>
+          <pre className="whitespace-pre-wrap break-words max-w-full font-mono">{markdown}</pre>
         </div>
       )}
 

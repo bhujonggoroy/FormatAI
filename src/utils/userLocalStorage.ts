@@ -60,7 +60,7 @@ export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
 export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze({
   docTitle: "FormatAI Document",
   fontFamily: "Times New Roman",
-  accentColor: "#1A365D",
+  accentColor: "#881337",
   equationFormat: "native",
   formatMode: "study_guide",
   viewLayout: "editor",

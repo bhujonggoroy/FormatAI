@@ -51,7 +51,7 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
       role="dialog"
       aria-modal="true"
       aria-labelledby="free-key-modal-title"
-      className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 backdrop-blur-xs antialiased animate-in fade-in duration-150"
+      className="fixed inset-0 z-[60] flex items-center justify-center p-3 sm:p-4 bg-slate-900/60 antialiased animate-in fade-in duration-150"
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}

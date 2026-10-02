@@ -14,13 +14,13 @@ export const Header: React.FC<HeaderProps> = ({
   docTitle,
   onDocTitleChange,
   onToggleSidebar,
-  accentColor = "#1A365D",
+  accentColor = "#881337",
 }) => {
   const [isEditingTitle, setIsEditingTitle] = useState(false);
   const currentTheme = getAcademicTheme(accentColor);
 
   return (
-    <header className="h-10 border-b border-slate-200 bg-white sticky top-0 z-30 transition-all w-full select-none shrink-0">
+    <header className="h-10 border-b border-slate-300 bg-white sticky top-0 z-30 transition-all w-full select-none shrink-0 shadow-2xs">
       <div className="max-w-7xl mx-auto px-3 sm:px-4 h-full flex items-center justify-between gap-2 sm:gap-4">
         {/* Left: 3-Lines Bar (Hamburger) + Brand */}
         <div className="flex items-center gap-2 sm:gap-2.5 shrink-0">
@@ -79,7 +79,7 @@ export const Header: React.FC<HeaderProps> = ({
               onFocus={() => setIsEditingTitle(true)}
               onBlur={() => setIsEditingTitle(false)}
               placeholder="Untitled Document"
-              className="text-xs sm:text-[13px] font-semibold text-slate-800 bg-transparent hover:bg-slate-100 focus:bg-white border border-transparent hover:border-slate-300 focus:border-slate-400 rounded-lg px-2 py-1 transition-all truncate w-full pr-7 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 placeholder:text-slate-400 cursor-text"
+              className="text-xs sm:text-[13px] font-semibold text-slate-800 bg-transparent hover:bg-slate-100 focus:bg-white border border-transparent hover:border-slate-300 focus:border-slate-400 rounded-lg px-2 py-1 transition-all truncate w-full pr-7 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] placeholder:text-slate-400 cursor-text"
               title="Click to rename document"
             />
             <Pencil className="w-3.5 h-3.5 text-slate-400 absolute right-2 pointer-events-none group-hover:text-slate-600 transition-colors shrink-0" />

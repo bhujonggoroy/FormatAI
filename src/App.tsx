@@ -65,13 +65,26 @@ import {
   FileDown,
   ShieldAlert,
   Upload,
+  ChevronLeft,
+  ChevronRight,
+  Maximize2,
+  Minimize2,
+  Check,
 } from "lucide-react";
 
 export default function App() {
   const [inputText, setInputText] = useState<string>(SAMPLE_NOTES[0].text);
   const [docTitle, setDocTitle] = useState<string>(() => getDisplayTitleFromContent(SAMPLE_NOTES[0].text));
   const [fontFamily, setFontFamily] = useState<string>("Times New Roman");
-  const [accentColor, setAccentColor] = useState<string>("#1A365D");
+  const [accentColor, setAccentColor] = useState<string>(() => {
+    try {
+      const prefs = getUserPreferences();
+      if (prefs?.accentColor && prefs.accentColor !== "#1A365D") {
+        return prefs.accentColor;
+      }
+    } catch {}
+    return "#881337";
+  });
   const [equationFormat, setEquationFormat] = useState<"native" | "latex" | "unicode">("native");
   const [formatMode, setFormatMode] = useState<"auto" | "study_guide" | "exam_bank">("study_guide");
 
@@ -94,6 +107,77 @@ export default function App() {
     }
     return "editor";
   });
+
+  // Split View Proportions & Collapsible Panes (Desktop & Tablet)
+  const [splitRatio, setSplitRatio] = useState<number>(50); // percentage 25-75
+  const [collapsedPane, setCollapsedPane] = useState<"none" | "editor" | "preview">("none");
+  const [isDraggingSplitter, setIsDraggingSplitter] = useState<boolean>(false);
+  const splitContainerRef = useRef<HTMLDivElement>(null);
+  const editorTextareaRef = useRef<HTMLTextAreaElement>(null);
+  const [isEditorFocused, setIsEditorFocused] = useState<boolean>(false);
+
+  // Quick insertion of academic mathematical notation at current cursor position
+  const handleInsertMathSnippet = (snippet: string, cursorOffset?: number) => {
+    const textarea = editorTextareaRef.current;
+    if (!textarea) return;
+
+    const start = textarea.selectionStart || 0;
+    const end = textarea.selectionEnd || 0;
+    const before = inputText.substring(0, start);
+    const after = inputText.substring(end);
+    const nextText = before + snippet + after;
+
+    activePolishRequestIdRef.current++;
+    setInputText(nextText);
+    setDocTitle(getDisplayTitleFromContent(nextText));
+    if (cleanedMarkdown) setCleanedMarkdown(null);
+    if (validationAlert) setValidationAlert(null);
+
+    // Keep focus and reposition cursor inside snippet
+    setTimeout(() => {
+      textarea.focus();
+      const newPos = start + (cursorOffset !== undefined ? cursorOffset : snippet.length);
+      textarea.setSelectionRange(newPos, newPos);
+    }, 0);
+  };
+
+  // Mouse and Touch dragging handlers for split divider
+  const handleSplitterPointerDown = (e: React.PointerEvent<HTMLDivElement>) => {
+    e.preventDefault();
+    setIsDraggingSplitter(true);
+    (e.target as HTMLElement).setPointerCapture(e.pointerId);
+  };
+
+  const handleSplitterPointerMove = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (!isDraggingSplitter || !splitContainerRef.current) return;
+    const rect = splitContainerRef.current.getBoundingClientRect();
+    if (rect.width <= 0) return;
+    const clientX = e.clientX;
+    const rawRatio = ((clientX - rect.left) / rect.width) * 100;
+    const clampedRatio = Math.max(25, Math.min(75, Math.round(rawRatio)));
+    setSplitRatio(clampedRatio);
+  };
+
+  const handleSplitterPointerUp = (e: React.PointerEvent<HTMLDivElement>) => {
+    if (isDraggingSplitter) {
+      setIsDraggingSplitter(false);
+      try {
+        (e.target as HTMLElement).releasePointerCapture(e.pointerId);
+      } catch {}
+    }
+  };
+
+  // Screen resize listener: adapt between Split View on desktop/tablet and Tabbed view on mobile
+  useEffect(() => {
+    const handleResize = () => {
+      const isMobile = window.innerWidth < 640;
+      if (isMobile && viewLayout === "split") {
+        setViewLayout("editor");
+      }
+    };
+    window.addEventListener("resize", handleResize);
+    return () => window.removeEventListener("resize", handleResize);
+  }, [viewLayout]);
   const [isSidebarOpen, setIsSidebarOpen] = useState<boolean>(false);
   const [isAISettingsModalOpen, setIsAISettingsModalOpen] = useState<boolean>(false);
   const [isSkillModalOpen, setIsSkillModalOpen] = useState<boolean>(false);
@@ -1347,7 +1431,17 @@ export default function App() {
   };
 
   return (
-    <div className="h-[100dvh] max-h-[100dvh] bg-[#F4F6F8] text-slate-900 flex flex-col antialiased w-full overflow-hidden">
+    <div className="h-[100dvh] max-h-[100dvh] bg-[#F8FAFC] text-slate-900 flex flex-col antialiased w-full overflow-hidden">
+      {/* Root-level hidden file input for universal document uploading */}
+      <input
+        type="file"
+        ref={fileInputRef}
+        onChange={handleFileUpload}
+        accept=".txt,.md,.markdown,.tex,.json,.csv,.latex,.docx,.pdf"
+        className="hidden"
+        aria-hidden="true"
+      />
+
       {/* Precision Top Header */}
       <Header
         docTitle={docTitle}
@@ -1404,6 +1498,8 @@ export default function App() {
           failedBlockCount={detectedFailedBlockIds.length}
           onRepairFlagged={handleRepairFlaggedBlocks}
           isRepairing={isRepairing}
+          charCount={charCount}
+          wordCount={wordCount}
         />
 
         {/* Compact Segmented View Switcher Bar (Split View | Raw Editor | Document Sheet) */}
@@ -1411,12 +1507,14 @@ export default function App() {
           role="tablist"
           aria-label="Document view options"
           onKeyDown={handleViewSwitcherKeyDown}
-          className="sticky top-[84px] sm:relative sm:top-auto z-10 w-full h-9 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 flex items-center select-none shrink-0"
+          className="relative z-10 w-full h-10 bg-slate-200 p-0.5 rounded-xl border border-slate-300 flex items-center select-none shrink-0 shadow-2xs"
         >
           {/* Sliding Active Tab Background Indicator */}
           <div
             aria-hidden="true"
-            className={`absolute inset-y-0.5 rounded-md bg-white shadow-2xs border border-slate-200/80 pointer-events-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+            className={`absolute inset-y-0.5 rounded-lg bg-white shadow-xs border border-slate-300 pointer-events-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+              // On mobile (<640px): 2 tabs (editor, preview)
+              // On tablet/desktop (sm: >=640px): 3 tabs (split, editor, preview)
               "w-[calc((100%-4px)/2)] sm:w-[calc((100%-4px)/3)] left-0.5 " +
               (viewLayout === "preview"
                 ? "translate-x-full sm:translate-x-[200%]"
@@ -1426,18 +1524,21 @@ export default function App() {
             }`}
           />
 
-          {/* Tab 1: Split View (Hidden on mobile <640px via CSS, visible on desktop) */}
+          {/* Tab 1: Split View (Hidden on mobile <640px via CSS, visible on tablet & desktop) */}
           <button
             type="button"
             role="tab"
             id="view-tab-split"
             aria-selected={viewLayout === "split"}
             tabIndex={viewLayout === "split" ? 0 : -1}
-            onClick={() => setViewLayout("split")}
-            className={`relative z-10 hidden sm:inline-flex flex-1 h-full items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            onClick={() => {
+              setViewLayout("split");
+              setCollapsedPane("none");
+            }}
+            className={`relative z-10 hidden sm:inline-flex flex-1 h-full items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "split"
-                ? "font-semibold text-slate-900"
-                : "font-medium text-slate-600 hover:text-slate-800"
+                ? "font-bold text-slate-950"
+                : "font-semibold text-slate-700 hover:text-slate-950"
             }`}
           >
             <Columns
@@ -1455,10 +1556,10 @@ export default function App() {
             aria-selected={viewLayout === "editor"}
             tabIndex={viewLayout === "editor" ? 0 : -1}
             onClick={() => setViewLayout("editor")}
-            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "editor"
-                ? "font-semibold text-slate-900"
-                : "font-medium text-slate-600 hover:text-slate-800"
+                ? "font-bold text-slate-950"
+                : "font-semibold text-slate-700 hover:text-slate-950"
             }`}
           >
             <FileText
@@ -1476,10 +1577,10 @@ export default function App() {
             aria-selected={viewLayout === "preview"}
             tabIndex={viewLayout === "preview" ? 0 : -1}
             onClick={() => setViewLayout("preview")}
-            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "preview"
-                ? "font-semibold text-slate-900"
-                : "font-medium text-slate-600 hover:text-slate-800"
+                ? "font-bold text-slate-950"
+                : "font-semibold text-slate-700 hover:text-slate-950"
             }`}
           >
             <Eye
@@ -1575,147 +1676,332 @@ export default function App() {
           </div>
         )}
 
-        {/* WORKSPACE VIEW: SPLIT */}
+        {/* WORKSPACE VIEW: SPLIT (Side-by-side on sm+ with adaptable proportions & collapsible panels) */}
         {viewLayout === "split" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3 items-stretch flex-1 min-h-0 h-full overflow-hidden">
+          <div
+            ref={splitContainerRef}
+            className={`flex flex-col sm:flex-row gap-2 sm:gap-2.5 items-stretch flex-1 min-h-0 h-full overflow-hidden ${
+              isDraggingSplitter ? "select-none" : ""
+            }`}
+          >
             {/* Left Pane: Raw Notes & AI Content Editor */}
-            <div className="bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col h-full min-h-0 overflow-hidden">
-              {/* Editor Header Bar with 40px height */}
-              <div className="h-10 px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100/90 shrink-0">
-                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
-                  Raw Content
-                </span>
-
-                <div className="flex items-center gap-1.5 shrink-0">
-                  <input
-                    type="file"
-                    ref={fileInputRef}
-                    onChange={handleFileUpload}
-                    accept=".txt,.md,.markdown,.tex,.json,.csv,.latex,.docx,.pdf"
-                    className="hidden"
-                  />
-                  <button
-                    onClick={() => fileInputRef.current?.click()}
-                    className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
-                    title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
-                  >
-                    <Upload className="w-3.5 h-3.5 text-slate-600" />
-                    <span>Upload</span>
-                  </button>
-                  <button
-                    onClick={handlePasteClipboard}
-                    className="h-7 inline-flex items-center gap-1 text-xs font-bold text-white px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer"
-                    style={{ backgroundColor: currentTheme.btnPrimary }}
-                    title="Paste from clipboard"
-                  >
-                    <Clipboard className="w-3.5 h-3.5 text-white" />
-                    <span>Paste</span>
-                  </button>
-                  <button
-                    onClick={() => handleUpdateInput("", "FormatAI Document")}
-                    className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
-                    title="Clear input"
-                  >
-                    <Eraser className="w-3.5 h-3.5" />
-                    <span>Clear</span>
-                  </button>
-                </div>
-              </div>
-
-              {/* Editor Textarea - only this area scrolls on the left */}
-              <textarea
-                value={inputText}
-                onChange={(e) => {
-                  const val = e.target.value;
-                  activePolishRequestIdRef.current++;
-                  setInputText(val);
-                  setDocTitle(getDisplayTitleFromContent(val));
-                  if (cleanedMarkdown) setCleanedMarkdown(null);
-                  if (validationAlert) setValidationAlert(null);
+            {collapsedPane !== "editor" && (
+              <div
+                style={{
+                  ...(collapsedPane === "none" ? { width: `calc(${splitRatio}% - 4px)` } : {}),
+                  ...(collapsedPane === "preview" ? { width: "100%", flex: "1 1 100%" } : {}),
                 }}
-                placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
-                className="w-full flex-1 min-h-0 p-3 sm:p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400 overflow-y-auto"
-              />
+                className={`bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col h-full min-h-0 overflow-hidden transition-[width] ${
+                  isDraggingSplitter ? "duration-0" : "duration-150"
+                } ${collapsedPane === "preview" ? "w-full flex-1" : "w-full sm:w-auto"}`}
+              >
+                {/* Editor Header Bar with 40px height */}
+                <div className="h-10 px-2.5 sm:px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100 shrink-0 gap-1.5">
+                  <div className="flex items-center gap-1.5 min-w-0">
+                    <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
+                      Raw Content
+                    </span>
+                    {/* Tablet/Desktop Split Proportions Presets */}
+                    <div className="hidden md:flex items-center bg-slate-200 border border-slate-300 rounded-md p-0.5 text-[10px] font-mono select-none">
+                      <button
+                        type="button"
+                        onClick={() => { setSplitRatio(40); setCollapsedPane("none"); }}
+                        className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                          splitRatio === 40 && collapsedPane === "none"
+                            ? "bg-white text-slate-950 font-bold shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                        title="40% Editor / 60% Preview"
+                      >
+                        40:60
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setSplitRatio(50); setCollapsedPane("none"); }}
+                        className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                          splitRatio === 50 && collapsedPane === "none"
+                            ? "bg-white text-slate-950 font-bold shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                        title="50:50 Balanced Split"
+                      >
+                        50:50
+                      </button>
+                      <button
+                        type="button"
+                        onClick={() => { setSplitRatio(60); setCollapsedPane("none"); }}
+                        className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
+                          splitRatio === 60 && collapsedPane === "none"
+                            ? "bg-white text-slate-950 font-bold shadow-2xs"
+                            : "text-slate-600 hover:text-slate-900"
+                        }`}
+                        title="60% Editor / 40% Preview"
+                      >
+                        60:40
+                      </button>
+                    </div>
 
-              {/* Editor Status Bar */}
-              <div className="h-8 px-3 border-t border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between shrink-0 select-none">
-                <div className="flex items-center gap-2">
-                  <span>{charCount.toLocaleString()} chars • {lineCount} lines</span>
-                  <span className="text-slate-300">•</span>
-                  <span className="text-xs text-slate-500 font-normal">{wordCount.toLocaleString()} words</span>
+                    {/* Maximize Editor / Restore Split Toggle */}
+                    <button
+                      type="button"
+                      onClick={() => setCollapsedPane(collapsedPane === "preview" ? "none" : "preview")}
+                      className="hidden sm:inline-flex items-center gap-1 p-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 shadow-2xs text-[10px] font-semibold cursor-pointer transition-colors"
+                      title={collapsedPane === "preview" ? "Restore split view" : "Maximize editor (collapse preview)"}
+                    >
+                      {collapsedPane === "preview" ? (
+                        <>
+                          <Minimize2 className="w-3 h-3" />
+                          <span className="hidden lg:inline">Restore</span>
+                        </>
+                      ) : (
+                        <>
+                          <Maximize2 className="w-3 h-3" />
+                          <span className="hidden lg:inline">Focus</span>
+                        </>
+                      )}
+                    </button>
+                  </div>
+
+                  <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
+                    <button
+                      type="button"
+                      onClick={() => fileInputRef.current?.click()}
+                      className="min-h-[30px] inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                      title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
+                    >
+                      <Upload className="w-3.5 h-3.5 text-slate-600" />
+                      <span className="hidden xs:inline">Upload</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={handlePasteClipboard}
+                      className="min-h-[30px] inline-flex items-center gap-1 text-xs font-bold text-white px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer"
+                      style={{ backgroundColor: currentTheme.btnPrimary }}
+                      title="Paste from clipboard"
+                    >
+                      <Clipboard className="w-3.5 h-3.5 text-white" />
+                      <span className="hidden xs:inline">Paste</span>
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => handleUpdateInput("", "FormatAI Document")}
+                      className="min-h-[30px] inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
+                      title="Clear input"
+                    >
+                      <Eraser className="w-3.5 h-3.5" />
+                      <span className="hidden xs:inline">Clear</span>
+                    </button>
+                  </div>
                 </div>
-                <span className="text-emerald-700 font-bold flex items-center gap-1.5 text-xs">
-                  <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
-                  Live Sync Active
-                </span>
-              </div>
-            </div>
 
-            {/* Right Pane: Live Document Sheet - only document sheet scrolls on the right */}
-            <div className="h-full min-h-0 flex flex-col overflow-hidden">
-              <FormattedPreview
-                markdown={effectiveMarkdown}
-                docTitle={docTitle}
-                fontFamily={fontFamily}
-                accentColor={accentColor}
-                equationFormat={equationFormat}
-                isAiPolished={Boolean(cleanedMarkdown)}
-                validationAlert={validationAlert}
-                onDismissValidationAlert={() => setValidationAlert(null)}
-                onTriggerAiPolish={handlePreviewClean}
-                isAiPolishing={isConverting}
-                onDownloadDocx={handleConvertToDocx}
-                onDownloadPdf={() => downloadFile("pdf")}
-                isDownloading={isConverting}
-                failedBlockIds={detectedFailedBlockIds}
-                blockIssuesMap={detectedIssuesMap}
-                fragments={detectedFragments}
-                blockFragmentsMap={detectedBlockFragmentsMap}
-                onRepairSingleBlock={handleRepairSingleBlock}
-                onRepairFragment={handleRepairSingleFragment}
-                onRepairAllFlagged={handleRepairFlaggedBlocks}
-                isRepairing={isRepairing}
-                repairProgress={repairProgress}
-              />
-            </div>
+                {/* Editor Textarea - only this area scrolls on the left, extra bottom clearance for mobile keyboard */}
+                <textarea
+                  ref={editorTextareaRef}
+                  value={inputText}
+                  onFocus={() => setIsEditorFocused(true)}
+                  onBlur={() => setIsEditorFocused(false)}
+                  onChange={(e) => {
+                    const val = e.target.value;
+                    activePolishRequestIdRef.current++;
+                    setInputText(val);
+                    setDocTitle(getDisplayTitleFromContent(val));
+                    if (cleanedMarkdown) setCleanedMarkdown(null);
+                    if (validationAlert) setValidationAlert(null);
+                  }}
+                  placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
+                  className="w-full flex-1 min-h-0 p-3 sm:p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400 overflow-y-auto overscroll-contain break-words pb-28 sm:pb-4"
+                />
+
+                {/* Quick Academic Math Symbols Bar (Mobile & Narrow Screen Keyboard Accessory) */}
+                <div className="flex sm:hidden items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 overflow-x-auto shrink-0 select-none scrollbar-none">
+                  <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">Insert:</span>
+                  {[
+                    { label: "\\frac{}{}", snippet: "\\frac{a}{b}", offset: 6 },
+                    { label: "\\sqrt{}", snippet: "\\sqrt{x}", offset: 6 },
+                    { label: "x²", snippet: "^{2}", offset: 3 },
+                    { label: "\\sum", snippet: "\\sum_{i=1}^{n} ", offset: 14 },
+                    { label: "\\int", snippet: "\\int_{a}^{b} ", offset: 12 },
+                    { label: "\\pi", snippet: "\\pi ", offset: 4 },
+                    { label: "\\mu", snippet: "\\mu ", offset: 4 },
+                    { label: "\\sigma²", snippet: "\\sigma^2 ", offset: 9 },
+                    { label: "\\hat{p}", snippet: "\\hat{p} ", offset: 8 },
+                    { label: "\\bar{X}", snippet: "\\bar{X} ", offset: 8 },
+                    { label: "\\approx", snippet: "\\approx ", offset: 8 },
+                    { label: "\\sim", snippet: "\\sim ", offset: 5 },
+                    { label: "[matrix]", snippet: "\\begin{bmatrix}\na & b \\\\\nc & d\n\\end{bmatrix}", offset: 16 },
+                  ].map((item, idx) => (
+                    <button
+                      key={idx}
+                      type="button"
+                      onMouseDown={(e) => e.preventDefault()}
+                      onClick={() => handleInsertMathSnippet(item.snippet, item.offset)}
+                      className="h-7 px-2 bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-800 rounded text-xs font-mono border border-slate-300 shadow-2xs shrink-0 cursor-pointer transition-colors"
+                    >
+                      {item.label}
+                    </button>
+                  ))}
+                  {isEditorFocused && (
+                    <button
+                      type="button"
+                      onClick={() => editorTextareaRef.current?.blur()}
+                      className="ml-auto h-7 px-2.5 bg-slate-800 text-white rounded text-xs font-bold shrink-0 flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition-all"
+                      title="Close mobile keyboard"
+                    >
+                      <Check className="w-3 h-3 text-emerald-400" />
+                      <span>Done</span>
+                    </button>
+                  )}
+                </div>
+
+                {/* Editor Status Bar */}
+                <div className="h-8 px-2.5 sm:px-3 border-t border-slate-200 bg-slate-100 text-xs text-slate-700 font-semibold flex items-center justify-between shrink-0 select-none">
+                  <div className="flex items-center gap-1.5 sm:gap-2">
+                    <span>{charCount.toLocaleString()} chars</span>
+                    <span className="text-slate-300 hidden min-[380px]:inline">•</span>
+                    <span className="text-slate-500 font-normal hidden min-[380px]:inline">{lineCount} lines</span>
+                    <span className="text-slate-300">•</span>
+                    <span className="text-slate-500 font-normal">{wordCount.toLocaleString()} words</span>
+                  </div>
+                  <span className="text-emerald-700 font-bold flex items-center gap-1.5 text-xs">
+                    <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
+                    <span className="hidden sm:inline">Live Sync Active</span>
+                    <span className="sm:hidden">Live</span>
+                  </span>
+                </div>
+              </div>
+            )}
+
+            {/* Interactive Splitter Divider Bar on sm+ */}
+            {collapsedPane === "none" && (
+              <div
+                onPointerDown={handleSplitterPointerDown}
+                onPointerMove={handleSplitterPointerMove}
+                onPointerUp={handleSplitterPointerUp}
+                onDoubleClick={() => setSplitRatio(50)}
+                className="hidden sm:flex flex-col items-center justify-center w-2 hover:w-3.5 bg-slate-200 hover:bg-slate-300 border-x border-slate-300/80 cursor-col-resize select-none shrink-0 transition-all group relative z-10 rounded-sm"
+                title="Drag to resize panes • Double-click to reset to 50:50"
+              >
+                {/* Visual grip dots */}
+                <div className="flex flex-col gap-1 items-center justify-center pointer-events-none">
+                  <span className="w-1 h-1 rounded-full bg-slate-400 group-hover:bg-slate-600 transition-colors" />
+                  <span className="w-1 h-1 rounded-full bg-slate-400 group-hover:bg-slate-600 transition-colors" />
+                  <span className="w-1 h-1 rounded-full bg-slate-400 group-hover:bg-slate-600 transition-colors" />
+                </div>
+
+                {/* Quick collapse/expand arrows on hover or tablet */}
+                <div className="absolute inset-y-0 -left-3 -right-3 hidden group-hover:flex items-center justify-between pointer-events-none px-0.5">
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCollapsedPane("editor");
+                    }}
+                    className="pointer-events-auto w-4 h-6 bg-white border border-slate-300 rounded shadow-xs text-slate-600 hover:text-slate-900 flex items-center justify-center text-[10px] cursor-pointer"
+                    title="Collapse editor (full preview)"
+                  >
+                    <ChevronRight className="w-3 h-3" />
+                  </button>
+                  <button
+                    type="button"
+                    onClick={(e) => {
+                      e.stopPropagation();
+                      setCollapsedPane("preview");
+                    }}
+                    className="pointer-events-auto w-4 h-6 bg-white border border-slate-300 rounded shadow-xs text-slate-600 hover:text-slate-900 flex items-center justify-center text-[10px] cursor-pointer"
+                    title="Collapse preview (full editor)"
+                  >
+                    <ChevronLeft className="w-3 h-3" />
+                  </button>
+                </div>
+              </div>
+            )}
+
+            {/* Right Pane: Live Document Sheet */}
+            {collapsedPane !== "preview" && (
+              <div
+                style={{
+                  ...(collapsedPane === "none" ? { width: `calc(${100 - splitRatio}% - 4px)` } : {}),
+                  ...(collapsedPane === "editor" ? { width: "100%", flex: "1 1 100%" } : {}),
+                }}
+                className={`h-full min-h-0 flex flex-col overflow-hidden transition-[width] ${
+                  isDraggingSplitter ? "duration-0" : "duration-150"
+                } ${collapsedPane === "editor" ? "w-full flex-1" : "w-full sm:w-auto"}`}
+              >
+                <FormattedPreview
+                  markdown={effectiveMarkdown}
+                  docTitle={docTitle}
+                  fontFamily={fontFamily}
+                  accentColor={accentColor}
+                  equationFormat={equationFormat}
+                  isAiPolished={Boolean(cleanedMarkdown)}
+                  validationAlert={validationAlert}
+                  onDismissValidationAlert={() => setValidationAlert(null)}
+                  onTriggerAiPolish={handlePreviewClean}
+                  isAiPolishing={isConverting}
+                  onDownloadDocx={handleConvertToDocx}
+                  onDownloadPdf={() => downloadFile("pdf")}
+                  isDownloading={isConverting}
+                  failedBlockIds={detectedFailedBlockIds}
+                  blockIssuesMap={detectedIssuesMap}
+                  fragments={detectedFragments}
+                  blockFragmentsMap={detectedBlockFragmentsMap}
+                  onRepairSingleBlock={handleRepairSingleBlock}
+                  onRepairFragment={handleRepairSingleFragment}
+                  onRepairAllFlagged={handleRepairFlaggedBlocks}
+                  isRepairing={isRepairing}
+                  repairProgress={repairProgress}
+                  onToggleMaximize={() => setCollapsedPane(collapsedPane === "editor" ? "none" : "editor")}
+                  isMaximized={collapsedPane === "editor"}
+                />
+              </div>
+            )}
           </div>
         )}
 
         {/* WORKSPACE VIEW: EDITOR ONLY */}
         {viewLayout === "editor" && (
           <div className="bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
-            <div className="h-10 px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100/90 shrink-0">
+            <div className="h-10 px-2.5 sm:px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100 shrink-0 gap-1.5">
               <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
                 Raw Content
               </span>
-              <div className="flex items-center gap-1.5 shrink-0">
+              <div className="flex items-center gap-1 sm:gap-1.5 shrink-0">
                 <button
+                  type="button"
                   onClick={() => fileInputRef.current?.click()}
-                  className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                  className="min-h-[30px] inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
                   title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
                 >
                   <Upload className="w-3.5 h-3.5 text-slate-600" />
-                  <span>Upload</span>
+                  <span className="hidden xs:inline">Upload</span>
                 </button>
                 <button
+                  type="button"
                   onClick={handlePasteClipboard}
-                  className="h-7 inline-flex items-center gap-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer"
+                  style={{ backgroundColor: currentTheme.btnPrimary }}
+                  className="min-h-[30px] inline-flex items-center gap-1 text-xs font-bold text-white px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer hover:brightness-95 active:brightness-90"
+                  title="Paste from clipboard"
                 >
                   <Clipboard className="w-3.5 h-3.5 text-white" />
-                  <span>Paste</span>
+                  <span className="hidden xs:inline">Paste</span>
                 </button>
                 <button
+                  type="button"
                   onClick={() => handleUpdateInput("", "FormatAI Document")}
-                  className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
+                  className="min-h-[30px] inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
+                  title="Clear input"
                 >
                   <Eraser className="w-3.5 h-3.5" />
-                  <span>Clear</span>
+                  <span className="hidden xs:inline">Clear</span>
                 </button>
               </div>
             </div>
 
             <textarea
+              ref={editorTextareaRef}
               value={inputText}
+              onFocus={() => setIsEditorFocused(true)}
+              onBlur={() => setIsEditorFocused(false)}
               onChange={(e) => {
                 const val = e.target.value;
                 activePolishRequestIdRef.current++;
@@ -1725,18 +2011,62 @@ export default function App() {
                 if (validationAlert) setValidationAlert(null);
               }}
               placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, or any notes/equations)..."
-              className="w-full flex-1 min-h-0 p-3 sm:p-4 font-mono text-xs sm:text-sm text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400 overflow-y-auto"
+              className="w-full flex-1 min-h-0 p-3 sm:p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400 overflow-y-auto overscroll-contain break-words pb-28 sm:pb-4"
             />
 
-            <div className="h-8 px-3 border-t border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between shrink-0 select-none">
-              <div className="flex items-center gap-2">
-                <span>{charCount.toLocaleString()} chars • {lineCount} lines</span>
+            {/* Quick Academic Math Symbols Bar (Mobile & Narrow Screen Keyboard Accessory) */}
+            <div className="flex sm:hidden items-center gap-1 px-2.5 py-1.5 bg-slate-100 border-t border-slate-200 overflow-x-auto shrink-0 select-none scrollbar-none">
+              <span className="text-[10px] font-bold text-slate-400 uppercase tracking-wider shrink-0 mr-0.5">Insert:</span>
+              {[
+                { label: "\\frac{}{}", snippet: "\\frac{a}{b}", offset: 6 },
+                { label: "\\sqrt{}", snippet: "\\sqrt{x}", offset: 6 },
+                { label: "x²", snippet: "^{2}", offset: 3 },
+                { label: "\\sum", snippet: "\\sum_{i=1}^{n} ", offset: 14 },
+                { label: "\\int", snippet: "\\int_{a}^{b} ", offset: 12 },
+                { label: "\\pi", snippet: "\\pi ", offset: 4 },
+                { label: "\\mu", snippet: "\\mu ", offset: 4 },
+                { label: "\\sigma²", snippet: "\\sigma^2 ", offset: 9 },
+                { label: "\\hat{p}", snippet: "\\hat{p} ", offset: 8 },
+                { label: "\\bar{X}", snippet: "\\bar{X} ", offset: 8 },
+                { label: "\\approx", snippet: "\\approx ", offset: 8 },
+                { label: "\\sim", snippet: "\\sim ", offset: 5 },
+                { label: "[matrix]", snippet: "\\begin{bmatrix}\na & b \\\\\nc & d\n\\end{bmatrix}", offset: 16 },
+              ].map((item, idx) => (
+                <button
+                  key={idx}
+                  type="button"
+                  onMouseDown={(e) => e.preventDefault()}
+                  onClick={() => handleInsertMathSnippet(item.snippet, item.offset)}
+                  className="h-7 px-2 bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-800 rounded text-xs font-mono border border-slate-300 shadow-2xs shrink-0 cursor-pointer transition-colors"
+                >
+                  {item.label}
+                </button>
+              ))}
+              {isEditorFocused && (
+                <button
+                  type="button"
+                  onClick={() => editorTextareaRef.current?.blur()}
+                  className="ml-auto h-7 px-2.5 bg-slate-800 text-white rounded text-xs font-bold shrink-0 flex items-center gap-1 shadow-2xs cursor-pointer active:scale-95 transition-all"
+                  title="Close mobile keyboard"
+                >
+                  <Check className="w-3 h-3 text-emerald-400" />
+                  <span>Done</span>
+                </button>
+              )}
+            </div>
+
+            <div className="h-8 px-2.5 sm:px-3 border-t border-slate-200 bg-slate-100 text-xs text-slate-700 font-semibold flex items-center justify-between shrink-0 select-none">
+              <div className="flex items-center gap-1.5 sm:gap-2">
+                <span>{charCount.toLocaleString()} chars</span>
+                <span className="text-slate-300 hidden min-[380px]:inline">•</span>
+                <span className="text-slate-500 font-normal hidden min-[380px]:inline">{lineCount} lines</span>
                 <span className="text-slate-300">•</span>
-                <span className="text-xs text-slate-500 font-normal">{wordCount.toLocaleString()} words</span>
+                <span className="text-slate-500 font-normal">{wordCount.toLocaleString()} words</span>
               </div>
               <button
+                type="button"
                 onClick={() => setViewLayout("split")}
-                className="text-blue-700 font-bold hover:underline cursor-pointer hidden sm:inline-block text-xs"
+                className="text-slate-800 font-bold hover:text-slate-950 hover:underline cursor-pointer hidden sm:inline-block text-xs"
               >
                 Switch to Split View →
               </button>
@@ -1778,10 +2108,12 @@ export default function App() {
       {/* Mobile Sticky Bottom Floating Action Dock (Mobile Users only, hidden on sm+) */}
       <div
         id="mobile-sticky-dock"
-        className="sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white/95 backdrop-blur-md border-t-2 border-slate-300 px-2.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-[1fr_2fr_1fr] items-center gap-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.12)]"
+        className={`sm:hidden fixed bottom-0 left-0 right-0 z-40 bg-white border-t-2 border-slate-300 px-2.5 pt-2 pb-[max(0.75rem,env(safe-area-inset-bottom))] grid grid-cols-[1fr_2fr_1fr] items-center gap-1.5 shadow-[0_-4px_20px_rgba(0,0,0,0.12)] transition-transform duration-200 ${
+          isEditorFocused ? "translate-y-full pointer-events-none" : "translate-y-0"
+        }`}
       >
         {/* View Switcher Toggle (Column 1: 1fr - Edit & Preview guaranteed >= 48x48px touch hit-box) */}
-        <div className="flex bg-slate-200/90 p-0.5 rounded-2xl border border-slate-300 gap-0.5 shadow-2xs min-h-[48px] items-stretch">
+        <div className="flex bg-slate-200 p-0.5 rounded-2xl border border-slate-300 gap-0.5 shadow-2xs min-h-[48px] items-stretch">
           <button
             type="button"
             id="mobile-btn-edit"

@@ -12,7 +12,22 @@ export interface AcademicTheme {
   ring: string;
 }
 
+export const PRIMARY_THEME_HEX = "#881337";
+
 export const ACADEMIC_THEMES: AcademicTheme[] = [
+  {
+    id: "crimson_burgundy",
+    label: "Crimson Burgundy",
+    hex: "#881337",
+    desc: "Ivy League Crimson & University Rose",
+    lightBg: "#FFF1F2",
+    border: "#FECDD3",
+    badgeBg: "#FFE4E6",
+    badgeText: "#881337",
+    btnPrimary: "#881337",
+    btnHover: "#700F2E",
+    ring: "#F43F5E",
+  },
   {
     id: "oxford_navy",
     label: "Oxford Navy",
@@ -51,19 +66,6 @@ export const ACADEMIC_THEMES: AcademicTheme[] = [
     btnPrimary: "#065F46",
     btnHover: "#044E39",
     ring: "#10B981",
-  },
-  {
-    id: "crimson_burgundy",
-    label: "Crimson Burgundy",
-    hex: "#881337",
-    desc: "Ivy League Crimson & University Rose",
-    lightBg: "#FFF1F2",
-    border: "#FECDD3",
-    badgeBg: "#FFE4E6",
-    badgeText: "#881337",
-    btnPrimary: "#881337",
-    btnHover: "#700F2E",
-    ring: "#F43F5E",
   },
   {
     id: "imperial_violet",
@@ -119,23 +121,24 @@ export const ACADEMIC_THEMES: AcademicTheme[] = [
   },
 ];
 
-export function getAcademicTheme(hex: string): AcademicTheme {
+export function getAcademicTheme(hex?: string): AcademicTheme {
+  const targetHex = hex?.trim() || PRIMARY_THEME_HEX;
   const match = ACADEMIC_THEMES.find(
-    (t) => t.hex.toLowerCase() === hex.toLowerCase()
+    (t) => t.hex.toLowerCase() === targetHex.toLowerCase()
   );
   if (match) return match;
 
   return {
     id: "custom",
     label: "Custom Palette",
-    hex: hex,
+    hex: targetHex,
     desc: "User Selected Accent",
-    lightBg: "#F8FAFC",
-    border: "#E2E8F0",
-    badgeBg: "#E2E8F0",
-    badgeText: "#0F172A",
-    btnPrimary: hex,
-    btnHover: hex,
-    ring: hex,
+    lightBg: "#FFF1F2",
+    border: "#FECDD3",
+    badgeBg: "#FFE4E6",
+    badgeText: "#881337",
+    btnPrimary: targetHex,
+    btnHover: "#700F2E",
+    ring: "#F43F5E",
   };
 }

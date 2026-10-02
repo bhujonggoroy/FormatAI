@@ -772,7 +772,7 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
       onClick={(e) => {
         if (e.target === e.currentTarget) onClose();
       }}
-      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/50 backdrop-blur-xs transition-opacity duration-150 motion-reduce:transition-none animate-modal-backdrop"
+      className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 transition-opacity duration-150 motion-reduce:transition-none animate-modal-backdrop"
     >
       <div
         ref={modalRef}
