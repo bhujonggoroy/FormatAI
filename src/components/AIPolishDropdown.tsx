@@ -319,7 +319,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 transition-colors cursor-pointer"
+          className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-slate-100 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-150 ease-out cursor-pointer active:scale-95 motion-reduce:transform-none"
           aria-label="Close engine selector"
         >
           <X className="w-3.5 h-3.5" />
@@ -334,7 +334,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
             type="button"
             onClick={() => handleSwitchEngineMode("offline")}
             aria-pressed={activeEngineMode === "offline"}
-            className={`flex-1 py-1.5 px-2 rounded-md font-medium text-xs transition-all cursor-pointer text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            className={`flex-1 py-1.5 px-2 rounded-md font-medium text-xs transition-all duration-150 ease-out cursor-pointer text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:scale-[0.98] motion-reduce:transform-none ${
               activeEngineMode === "offline"
                 ? "bg-white text-slate-900 shadow-xs font-semibold"
                 : "text-slate-600 hover:text-slate-900"
@@ -346,7 +346,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
             type="button"
             onClick={() => handleSwitchEngineMode("ai")}
             aria-pressed={activeEngineMode === "ai"}
-            className={`flex-1 py-1.5 px-2 rounded-md font-medium text-xs transition-all cursor-pointer text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+            className={`flex-1 py-1.5 px-2 rounded-md font-medium text-xs transition-all duration-150 ease-out cursor-pointer text-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 active:scale-[0.98] motion-reduce:transform-none ${
               activeEngineMode === "ai"
                 ? "bg-white text-slate-900 shadow-xs font-semibold"
                 : "text-slate-600 hover:text-slate-900"
@@ -395,7 +395,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                         }
                       }}
                       onClick={() => handleSelectProvider(p)}
-                      className={`p-2 rounded-lg border transition-all cursor-pointer flex items-center justify-between gap-2 active:scale-[0.98] motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
+                      className={`p-2 rounded-lg border transition-all duration-150 ease-out cursor-pointer flex items-center justify-between gap-2 active:scale-[0.98] motion-reduce:transform-none focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
                         isSelected
                           ? "border-blue-600 bg-blue-50/40 text-slate-900 shadow-xs"
                           : "border-slate-200 bg-white hover:bg-slate-50 text-slate-700"
@@ -454,7 +454,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                   id="select-provider-model"
                   value={selectedModelId || selectedProvider.selectedModel}
                   onChange={(e) => handleSelectModel(e.target.value)}
-                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500"
+                  className="w-full text-xs bg-slate-50 border border-slate-200 rounded-lg p-2 text-slate-900 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-150 ease-out"
                 >
                   {modelOptions.length === 0 ? (
                     <option value="" disabled>No models configured</option>
@@ -487,7 +487,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
                 onClose();
                 if (onOpenAISettings) onOpenAISettings("providers");
               }}
-              className="font-medium text-blue-700 hover:text-blue-900 underline shrink-0 cursor-pointer ml-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded"
+              className="font-medium text-blue-700 hover:text-blue-900 underline shrink-0 cursor-pointer ml-1 focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded transition-colors duration-150 ease-out"
             >
               Add key →
             </button>
@@ -499,7 +499,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
           type="button"
           onClick={handleRunPolish}
           disabled={isAiPolishing || !selectedHasKey}
-          className="w-full py-2 px-3 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all cursor-pointer shadow-xs flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none"
+          className="w-full py-2 px-3 rounded-lg text-xs font-semibold text-white bg-blue-600 hover:bg-blue-700 active:scale-[0.98] disabled:opacity-40 disabled:cursor-not-allowed transition-all duration-150 ease-out cursor-pointer shadow-xs flex items-center justify-center gap-1.5 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 focus-visible:ring-offset-2 motion-reduce:transform-none"
         >
           {isAiPolishing ? (
             <>
@@ -522,7 +522,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
               onClose();
               if (onOpenAISettings) onOpenAISettings("providers");
             }}
-            className="text-xs text-slate-600 hover:text-blue-700 transition-colors flex items-center gap-1 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded p-0.5"
+            className="text-xs text-slate-600 hover:text-blue-700 transition-colors duration-150 ease-out flex items-center gap-1 cursor-pointer font-medium focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-blue-500 rounded p-0.5 active:scale-95 motion-reduce:transform-none"
           >
             <Settings2 className="w-3.5 h-3.5" />
             <span>Manage API keys</span>

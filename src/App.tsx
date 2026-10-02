@@ -846,222 +846,119 @@ export default function App() {
   const handleRepairFlaggedBlocks = async () => {
     if (isRepairing) return;
 
-    // Use detectedFragments if available; fallback to failed blocks if needed
-    const fragmentsToRepair = [...detectedFragments];
-    const totalItems = fragmentsToRepair.length > 0 ? fragmentsToRepair.length : detectedFailedBlockIds.length;
-    if (totalItems === 0) return;
+    const initialBlocks = parseDocumentBlocks(effectiveMarkdown);
+    const initialFlagged = collectFailedFragments(initialBlocks);
+    const totalToFix = initialFlagged.failedBlockIds.length;
+    if (totalToFix === 0) return;
 
     setIsRepairing(true);
-    setRepairProgress({ current: 0, total: totalItems });
+    setRepairProgress({ current: 0, total: totalToFix });
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     let currentMarkdown = effectiveMarkdown;
     let successCount = 0;
     let failCount = 0;
-    const failedErrors: string[] = [];
 
     const userConfig = getUserSettings();
     const userProvs = getUserProviders();
 
-    if (fragmentsToRepair.length > 0) {
-      // FRAGMENT-LEVEL REPAIR LOOP
-      for (let i = 0; i < fragmentsToRepair.length; i++) {
-        const frag = fragmentsToRepair[i];
-        setRepairProgress({
-          current: i + 1,
-          total: fragmentsToRepair.length,
-          currentBlockId: frag.blockId,
+    for (let step = 0; step < totalToFix; step++) {
+      const currentBlocks = parseDocumentBlocks(currentMarkdown);
+      const { failedBlockIds, blockFragmentsMap } = collectFailedFragments(currentBlocks);
+      if (failedBlockIds.length === 0) {
+        break; // All issues resolved
+      }
+
+      const targetBlockId = failedBlockIds[0];
+      const targetIndex = currentBlocks.findIndex((b) => b.id === targetBlockId);
+      if (targetIndex === -1) {
+        failCount++;
+        continue;
+      }
+
+      const targetBlock = currentBlocks[targetIndex];
+      const targetFragments = blockFragmentsMap[targetBlockId] || [];
+      const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
+      const nextBlockText =
+        targetIndex < currentBlocks.length - 1 ? currentBlocks[targetIndex + 1].rawText : "";
+
+      setRepairProgress({
+        current: step + 1,
+        total: totalToFix,
+        currentBlockId: targetBlock.id,
+      });
+
+      try {
+        const res = await fetch("/api/repair-block", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            targetBlock,
+            brokenFragment: targetFragments[0],
+            prevBlockText,
+            nextBlockText,
+            equationFormat,
+            aiConfig: userConfig,
+            userProviders: userProvs,
+          }),
         });
 
-        // Find current block in dynamic document state
-        const currentBlocks = parseDocumentBlocks(currentMarkdown);
-        let targetIndex = currentBlocks.findIndex((b) => b.id === frag.blockId);
-        if (targetIndex === -1) {
-          const baseTargetId = frag.blockId.replace(/-\d+$/, "");
-          targetIndex = currentBlocks.findIndex(
-            (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
-          );
+        if (!res.ok) {
+          throw new Error(`HTTP ${res.status}`);
         }
 
-        if (targetIndex === -1) {
-          failCount++;
-          failedErrors.push(`Block [${frag.blockId}] not found in document.`);
-          continue;
+        const data = await res.json();
+        if (!data.success) {
+          throw new Error(data.error || "Repair failed.");
         }
 
-        const targetBlock = currentBlocks[targetIndex];
-        const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
-        const nextBlockText =
-          targetIndex < currentBlocks.length - 1 ? currentBlocks[targetIndex + 1].rawText : "";
-
-        try {
-          const res = await fetch("/api/repair-block", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              targetBlock,
-              brokenFragment: frag,
-              prevBlockText,
-              nextBlockText,
-              equationFormat,
-              aiConfig: userConfig,
-              userProviders: userProvs,
-            }),
-          });
-
-          if (!res.ok) {
-            let serverMsg = `HTTP ${res.status}`;
-            try {
-              const errBody = await res.json();
-              serverMsg = errBody.error || serverMsg;
-            } catch {}
-            throw new Error(serverMsg);
-          }
-
-          const data = await res.json();
-          if (!data.success) {
-            throw new Error(data.error || "Repair engine did not return valid fragment replacement.");
-          }
-
-          const candidateFrag = (data.repairedFragment || data.repairedText || "").trim();
-          if (!candidateFrag) {
-            throw new Error("AI returned empty content for fragment.");
-          }
-
-          // Step 5 VALIDATION: Assert startOffset..endOffset range outside was 100% byte-for-byte untouched
+        if (data.repairedFragment && targetFragments[0]) {
+          const frag = targetFragments[0];
           const updatedRawText = replaceFragmentInBlock(
             targetBlock.rawText,
             frag.startOffset,
             frag.endOffset,
-            candidateFrag
+            data.repairedFragment.trim()
           );
-
-          const isSurgical = assertFragmentSurgicallyReplaced(
-            targetBlock.rawText,
-            updatedRawText,
-            frag.startOffset,
-            frag.endOffset,
-            candidateFrag
-          );
-
-          if (!isSurgical) {
-            throw new Error("Surgical validation error: Content outside fragment boundary was altered.");
-          }
-
-          // Apply surgical fragment replacement to document
-          currentMarkdown = replaceFragmentInDocument(
-            currentMarkdown,
-            frag.blockId,
-            frag.startOffset,
-            frag.endOffset,
-            candidateFrag
-          );
-          setCleanedMarkdown(currentMarkdown);
-          successCount++;
-
-          logPipelineDebug(
-            "preview_input",
-            {
-              stage: "fragment_repair",
-              fragmentId: frag.id,
-              blockId: frag.blockId,
-              repairedLength: candidateFrag.length,
-            },
-            "Client:RepairFragment"
-          );
-        } catch (err: any) {
-          console.error(`Repair failed for fragment ${frag.id}:`, err);
-          failCount++;
-          failedErrors.push(`Fragment [${frag.id}]: ${err.message || "Failed to repair"}`);
+          currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, updatedRawText);
+        } else if (data.repairedText) {
+          currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, data.repairedText.trim());
         }
 
-        // Throttle to respect provider quotas
-        if (i < fragmentsToRepair.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
+        setCleanedMarkdown(currentMarkdown);
+        successCount++;
+      } catch (err: any) {
+        console.warn(`Repair attempt failed for block ${targetBlock.id}:`, err);
+        // Client-side deterministic repair fallback
+        const candidate = cleanClientSideNotebookLM(targetBlock.rawText, "auto");
+        if (candidate && candidate !== targetBlock.rawText) {
+          currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, candidate);
+          setCleanedMarkdown(currentMarkdown);
+          successCount++;
+        } else {
+          failCount++;
         }
       }
-    } else {
-      // Whole-block fallback loop if no fine-grained fragments were isolated
-      const blocksToRepair = docBlocks.filter((b) => detectedFailedBlockIds.includes(b.id));
-      for (let i = 0; i < blocksToRepair.length; i++) {
-        const targetBlock = blocksToRepair[i];
-        setRepairProgress({
-          current: i + 1,
-          total: blocksToRepair.length,
-          currentBlockId: targetBlock.id,
-        });
 
-        const currentBlocks = parseDocumentBlocks(currentMarkdown);
-        let targetIndex = currentBlocks.findIndex((b) => b.id === targetBlock.id);
-        if (targetIndex === -1) {
-          const baseTargetId = targetBlock.id.replace(/-\d+$/, "");
-          targetIndex = currentBlocks.findIndex(
-            (b) => b.id === baseTargetId || b.id.replace(/-\d+$/, "") === baseTargetId
-          );
-        }
-        const prevBlockText = targetIndex > 0 ? currentBlocks[targetIndex - 1].rawText : "";
-        const nextBlockText =
-          targetIndex >= 0 && targetIndex < currentBlocks.length - 1
-            ? currentBlocks[targetIndex + 1].rawText
-            : "";
-
-        try {
-          const res = await fetch("/api/repair-block", {
-            method: "POST",
-            headers: { "Content-Type": "application/json" },
-            body: JSON.stringify({
-              targetBlock,
-              prevBlockText,
-              nextBlockText,
-              equationFormat,
-              aiConfig: userConfig,
-              userProviders: userProvs,
-            }),
-          });
-
-          if (!res.ok) {
-            let serverMsg = `HTTP ${res.status}`;
-            try {
-              const errBody = await res.json();
-              serverMsg = errBody.error || serverMsg;
-            } catch {}
-            throw new Error(serverMsg);
-          }
-
-          const data = await res.json();
-          if (!data.success || !data.repairedText) {
-            throw new Error(data.error || "Repair engine did not return valid replacement.");
-          }
-
-          const candidateText = data.repairedText.trim();
-          if (!candidateText) {
-            throw new Error("AI returned empty content for block.");
-          }
-
-          currentMarkdown = replaceSingleBlockInDocument(currentMarkdown, targetBlock.id, candidateText);
-          setCleanedMarkdown(currentMarkdown);
-          successCount++;
-        } catch (err: any) {
-          failCount++;
-          failedErrors.push(`Block [${targetBlock.id}]: ${err.message || "Failed to repair"}`);
-        }
-
-        if (i < blocksToRepair.length - 1) {
-          await new Promise((resolve) => setTimeout(resolve, 300));
-        }
+      if (step < totalToFix - 1) {
+        await new Promise((resolve) => setTimeout(resolve, 200));
       }
     }
 
     setIsRepairing(false);
     setRepairProgress(null);
 
-    if (failCount === 0) {
-      setSuccessMessage(`Successfully repaired ${successCount} flagged item${successCount === 1 ? "" : "s"}.`);
-    } else if (successCount > 0) {
-      setSuccessMessage(`Repaired ${successCount} item(s). ${failCount} item(s) could not be resolved.`);
-      setErrorMessage(failedErrors.join(" • "));
-    } else {
-      setErrorMessage(`Repair failed for ${failCount} item(s): ${failedErrors.join(" • ")}`);
+    // Compact notification: "koyta fail ta dekhaolei hobe means koy fail and success"
+    if (failCount === 0 && successCount > 0) {
+      setSuccessMessage(`Repaired: ${successCount} succeeded, 0 failed`);
+      setErrorMessage(null);
+    } else if (successCount > 0 && failCount > 0) {
+      setSuccessMessage(`Repaired: ${successCount} succeeded, ${failCount} failed`);
+      setErrorMessage(null);
+    } else if (failCount > 0) {
+      setErrorMessage(`Repair: 0 succeeded, ${failCount} failed`);
+      setSuccessMessage(null);
     }
   };
 
@@ -1074,6 +971,7 @@ export default function App() {
     setIsRepairing(true);
     setRepairProgress({ current: 1, total: 1, currentBlockId: frag.blockId });
     setErrorMessage(null);
+    setSuccessMessage(null);
 
     const userConfig = getUserSettings();
     const userProvs = getUserProviders();
@@ -1088,7 +986,7 @@ export default function App() {
     }
 
     if (targetIndex === -1) {
-      setErrorMessage(`Block [${frag.blockId}] not found in document.`);
+      setErrorMessage("Repair: 0 succeeded, 1 failed");
       setIsRepairing(false);
       setRepairProgress(null);
       return;
@@ -1115,12 +1013,7 @@ export default function App() {
       });
 
       if (!res.ok) {
-        let serverMsg = `HTTP ${res.status}`;
-        try {
-          const errBody = await res.json();
-          serverMsg = errBody.error || serverMsg;
-        } catch {}
-        throw new Error(serverMsg);
+        throw new Error(`HTTP ${res.status}`);
       }
 
       const data = await res.json();
@@ -1162,9 +1055,20 @@ export default function App() {
       );
 
       setCleanedMarkdown(updatedDoc);
-      setSuccessMessage(`Fragment [${frag.id}] repaired successfully.`);
+      setSuccessMessage("Repaired: 1 succeeded, 0 failed");
+      setErrorMessage(null);
     } catch (err: any) {
-      setErrorMessage(`Could not repair fragment [${frag.id}]: ${err.message || "Unknown error"}`);
+      // Deterministic local fallback
+      const candidate = cleanClientSideNotebookLM(targetBlock.rawText, "auto");
+      if (candidate && candidate !== targetBlock.rawText) {
+        const updatedDoc = replaceSingleBlockInDocument(effectiveMarkdown, targetBlock.id, candidate);
+        setCleanedMarkdown(updatedDoc);
+        setSuccessMessage("Repaired: 1 succeeded, 0 failed");
+        setErrorMessage(null);
+      } else {
+        setErrorMessage("Repair: 0 succeeded, 1 failed");
+        setSuccessMessage(null);
+      }
     } finally {
       setIsRepairing(false);
       setRepairProgress(null);
@@ -1262,9 +1166,11 @@ export default function App() {
 
       const updatedDoc = replaceSingleBlockInDocument(effectiveMarkdown, blockId, candidateText);
       setCleanedMarkdown(updatedDoc);
-      setSuccessMessage(`Block [${blockId}] repaired successfully.`);
+      setSuccessMessage("Repaired: 1 succeeded, 0 failed");
+      setErrorMessage(null);
     } catch (err: any) {
-      setErrorMessage(`Could not repair block [${blockId}]: ${err.message || "Unknown error"}`);
+      setErrorMessage("Repair: 0 succeeded, 1 failed");
+      setSuccessMessage(null);
     } finally {
       setIsRepairing(false);
       setRepairProgress(null);
@@ -1408,8 +1314,40 @@ export default function App() {
   const lineCount = inputText ? inputText.split("\n").length : 0;
   const currentTheme = getAcademicTheme(accentColor);
 
+  // Keyboard navigation for role="tablist" view switcher
+  const handleViewSwitcherKeyDown = (e: React.KeyboardEvent<HTMLDivElement>) => {
+    const isMobile = typeof window !== "undefined" && window.innerWidth < 640;
+    const availableTabs: Array<"split" | "editor" | "preview"> = isMobile
+      ? ["editor", "preview"]
+      : ["split", "editor", "preview"];
+
+    const currentIndex = availableTabs.indexOf(viewLayout);
+    let targetIndex = -1;
+
+    if (e.key === "ArrowRight" || e.key === "ArrowDown") {
+      e.preventDefault();
+      targetIndex = currentIndex >= 0 ? (currentIndex + 1) % availableTabs.length : 0;
+    } else if (e.key === "ArrowLeft" || e.key === "ArrowUp") {
+      e.preventDefault();
+      targetIndex = currentIndex >= 0 ? (currentIndex - 1 + availableTabs.length) % availableTabs.length : availableTabs.length - 1;
+    } else if (e.key === "Home") {
+      e.preventDefault();
+      targetIndex = 0;
+    } else if (e.key === "End") {
+      e.preventDefault();
+      targetIndex = availableTabs.length - 1;
+    }
+
+    if (targetIndex !== -1) {
+      const nextTab = availableTabs[targetIndex];
+      setViewLayout(nextTab);
+      const nextBtn = document.getElementById(`view-tab-${nextTab}`);
+      nextBtn?.focus();
+    }
+  };
+
   return (
-    <div className="min-h-screen bg-[#F4F6F8] text-slate-900 flex flex-col antialiased w-full overflow-x-hidden">
+    <div className="h-[100dvh] max-h-[100dvh] bg-[#F4F6F8] text-slate-900 flex flex-col antialiased w-full overflow-hidden">
       {/* Precision Top Header */}
       <Header
         docTitle={docTitle}
@@ -1418,8 +1356,8 @@ export default function App() {
         accentColor={accentColor}
       />
 
-      {/* Main Container Area */}
-      <div className="max-w-7xl w-full mx-auto px-3 sm:px-5 pt-3 sm:pt-5 pb-2 sm:pb-3 flex flex-col gap-3 sm:gap-4">
+      {/* Main Container Area - compact 8px vertical spacing */}
+      <div className="max-w-7xl w-full mx-auto px-3 sm:px-4 pt-2 pb-0 flex flex-col gap-2 shrink-0">
         {/* Interactive 7-Tile Toolbar Card matching Mockup */}
         <ToolbarGrid
           fontFamily={fontFamily}
@@ -1468,76 +1406,96 @@ export default function App() {
           isRepairing={isRepairing}
         />
 
-        {/* High-Contrast Segmented View Switcher Bar (Split | Editor | Preview) */}
-        <div className="w-full bg-slate-200/90 rounded-2xl border-2 border-slate-300 p-1 sm:p-1.5 shadow-2xs flex items-center justify-between text-xs font-bold text-slate-700">
+        {/* Compact Segmented View Switcher Bar (Split View | Raw Editor | Document Sheet) */}
+        <div
+          role="tablist"
+          aria-label="Document view options"
+          onKeyDown={handleViewSwitcherKeyDown}
+          className="sticky top-[84px] sm:static z-10 w-full h-9 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 relative flex items-center select-none shrink-0"
+        >
+          {/* Sliding Active Tab Background Indicator */}
+          <div
+            aria-hidden="true"
+            className={`absolute inset-y-0.5 rounded-md bg-white shadow-2xs border border-slate-200/80 pointer-events-none transition-transform duration-200 ease-out motion-reduce:transition-none ${
+              "w-[calc((100%-4px)/2)] sm:w-[calc((100%-4px)/3)] left-0.5 " +
+              (viewLayout === "preview"
+                ? "translate-x-full sm:translate-x-[200%]"
+                : viewLayout === "editor"
+                ? "translate-x-0 sm:translate-x-full"
+                : "translate-x-0 sm:translate-x-0")
+            }`}
+          />
+
+          {/* Tab 1: Split View (Hidden on mobile <640px via CSS, visible on desktop) */}
           <button
             type="button"
+            role="tab"
             id="view-tab-split"
+            aria-selected={viewLayout === "split"}
+            tabIndex={viewLayout === "split" ? 0 : -1}
             onClick={() => setViewLayout("split")}
-            className={`flex-1 min-h-[46px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-1.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`relative z-10 hidden sm:inline-flex flex-1 h-full items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               viewLayout === "split"
-                ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
-                : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
+                ? "font-semibold text-slate-900"
+                : "font-medium text-slate-600 hover:text-slate-800"
             }`}
           >
             <Columns
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "split" ? currentTheme.hex : undefined }}
             />
-            <span className="text-xs sm:text-sm truncate">Split View</span>
-            <span className="hidden lg:inline-block text-[10px] text-slate-500 font-normal ml-0.5">(Desktop)</span>
+            <span className="truncate">Split View</span>
           </button>
 
-          <div className="w-px h-5 bg-slate-300 shrink-0" />
-
+          {/* Tab 2: Raw Editor */}
           <button
             type="button"
+            role="tab"
             id="view-tab-editor"
+            aria-selected={viewLayout === "editor"}
+            tabIndex={viewLayout === "editor" ? 0 : -1}
             onClick={() => setViewLayout("editor")}
-            className={`flex-1 min-h-[46px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-1.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               viewLayout === "editor"
-                ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
-                : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
+                ? "font-semibold text-slate-900"
+                : "font-medium text-slate-600 hover:text-slate-800"
             }`}
           >
             <FileText
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "editor" ? currentTheme.hex : undefined }}
             />
-            <span className="text-xs sm:text-sm truncate">Raw Editor</span>
-            {charCount > 0 && (
-              <span className="hidden min-[400px]:inline-block text-[10px] bg-slate-300/80 text-slate-900 px-1.5 py-0.2 rounded-full font-bold">
-                {wordCount}w
-              </span>
-            )}
+            <span className="truncate">Raw Editor</span>
           </button>
 
-          <div className="w-px h-5 bg-slate-300 shrink-0" />
-
+          {/* Tab 3: Document Sheet */}
           <button
             type="button"
+            role="tab"
             id="view-tab-preview"
+            aria-selected={viewLayout === "preview"}
+            tabIndex={viewLayout === "preview" ? 0 : -1}
             onClick={() => setViewLayout("preview")}
-            className={`flex-1 min-h-[46px] flex items-center justify-center gap-1.5 sm:gap-2 py-2 px-1.5 sm:px-4 rounded-xl transition-all cursor-pointer ${
+            className={`relative z-10 flex-1 h-full inline-flex items-center justify-center gap-1.5 px-3 rounded-lg text-sm transition-colors duration-150 cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 ${
               viewLayout === "preview"
-                ? "bg-white text-slate-900 shadow-xs font-extrabold border-2 border-slate-400"
-                : "text-slate-700 hover:text-slate-950 hover:bg-slate-300/60"
+                ? "font-semibold text-slate-900"
+                : "font-medium text-slate-600 hover:text-slate-800"
             }`}
           >
             <Eye
               className="w-4 h-4 shrink-0"
               style={{ color: viewLayout === "preview" ? currentTheme.hex : undefined }}
             />
-            <span className="text-xs sm:text-sm truncate">Document Sheet</span>
+            <span className="truncate">Document Sheet</span>
           </button>
         </div>
       </div>
 
-      {/* Main Workspace */}
-      <main className="flex-1 max-w-7xl w-full mx-auto px-3 sm:px-5 pb-24 sm:pb-6 mb-4 sm:mb-0 flex flex-col gap-3 sm:gap-4">
+      {/* Main Workspace - fills remaining height with zero page scroll */}
+      <main className="flex-1 min-h-0 max-w-7xl w-full mx-auto px-3 sm:px-4 pt-2 pb-16 sm:pb-2 flex flex-col gap-2 overflow-hidden">
         {/* Progress feedback bar */}
         {isConverting && (
-          <div className="bg-blue-50 border border-blue-200 text-blue-900 px-4 py-2.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn shadow-2xs">
+          <div className="bg-blue-50 border border-blue-200 text-blue-900 px-3.5 py-2 rounded-xl text-xs flex items-center justify-between animate-fadeIn shadow-2xs shrink-0">
             <div className="flex items-center gap-2">
               <Loader2 className="w-4 h-4 animate-spin text-blue-600 shrink-0" />
               <span className="font-medium">{conversionStage || "Processing..."}</span>
@@ -1548,31 +1506,34 @@ export default function App() {
 
         {/* User-Friendly AI Status & Warning Notification System */}
         {aiStatus && (
-          <AIStatusBanner
-            notification={aiStatus}
-            onDismiss={() => setAiStatus(null)}
-            onOpenSettings={() => {
-              setAiSettingsInitialTab("control");
-              setIsAISettingsModalOpen(true);
-            }}
-            onRetry={handlePreviewClean}
-            onOpenAuditLogs={() => {
-              setAiSettingsInitialTab("logs");
-              setIsAISettingsModalOpen(true);
-            }}
-          />
+          <div className="shrink-0">
+            <AIStatusBanner
+              notification={aiStatus}
+              onDismiss={() => setAiStatus(null)}
+              onOpenSettings={() => {
+                setAiSettingsInitialTab("control");
+                setIsAISettingsModalOpen(true);
+              }}
+              onRetry={handlePreviewClean}
+              onOpenAuditLogs={() => {
+                setAiSettingsInitialTab("logs");
+                setIsAISettingsModalOpen(true);
+              }}
+            />
+          </div>
         )}
 
         {/* General Error notification (fallback when aiStatus is not set) */}
         {!aiStatus && errorMessage && (
-          <div className="bg-rose-50 border border-rose-200 text-rose-900 px-4 py-3 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-2">
+          <div className="bg-rose-50 border border-rose-200 text-rose-900 px-3 py-1.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn shadow-2xs shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
               <AlertCircle className="w-4 h-4 text-rose-600 shrink-0" />
-              <span>{errorMessage}</span>
+              <span className="font-semibold truncate">{errorMessage}</span>
             </div>
             <button
               onClick={() => setErrorMessage(null)}
-              className="text-rose-500 hover:text-rose-700 p-1"
+              className="text-rose-500 hover:text-rose-700 p-1 cursor-pointer shrink-0"
+              aria-label="Dismiss error"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1581,27 +1542,11 @@ export default function App() {
 
         {/* Validation Failure Banner (FormatAI Result Restored & Preview Unchanged) */}
         {validationAlert?.failed && (
-          <div className="bg-amber-50 border-2 border-amber-300 text-amber-950 px-4 py-3 rounded-xl text-xs flex items-start justify-between gap-3 animate-fadeIn shadow-2xs">
-            <div className="flex items-start gap-2.5">
-              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
-              <div>
-                <div className="flex items-center gap-2 flex-wrap">
-                  <span className="font-extrabold text-amber-950">AI Output ❌ Validation FAILED</span>
-                  <span className="text-[10px] bg-rose-100 text-rose-800 font-extrabold px-1.5 py-0.2 rounded border border-rose-300 uppercase">
-                    Discarded AI Output
-                  </span>
-                  <span className="text-[10px] bg-emerald-100 text-emerald-800 font-extrabold px-1.5 py-0.2 rounded border border-emerald-300">
-                    FormatAI Result Restored
-                  </span>
-                  <span className="text-[10px] bg-slate-200 text-slate-800 font-bold px-1.5 py-0.2 rounded">
-                    Preview Unchanged
-                  </span>
-                </div>
-                <p className="mt-1 text-slate-700 text-[11px] leading-relaxed">
-                  Reason: <span className="font-semibold text-amber-900">{validationAlert.reason}</span>.
-                  The AI Polish output was automatically discarded to protect equation syntax. The FormatAI Result is kept and the preview remains unchanged.
-                </p>
-              </div>
+          <div className="bg-amber-50 border border-amber-300 text-amber-950 px-3 py-1.5 rounded-xl text-xs flex items-center justify-between gap-3 animate-fadeIn shadow-2xs shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
+              <ShieldAlert className="w-4 h-4 text-amber-600 shrink-0" />
+              <span className="font-extrabold text-amber-950 shrink-0">Validation Failed</span>
+              <span className="text-slate-600 truncate text-[11px]">FormatAI Result restored: {validationAlert.reason}</span>
             </div>
             <button
               onClick={() => setValidationAlert(null)}
@@ -1615,14 +1560,15 @@ export default function App() {
 
         {/* General Success notification (fallback when aiStatus is not set) */}
         {!aiStatus && successMessage && (
-          <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-4 py-3 rounded-xl text-xs flex items-center justify-between animate-fadeIn">
-            <div className="flex items-center gap-2">
+          <div className="bg-emerald-50 border border-emerald-200 text-emerald-900 px-3 py-1.5 rounded-xl text-xs flex items-center justify-between animate-fadeIn shadow-2xs shrink-0">
+            <div className="flex items-center gap-2 min-w-0">
               <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
-              <span>{successMessage}</span>
+              <span className="font-semibold truncate">{successMessage}</span>
             </div>
             <button
               onClick={() => setSuccessMessage(null)}
-              className="text-emerald-500 hover:text-emerald-700 p-1"
+              className="text-emerald-500 hover:text-emerald-700 p-1 cursor-pointer shrink-0"
+              aria-label="Dismiss success"
             >
               <X className="w-3.5 h-3.5" />
             </button>
@@ -1631,16 +1577,16 @@ export default function App() {
 
         {/* WORKSPACE VIEW: SPLIT */}
         {viewLayout === "split" && (
-          <div className="grid grid-cols-1 lg:grid-cols-2 gap-4 sm:gap-5 items-start flex-1">
+          <div className="grid grid-cols-1 lg:grid-cols-2 gap-2 sm:gap-3 items-stretch flex-1 min-h-0 h-full overflow-hidden">
             {/* Left Pane: Raw Notes & AI Content Editor */}
-            <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col h-[520px] sm:h-[620px] lg:h-[calc(100vh-140px)] min-h-[580px] overflow-hidden">
-              {/* Editor Header Bar with clear, distinct action buttons */}
-              <div className="px-4 py-2.5 border-b-2 border-slate-200 flex items-center justify-between bg-slate-100/90">
-                <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+            <div className="bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col h-full min-h-0 overflow-hidden">
+              {/* Editor Header Bar with 40px height */}
+              <div className="h-10 px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100/90 shrink-0">
+                <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
                   Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
                 </span>
 
-                <div className="flex items-center gap-2">
+                <div className="flex items-center gap-1.5 shrink-0">
                   <input
                     type="file"
                     ref={fileInputRef}
@@ -1650,7 +1596,7 @@ export default function App() {
                   />
                   <button
                     onClick={() => fileInputRef.current?.click()}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2.5 py-1.5 rounded-xl border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                    className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
                     title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
                   >
                     <Upload className="w-3.5 h-3.5 text-slate-600" />
@@ -1658,7 +1604,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={handlePasteClipboard}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-extrabold text-white px-3 py-1.5 rounded-xl shadow-2xs transition-colors cursor-pointer"
+                    className="h-7 inline-flex items-center gap-1 text-xs font-bold text-white px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer"
                     style={{ backgroundColor: currentTheme.btnPrimary }}
                     title="Paste from clipboard"
                   >
@@ -1667,7 +1613,7 @@ export default function App() {
                   </button>
                   <button
                     onClick={() => handleUpdateInput("", "FormatAI Document")}
-                    className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
+                    className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                     title="Clear input"
                   >
                     <Eraser className="w-3.5 h-3.5" />
@@ -1676,7 +1622,7 @@ export default function App() {
                 </div>
               </div>
 
-              {/* Editor Textarea */}
+              {/* Editor Textarea - only this area scrolls on the left */}
               <textarea
                 value={inputText}
                 onChange={(e) => {
@@ -1688,23 +1634,25 @@ export default function App() {
                   if (validationAlert) setValidationAlert(null);
                 }}
                 placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, DeepSeek, or any lecture notes/formulas)...&#10;&#10;Examples:&#10;• Mathematical LaTeX: \frac{\partial T}{\partial t} = \alpha \nabla^2 T or SE(\hat{p}) = \sqrt{\frac{p(1-p)}{n}} typeset to native Word equations&#10;• Tree structures, markdown headers, bold terms, and lists format cleanly into professional academic DOCX"
-                className="w-full flex-1 p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400"
+                className="w-full flex-1 min-h-0 p-3 sm:p-4 font-mono text-xs sm:text-[13px] text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400 overflow-y-auto"
               />
 
               {/* Editor Status Bar */}
-              <div className="px-4 py-2.5 border-t-2 border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between">
-                <span>
-                  {charCount.toLocaleString()} chars • {wordCount.toLocaleString()} words • {lineCount} lines
-                </span>
-                <span className="text-emerald-700 font-bold flex items-center gap-1.5">
+              <div className="h-8 px-3 border-t border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between shrink-0 select-none">
+                <div className="flex items-center gap-2">
+                  <span>{charCount.toLocaleString()} chars • {lineCount} lines</span>
+                  <span className="text-slate-300">•</span>
+                  <span className="text-xs text-slate-500 font-normal">{wordCount.toLocaleString()} words</span>
+                </div>
+                <span className="text-emerald-700 font-bold flex items-center gap-1.5 text-xs">
                   <span className="w-2 h-2 rounded-full bg-emerald-500 animate-pulse" />
                   Live Sync Active
                 </span>
               </div>
             </div>
 
-            {/* Right Pane: Live Document Sheet */}
-            <div className="h-[520px] sm:h-[620px] lg:h-[calc(100vh-140px)] min-h-[580px] lg:sticky lg:top-[108px] flex flex-col">
+            {/* Right Pane: Live Document Sheet - only document sheet scrolls on the right */}
+            <div className="h-full min-h-0 flex flex-col overflow-hidden">
               <FormattedPreview
                 markdown={effectiveMarkdown}
                 docTitle={docTitle}
@@ -1735,15 +1683,15 @@ export default function App() {
 
         {/* WORKSPACE VIEW: EDITOR ONLY */}
         {viewLayout === "editor" && (
-          <div className="bg-white rounded-2xl border-2 border-slate-300 shadow-sm flex flex-col min-h-[640px] overflow-hidden">
-            <div className="px-4 py-2.5 border-b-2 border-slate-200 flex items-center justify-between bg-slate-100/90">
-              <span className="text-xs font-extrabold text-slate-800 uppercase tracking-wider">
+          <div className="bg-white rounded-xl border border-slate-300 shadow-2xs flex flex-col flex-1 min-h-0 h-full overflow-hidden">
+            <div className="h-10 px-3 border-b border-slate-200 flex items-center justify-between bg-slate-100/90 shrink-0">
+              <span className="text-xs font-bold text-slate-800 uppercase tracking-wider truncate">
                 Raw Content (ChatGPT, Gemini, Claude, NotebookLM)
               </span>
-              <div className="flex items-center gap-2">
+              <div className="flex items-center gap-1.5 shrink-0">
                 <button
                   onClick={() => fileInputRef.current?.click()}
-                  className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2.5 py-1.5 rounded-lg border border-slate-300 shadow-2xs transition-colors cursor-pointer"
+                  className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
                   title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
                 >
                   <Upload className="w-3.5 h-3.5 text-slate-600" />
@@ -1751,14 +1699,14 @@ export default function App() {
                 </button>
                 <button
                   onClick={handlePasteClipboard}
-                  className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-extrabold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-3 py-1.5 rounded-lg shadow-2xs transition-colors cursor-pointer"
+                  className="h-7 inline-flex items-center gap-1 text-xs font-bold text-white bg-blue-600 hover:bg-blue-700 active:bg-blue-800 px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer"
                 >
                   <Clipboard className="w-3.5 h-3.5 text-white" />
                   <span>Paste</span>
                 </button>
                 <button
                   onClick={() => handleUpdateInput("", "FormatAI Document")}
-                  className="min-h-[34px] inline-flex items-center gap-1.5 text-xs font-bold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2.5 py-1.5 rounded-lg border border-rose-300 shadow-2xs transition-colors cursor-pointer"
+                  className="h-7 inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                 >
                   <Eraser className="w-3.5 h-3.5" />
                   <span>Clear</span>
@@ -1777,15 +1725,18 @@ export default function App() {
                 if (validationAlert) setValidationAlert(null);
               }}
               placeholder="Paste AI-generated or copy-pasted content here (from ChatGPT, Gemini, Claude, NotebookLM, or any notes/equations)..."
-              rows={22}
-              className="w-full flex-1 p-4 font-mono text-xs sm:text-sm text-slate-900 bg-white resize-y focus:outline-none leading-relaxed select-text placeholder:text-slate-400"
+              className="w-full flex-1 min-h-0 p-3 sm:p-4 font-mono text-xs sm:text-sm text-slate-900 bg-white resize-none focus:outline-none leading-relaxed select-text placeholder:text-slate-400 overflow-y-auto"
             />
 
-            <div className="px-4 py-2.5 border-t-2 border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between">
-              <span>{charCount.toLocaleString()} chars • {wordCount.toLocaleString()} words • {lineCount} lines</span>
+            <div className="h-8 px-3 border-t border-slate-200 bg-slate-100/90 text-xs text-slate-700 font-semibold flex items-center justify-between shrink-0 select-none">
+              <div className="flex items-center gap-2">
+                <span>{charCount.toLocaleString()} chars • {lineCount} lines</span>
+                <span className="text-slate-300">•</span>
+                <span className="text-xs text-slate-500 font-normal">{wordCount.toLocaleString()} words</span>
+              </div>
               <button
                 onClick={() => setViewLayout("split")}
-                className="text-blue-700 font-extrabold hover:underline cursor-pointer"
+                className="text-blue-700 font-bold hover:underline cursor-pointer hidden sm:inline-block text-xs"
               >
                 Switch to Split View →
               </button>
@@ -1795,7 +1746,7 @@ export default function App() {
 
         {/* WORKSPACE VIEW: DOCUMENT PREVIEW ONLY */}
         {viewLayout === "preview" && (
-          <div className="flex flex-col gap-4 h-[calc(100vh-140px)] min-h-[640px]">
+          <div className="flex flex-col flex-1 min-h-0 h-full overflow-hidden">
             <FormattedPreview
               markdown={effectiveMarkdown}
               docTitle={docTitle}

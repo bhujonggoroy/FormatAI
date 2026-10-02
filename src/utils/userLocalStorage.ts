@@ -49,7 +49,7 @@ export const STORAGE_KEYS = {
 export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
   mode: "automatic",
   activeProviderId: "gemini",
-  activeModel: "gemini-3.8-flash",
+  activeModel: "gemini-3.5-flash-lite",
   enableFallback: true,
   freeOnlyMode: true,
   billingMode: "free_only",
@@ -510,6 +510,9 @@ export function loadUserAISettingsPackage(
         // Self-heal loaded settings
         const healedProviders = healAndNormalizeProviders(parsed.providers, templates);
         const healedConfig = { ...DEFAULT_MANAGER_CONFIG, ...(parsed.config || {}) };
+        if (healedConfig.activeModel === "gemini-3.8-flash") {
+          healedConfig.activeModel = "gemini-3.5-flash-lite";
+        }
         if (DEPRECATED_OR_RETIRED_MODELS[healedConfig.activeModel]) {
           healedConfig.activeModel = getActiveReplacementModel(
             healedConfig.activeProviderId || "gemini",

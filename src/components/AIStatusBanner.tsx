@@ -99,205 +99,134 @@ export const AIStatusBanner: React.FC<AIStatusBannerProps> = ({
       id="ai-status-notification"
       role="status"
       aria-live="polite"
-      className={`w-full rounded-2xl border-2 p-3 sm:p-4 shadow-sm transition-all animate-fadeIn select-text ${themeStyles.container}`}
+      className={`w-full rounded-xl border px-3.5 py-2.5 shadow-2xs transition-all animate-fadeIn select-text ${themeStyles.container}`}
     >
-      <div className="flex items-start justify-between gap-3">
+      <div className="flex items-center justify-between gap-2.5">
         {/* Left icon + status header */}
-        <div className="flex items-start gap-2.5 sm:gap-3 flex-1 min-w-0">
-          <div className={`w-8 h-8 rounded-xl flex items-center justify-center shrink-0 shadow-2xs mt-0.5 ${themeStyles.iconBg}`}>
+        <div className="flex items-center gap-2.5 flex-1 min-w-0">
+          <div className={`w-6 h-6 rounded-lg flex items-center justify-center shrink-0 shadow-2xs ${themeStyles.iconBg}`}>
             {themeStyles.mainIcon}
           </div>
 
-          <div className="flex-1 min-w-0">
-            {/* Top row: Signal Badge & Action Labels */}
-            <div className="flex items-center gap-2 flex-wrap mb-1">
-              <span className={`inline-flex items-center gap-1.5 px-2 py-0.5 rounded-lg text-xs font-black uppercase tracking-wider border shadow-2xs ${themeStyles.badge}`}>
-                <span className="text-[11px] leading-none" aria-hidden="true">
-                  {badgeIcon}
-                </span>
-                <span>{badgeLabel}</span>
+          <div className="flex-1 min-w-0 flex items-center gap-2 flex-wrap">
+            <span className={`inline-flex items-center gap-1 px-1.5 py-0.2 rounded text-[10px] font-black uppercase tracking-wider border shadow-2xs shrink-0 ${themeStyles.badge}`}>
+              <span className="text-[10px] leading-none" aria-hidden="true">
+                {badgeIcon}
               </span>
+              <span>{badgeLabel}</span>
+            </span>
 
-              {notification.latencyMs !== undefined && notification.latencyMs > 0 && (
-                <span className="text-[10px] font-mono text-slate-500 bg-white/80 px-1.5 py-0.5 rounded border border-slate-200">
-                  {notification.latencyMs}ms
-                </span>
-              )}
-            </div>
-
-            {/* Primary Large Readable Title */}
-            <h4 className="text-xs sm:text-sm font-black text-slate-900 leading-tight">
+            <span className="text-xs font-bold text-slate-900 truncate">
               {title}
-            </h4>
+            </span>
 
-            {/* Human-Readable Secondary Explanation */}
-            <p className="text-xs text-slate-700 mt-1 font-medium leading-normal">
-              {secondaryText}
-            </p>
-
-            {/* Primary & Secondary Action Buttons if present */}
-            {(actionLabel || secondaryActionLabel) && (
-              <div className="flex items-center gap-2 mt-2.5 flex-wrap">
-                {actionLabel && (
-                  <button
-                    type="button"
-                    onClick={handleActionClick}
-                    className={`inline-flex items-center gap-1.5 text-xs font-extrabold px-3 py-1.5 rounded-xl cursor-pointer transition-all active:scale-95 ${themeStyles.primaryBtn}`}
-                  >
-                    {actionType === "settings" || actionType === "another_provider" ? (
-                      <Sliders className="w-3.5 h-3.5" />
-                    ) : actionType === "retry" ? (
-                      <RotateCw className="w-3.5 h-3.5" />
-                    ) : (
-                      <Sparkles className="w-3.5 h-3.5" />
-                    )}
-                    <span>{actionLabel}</span>
-                  </button>
-                )}
-
-                {secondaryActionLabel && onRetry && (
-                  <button
-                    type="button"
-                    onClick={onRetry}
-                    className="inline-flex items-center gap-1 text-xs font-bold px-2.5 py-1.5 rounded-xl bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 shadow-2xs cursor-pointer transition-all active:scale-95"
-                  >
-                    <RotateCw className="w-3 h-3 text-slate-500" />
-                    <span>{secondaryActionLabel}</span>
-                  </button>
-                )}
-              </div>
+            {secondaryText && (
+              <span className="text-xs text-slate-600 truncate hidden md:inline">
+                • {secondaryText}
+              </span>
             )}
 
-            {/* Collapsible Technical Details Section */}
-            {technicalDetails && (
-              <div className="mt-2.5 pt-2 border-t border-black/10">
-                <button
-                  type="button"
-                  onClick={() => setIsTechDetailsOpen(!isTechDetailsOpen)}
-                  className="inline-flex items-center gap-1 text-[11px] font-bold text-slate-600 hover:text-slate-900 cursor-pointer transition-colors"
-                >
-                  <ChevronDown
-                    className={`w-3.5 h-3.5 transition-transform duration-200 ${
-                      isTechDetailsOpen ? "rotate-180" : ""
-                    }`}
-                  />
-                  <span>Technical Details</span>
-                </button>
-
-                {isTechDetailsOpen && (
-                  <div className="mt-2 p-2.5 rounded-xl bg-white/95 border border-slate-200 text-[11px] font-mono text-slate-700 space-y-1 shadow-2xs animate-in fade-in duration-150">
-                    {technicalDetails.provider && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 font-sans">Provider:</span>
-                        <span className="font-bold text-slate-900">{technicalDetails.provider}</span>
-                      </div>
-                    )}
-                    {technicalDetails.model && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 font-sans">Model:</span>
-                        <span className="text-slate-800">{technicalDetails.model}</span>
-                      </div>
-                    )}
-                    {technicalDetails.requestStatus && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 font-sans">Status Code / State:</span>
-                        <span className="font-semibold text-slate-800">{technicalDetails.requestStatus}</span>
-                      </div>
-                    )}
-                    {technicalDetails.fallbackAttempt && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 font-sans">Fallback Trace:</span>
-                        <span className="text-amber-800 font-semibold">{technicalDetails.fallbackAttempt}</span>
-                      </div>
-                    )}
-                    {technicalDetails.executionTime && (
-                      <div className="flex justify-between gap-2">
-                        <span className="text-slate-500 font-sans">Execution Time:</span>
-                        <span>{technicalDetails.executionTime}</span>
-                      </div>
-                    )}
-                    {technicalDetails.technicalErrorMessage && (
-                      <div className="mt-1 pt-1 border-t border-slate-100 text-rose-700 text-[10px] break-all">
-                        <span className="font-sans font-bold text-slate-500">Error: </span>
-                        {technicalDetails.technicalErrorMessage}
-                      </div>
-                    )}
-
-                    {/* Step-by-Step Fallback Chain */}
-                    {technicalDetails.rawChain && technicalDetails.rawChain.length > 0 && (
-                      <div className="mt-2 pt-2 border-t border-slate-200">
-                        <div className="font-sans font-bold text-slate-800 text-[11px] mb-1.5 flex items-center justify-between">
-                          <span>Execution Steps ({technicalDetails.rawChain.length}):</span>
-                          <span className="text-[10px] text-slate-400 font-normal">Full Fallback Trace</span>
-                        </div>
-                        <div className="space-y-1.5 font-sans">
-                          {technicalDetails.rawChain.map((step, idx) => (
-                            <div
-                              key={idx}
-                              className={`p-2 rounded-lg border text-[11px] ${
-                                step.status === "success"
-                                  ? "bg-emerald-50/70 border-emerald-200"
-                                  : "bg-slate-50 border-slate-200"
-                              }`}
-                            >
-                              <div className="flex items-center justify-between gap-1">
-                                <span className="font-bold text-slate-800">
-                                  {idx + 1}. {step.providerName}
-                                </span>
-                                <span
-                                  className={`px-1.5 py-0.5 rounded text-[9px] font-bold uppercase tracking-wider ${
-                                    step.status === "success"
-                                      ? "bg-emerald-100 text-emerald-800 border border-emerald-300"
-                                      : step.status === "rate_limited"
-                                      ? "bg-rose-100 text-rose-800 border border-rose-300"
-                                      : step.status === "invalid_key" || step.status === "permission_denied"
-                                      ? "bg-amber-100 text-amber-900 border border-amber-300"
-                                      : step.status === "timeout"
-                                      ? "bg-amber-100 text-amber-800 border border-amber-300"
-                                      : "bg-slate-200 text-slate-700 border border-slate-300"
-                                  }`}
-                                >
-                                  {step.status}
-                                </span>
-                              </div>
-                              <div className="flex flex-wrap items-center gap-x-2 gap-y-0.5 text-[10px] font-mono text-slate-500 mt-0.5">
-                                <span>Model: <span className="text-slate-700">{step.model}</span></span>
-                                {step.keyMasked && step.keyMasked !== "none" && (
-                                  <span>• Key: <span className="text-slate-700">{step.keyMasked}</span></span>
-                                )}
-                                {step.latencyMs !== undefined && step.latencyMs > 0 && (
-                                  <span>• Latency: {step.latencyMs}ms</span>
-                                )}
-                              </div>
-                              {step.errorMessage && (
-                                <div className="mt-1 text-[10px] text-rose-700 font-sans break-words bg-rose-50/80 p-1.5 rounded border border-rose-100">
-                                  <span className="font-bold text-rose-800">Reason: </span>
-                                  {step.errorMessage}
-                                </div>
-                              )}
-                            </div>
-                          ))}
-                        </div>
-                      </div>
-                    )}
-                  </div>
-                )}
-              </div>
+            {notification.latencyMs !== undefined && notification.latencyMs > 0 && (
+              <span className="text-[9px] font-mono text-slate-400 hidden lg:inline">
+                ({notification.latencyMs}ms)
+              </span>
             )}
           </div>
         </div>
 
-        {/* Dismiss Button */}
-        <button
-          type="button"
-          onClick={onDismiss}
-          className="p-1 rounded-lg text-slate-400 hover:text-slate-700 hover:bg-black/5 transition-colors cursor-pointer shrink-0"
-          title="Dismiss notification"
-          aria-label="Dismiss notification"
-        >
-          <X className="w-4 h-4" />
-        </button>
+        {/* Right side: Actions + Dismiss */}
+        <div className="flex items-center gap-1.5 shrink-0">
+          {(actionLabel || secondaryActionLabel) && (
+            <div className="flex items-center gap-1.5">
+              {actionLabel && (
+                <button
+                  type="button"
+                  onClick={handleActionClick}
+                  className={`inline-flex items-center gap-1 text-[11px] font-extrabold px-2.5 py-1 rounded-lg cursor-pointer transition-all active:scale-95 ${themeStyles.primaryBtn}`}
+                >
+                  {actionType === "settings" || actionType === "another_provider" ? (
+                    <Sliders className="w-3 h-3" />
+                  ) : actionType === "retry" ? (
+                    <RotateCw className="w-3 h-3" />
+                  ) : (
+                    <Sparkles className="w-3 h-3" />
+                  )}
+                  <span>{actionLabel}</span>
+                </button>
+              )}
+
+              {secondaryActionLabel && onRetry && (
+                <button
+                  type="button"
+                  onClick={onRetry}
+                  className="inline-flex items-center gap-1 text-[11px] font-bold px-2 py-1 rounded-lg bg-white hover:bg-slate-50 text-slate-800 border border-slate-300 shadow-2xs cursor-pointer transition-all active:scale-95"
+                >
+                  <RotateCw className="w-2.5 h-2.5 text-slate-500" />
+                  <span>{secondaryActionLabel}</span>
+                </button>
+              )}
+            </div>
+          )}
+
+          {technicalDetails && (
+            <button
+              type="button"
+              onClick={() => setIsTechDetailsOpen(!isTechDetailsOpen)}
+              className="p-1 rounded-md text-slate-500 hover:text-slate-800 hover:bg-black/5 text-[11px] font-semibold cursor-pointer transition-colors"
+              title="Toggle details"
+              aria-label="Toggle details"
+            >
+              <ChevronDown
+                className={`w-3.5 h-3.5 transition-transform duration-200 ${
+                  isTechDetailsOpen ? "rotate-180" : ""
+                }`}
+              />
+            </button>
+          )}
+
+          <button
+            type="button"
+            onClick={onDismiss}
+            className="p-1 rounded-md text-slate-400 hover:text-slate-700 hover:bg-black/5 transition-colors cursor-pointer shrink-0"
+            title="Dismiss notification"
+            aria-label="Dismiss notification"
+          >
+            <X className="w-3.5 h-3.5" />
+          </button>
+        </div>
       </div>
+
+      {/* Collapsible Technical Details Section if toggled */}
+      {isTechDetailsOpen && technicalDetails && (
+        <div className="mt-2 pt-2 border-t border-black/10">
+          <div className="p-2.5 rounded-xl bg-white/95 border border-slate-200 text-[11px] font-mono text-slate-700 space-y-1 shadow-2xs animate-in fade-in duration-150">
+            {technicalDetails.provider && (
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-500 font-sans">Provider:</span>
+                <span className="font-bold text-slate-900">{technicalDetails.provider}</span>
+              </div>
+            )}
+            {technicalDetails.model && (
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-500 font-sans">Model:</span>
+                <span className="text-slate-800">{technicalDetails.model}</span>
+              </div>
+            )}
+            {technicalDetails.requestStatus && (
+              <div className="flex justify-between gap-2">
+                <span className="text-slate-500 font-sans">Status Code:</span>
+                <span className="font-semibold text-slate-800">{technicalDetails.requestStatus}</span>
+              </div>
+            )}
+            {technicalDetails.technicalErrorMessage && (
+              <div className="mt-1 pt-1 border-t border-slate-100 text-rose-700 text-[10px] break-all">
+                <span className="font-sans font-bold text-slate-500">Error: </span>
+                {technicalDetails.technicalErrorMessage}
+              </div>
+            )}
+          </div>
+        </div>
+      )}
     </div>
   );
 };

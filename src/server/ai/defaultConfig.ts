@@ -4,7 +4,7 @@ import { CENTRAL_CATALOG } from "../../shared/centralModelCatalog.ts";
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = {
   mode: "automatic",
   activeProviderId: "gemini",
-  activeModel: "gemini-3.8-flash",
+  activeModel: "gemini-3.5-flash-lite",
   enableFallback: true,
   freeOnlyMode: true, // Safe default: Free-only mode = ON
   billingMode: "free_only",
@@ -20,7 +20,7 @@ export function getInitialProviders(): ProviderConfig[] {
       enabled: true, // Primary provider enabled by default
       priority: 1,
       apiKeys: [],
-      selectedModel: "gemini-3.8-flash",
+      selectedModel: "gemini-3.5-flash-lite",
       availableModels: CENTRAL_CATALOG.gemini,
       maxRetries: 2,
       timeoutMs: 45000,

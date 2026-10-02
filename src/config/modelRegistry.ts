@@ -76,6 +76,26 @@ export type RegistryModel = AIModel;
 export const MODEL_REGISTRY: Record<string, AIModel[]> = {
   gemini: [
     {
+      id: "gemini-3.5-flash-lite",
+      name: "Gemini 3.5 Flash-Lite",
+      provider: "gemini",
+      status: "active",
+      free: true,
+      isFree: true,
+      apiAvailable: true,
+      deprecated: false,
+      retired: false,
+      freeTier: "Free tier (30 RPM, 1,500 RPD)",
+      contextWindow: 1048576,
+      capabilities: ["text", "math", "long_context", "json", "code"],
+      academicCapabilities: [
+        "latex_typesetting",
+        "notation_standardization",
+        "matrix_tabular_math",
+      ],
+      description: "Ultra-low latency, lightweight model with high free-tier quota (30 RPM, 1,500 RPD) for instant note cleanup and formatting.",
+    },
+    {
       id: "gemini-3.8-flash",
       name: "Gemini 3.8 Flash",
       provider: "gemini",
@@ -163,26 +183,6 @@ export const MODEL_REGISTRY: Record<string, AIModel[]> = {
         "matrix_tabular_math",
       ],
       description: "Reliable multimodal Flash model for structured document typesetting.",
-    },
-    {
-      id: "gemini-3.5-flash-lite",
-      name: "Gemini 3.5 Flash-Lite",
-      provider: "gemini",
-      status: "active",
-      free: true,
-      isFree: true,
-      apiAvailable: true,
-      deprecated: false,
-      retired: false,
-      freeTier: "Free tier (30 RPM, 1,500 RPD)",
-      contextWindow: 1048576,
-      capabilities: ["text", "math", "long_context", "json", "code"],
-      academicCapabilities: [
-        "latex_typesetting",
-        "notation_standardization",
-        "matrix_tabular_math",
-      ],
-      description: "Ultra-low latency, lightweight model for instant note cleanup and formatting.",
     },
     {
       id: "gemini-3.1-flash-lite",

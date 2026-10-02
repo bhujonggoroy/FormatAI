@@ -301,23 +301,53 @@ export class GeminiAdapter implements AIProviderAdapter {
       config.systemInstruction = req.systemPrompt;
     }
 
-    const response = await ai.models.generateContent({
-      model: effectiveModel,
-      contents: req.prompt,
-      config,
-    });
+    const candidateModels = [
+      effectiveModel,
+      "gemini-3.5-flash-lite",
+      "gemini-3.1-flash-lite",
+      "gemini-flash-lite-latest",
+      "gemini-3-flash-preview",
+      "gemini-3.8-flash",
+    ].filter((m, idx, arr) => Boolean(m) && arr.indexOf(m) === idx);
 
-    const inPrompt = req.systemPrompt ? `${req.systemPrompt}\n\n${req.prompt}` : req.prompt;
-    const text = response?.text || "";
-    const inTokens = estimateTokenCount(inPrompt);
-    const outTokens = estimateTokenCount(text);
+    let lastError: any = null;
+    for (const modelToTry of candidateModels) {
+      try {
+        const response = await ai.models.generateContent({
+          model: modelToTry,
+          contents: req.prompt,
+          config,
+        });
 
-    return {
-      text,
-      inputTokens: inTokens,
-      outputTokens: outTokens,
-      modelUsed: effectiveModel,
-    };
+        const inPrompt = req.systemPrompt ? `${req.systemPrompt}\n\n${req.prompt}` : req.prompt;
+        const text = response?.text || "";
+        const inTokens = estimateTokenCount(inPrompt);
+        const outTokens = estimateTokenCount(text);
+
+        return {
+          text,
+          inputTokens: inTokens,
+          outputTokens: outTokens,
+          modelUsed: modelToTry,
+        };
+      } catch (err: any) {
+        lastError = err;
+        const normalized = this.classifyError(err);
+        // Only try alternative models if rate limited, model unavailable, or temporary 503/server error
+        if (
+          normalized.code === "RATE_LIMIT" ||
+          normalized.code === "MODEL_UNAVAILABLE" ||
+          normalized.code === "SERVER_ERROR"
+        ) {
+          console.warn(`[GeminiAdapter] Model '${modelToTry}' returned ${normalized.code} (${normalized.message?.slice(0, 80)}). Attempting fallback sister model...`);
+          continue;
+        }
+        // If invalid API key, forbidden, bad request, do not try other models
+        throw err;
+      }
+    }
+
+    throw lastError || new Error("All Gemini candidate models failed.");
   }
 
   async test(
