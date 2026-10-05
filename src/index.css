@@ -193,10 +193,23 @@ textarea:focus-visible,
 }
 
 @media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+    scroll-behavior: auto !important;
+  }
+
   .animate-splash-enter,
   .animate-popover-in,
   .animate-modal-backdrop,
-  .animate-modal-content {
+  .animate-modal-content,
+  .animate-drawer-in,
+  .animate-drawer-out,
+  .animate-drawer-backdrop-in,
+  .animate-drawer-backdrop-out {
     animation: none !important;
     opacity: 1 !important;
     transform: none !important;
@@ -215,10 +228,6 @@ textarea:focus-visible,
 .animate-drawer-out { animation: drawerOutRight 180ms ease-in both; }
 .animate-drawer-backdrop-in { animation: drawerFadeIn 180ms ease-out both; }
 .animate-drawer-backdrop-out { animation: drawerFadeOut 150ms ease-in both; }
-@media (prefers-reduced-motion: reduce) {
-  .animate-drawer-in, .animate-drawer-out,
-  .animate-drawer-backdrop-in, .animate-drawer-backdrop-out { animation: none !important; }
-}
 
 /* Publication-ready Print Styles for Exact Preview to PDF */
 @media print {

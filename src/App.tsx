@@ -2167,18 +2167,25 @@ export default function App() {
         }`}
       >
         {/* View Switcher Toggle (Column 1: 1fr - Edit & Preview guaranteed >= 48x48px touch hit-box) */}
-        <div className="flex bg-slate-200 p-0.5 rounded-2xl border border-slate-300 gap-0.5 shadow-2xs min-h-[48px] items-stretch">
+        <div
+          role="tablist"
+          aria-label="Mobile document view switcher"
+          className="flex bg-slate-200 p-0.5 rounded-2xl border border-slate-300 gap-0.5 shadow-2xs min-h-[48px] items-stretch"
+        >
           <button
             type="button"
+            role="tab"
             id="mobile-btn-edit"
+            aria-selected={viewLayout === "editor"}
+            tabIndex={viewLayout === "editor" ? 0 : -1}
             onClick={() => setViewLayout("editor")}
-            className={`flex-1 min-h-[48px] px-1 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
+            className={`flex-1 min-h-[48px] px-1 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "editor"
                 ? "bg-white text-slate-900 shadow-sm border border-slate-300"
                 : "text-slate-700 hover:text-slate-900 hover:bg-slate-300/40"
             }`}
             title="Switch to Editor"
-            aria-label="Edit view"
+            aria-label="Raw editor view"
           >
             <FileText
               className="w-4 h-4 shrink-0"
@@ -2188,15 +2195,18 @@ export default function App() {
           </button>
           <button
             type="button"
+            role="tab"
             id="mobile-btn-preview"
+            aria-selected={viewLayout === "preview"}
+            tabIndex={viewLayout === "preview" ? 0 : -1}
             onClick={() => setViewLayout("preview")}
-            className={`flex-1 min-h-[48px] px-1 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 ${
+            className={`flex-1 min-h-[48px] px-1 rounded-xl text-xs font-black flex items-center justify-center gap-1 transition-all cursor-pointer active:scale-95 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
               viewLayout === "preview"
                 ? "bg-white text-slate-900 shadow-sm border border-slate-300"
                 : "text-slate-700 hover:text-slate-900 hover:bg-slate-300/40"
             }`}
             title="Switch to Preview"
-            aria-label="Preview view"
+            aria-label="Document sheet preview"
           >
             <Eye
               className="w-4 h-4 shrink-0"

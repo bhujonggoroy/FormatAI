@@ -73,7 +73,7 @@ export const Header: React.FC<HeaderProps> = React.memo(({
         </div>
 
         {/* Center/Right: Document title box (Merged app bar and file name: inline-editable text with pencil) */}
-        <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] xs:max-w-xs sm:max-w-md w-full justify-end">
+        <div className="flex items-center gap-1.5 min-w-0 flex-1 max-w-[130px] xs:max-w-xs sm:max-w-md justify-end">
           <div className="relative flex items-center w-full group">
             <label htmlFor="header-doc-title" className="sr-only">
               Document Title

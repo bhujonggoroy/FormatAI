@@ -1133,7 +1133,13 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = React.memo(({
 
             {/* Tab 1: Typography */}
             {mobileToolsTab === "typography" && (
-              <div className="space-y-1.5">
+              <div
+                role="tabpanel"
+                id="mobile-tab-panel-typography"
+                aria-labelledby="mobile-tab-btn-typography"
+                className="space-y-1.5 focus-visible:outline-none"
+                tabIndex={0}
+              >
                 {fontOptions.map((f) => (
                   <button
                     key={f.name}
@@ -1162,7 +1168,13 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = React.memo(({
 
             {/* Tab 2: Theme */}
             {mobileToolsTab === "theme" && (
-              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
+              <div
+                role="tabpanel"
+                id="mobile-tab-panel-theme"
+                aria-labelledby="mobile-tab-btn-theme"
+                className="space-y-1.5 max-h-60 overflow-y-auto pr-1 focus-visible:outline-none"
+                tabIndex={0}
+              >
                 {ACADEMIC_THEMES.map((t) => {
                   const isSelected = accentColor.toLowerCase() === t.hex.toLowerCase();
                   return (
@@ -1196,7 +1208,13 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = React.memo(({
 
             {/* Tab 3: Math */}
             {mobileToolsTab === "math" && (
-              <div className="space-y-3">
+              <div
+                role="tabpanel"
+                id="mobile-tab-panel-math"
+                aria-labelledby="mobile-tab-btn-math"
+                className="space-y-3 focus-visible:outline-none"
+                tabIndex={0}
+              >
                 <div>
                   <div className="text-xs font-semibold text-slate-800 mb-1.5">Output Equation Format</div>
                   <div className="grid grid-cols-2 gap-2 bg-slate-100 p-1 rounded-xl">
@@ -1245,7 +1263,13 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = React.memo(({
 
             {/* Tab 4: Metrics */}
             {mobileToolsTab === "metrics" && (
-              <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
+              <div
+                role="tabpanel"
+                id="mobile-tab-panel-metrics"
+                aria-labelledby="mobile-tab-btn-metrics"
+                className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2 focus-visible:outline-none"
+                tabIndex={0}
+              >
                 <div className="flex items-center justify-between text-xs">
                   <span className="font-semibold text-slate-700">Total Words:</span>
                   <span className="font-mono font-bold text-slate-900">{wordCount.toLocaleString()}</span>

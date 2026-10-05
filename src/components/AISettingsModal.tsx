@@ -133,9 +133,28 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     }
   }, [isOpen, initialTab]);
 
-  // Close on Escape & trap focus
+  const triggerElRef = useRef<HTMLElement | null>(null);
+
+  // Close on Escape, trap focus, lock body scroll & restore focus
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (triggerElRef.current) {
+        triggerElRef.current.focus();
+        triggerElRef.current = null;
+      }
+      return;
+    }
+
+    triggerElRef.current = document.activeElement as HTMLElement;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
+
+    // Autofocus initial active tab
+    const timer = setTimeout(() => {
+      const activeTabBtn = document.getElementById(`tab-${activeTab}`);
+      activeTabBtn?.focus();
+    }, 50);
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
@@ -166,8 +185,12 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
     };
 
     window.addEventListener("keydown", handleKeyDown);
-    return () => window.removeEventListener("keydown", handleKeyDown);
-  }, [isOpen, onClose]);
+    return () => {
+      window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
+      clearTimeout(timer);
+    };
+  }, [isOpen, onClose, activeTab]);
 
   const [config, setConfig] = useState<ManagerConfig | null>(null);
   const [providers, setProviders] = useState<ClientProviderConfig[]>([]);

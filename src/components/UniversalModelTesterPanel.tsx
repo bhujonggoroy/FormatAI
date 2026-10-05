@@ -312,4 +312,4 @@ export const UniversalModelTesterPanel: React.FC<UniversalModelTesterPanelProps>
       )}
     </div>
   );
-};
+});

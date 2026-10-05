@@ -15,15 +15,52 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
 }) => {
   const modalRef = useRef<HTMLDivElement>(null);
   const ctaButtonRef = useRef<HTMLButtonElement>(null);
+  const triggerElRef = useRef<HTMLElement | null>(null);
 
-  // Keyboard accessibility: Escape to close, focus trapping
+  // Keyboard accessibility: Escape to close, focus trapping, body scroll lock
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (triggerElRef.current) {
+        triggerElRef.current.focus();
+        triggerElRef.current = null;
+      }
+      return;
+    }
+
+    triggerElRef.current = document.activeElement as HTMLElement;
+
+    const originalOverflow = document.body.style.overflow;
+    document.body.style.overflow = "hidden";
 
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        return;
+      }
+
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
 
@@ -35,6 +72,7 @@ export const GetFreeApiKeyModal: React.FC<GetFreeApiKeyModalProps> = ({
 
     return () => {
       window.removeEventListener("keydown", handleKeyDown);
+      document.body.style.overflow = originalOverflow;
       clearTimeout(timer);
     };
   }, [isOpen, onClose]);
