@@ -76,6 +76,15 @@ interface FormattedPreviewProps {
   isMaximized?: boolean;
 }
 
+function escapeHtml(str: string): string {
+  return str
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
+
 function getCssFontFamily(font: string): string {
   switch (font) {
     case "Times New Roman":
@@ -210,7 +219,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = React.memo(({
           strict: "ignore",
         });
       } catch (err) {
-        return `<span class="text-rose-700 font-mono text-xs">${cleanMath}</span>`;
+        return `<span class="text-rose-700 font-mono text-xs">${escapeHtml(cleanMath)}</span>`;
       }
     }, [cleanMath, display]);
 

@@ -47,10 +47,17 @@ async function runTests() {
   );
   assert(billFail.category === "billing_required", "Categorizes billing errors as billing_required");
 
-  // Test 5: Verify Active Models for Gemini has gemini-3.8-flash as primary
+  // Test 5: Verify Active Models for Gemini has gemini-3.5-flash-lite as primary and includes gemini-3.8-flash
   const geminiModels = getActiveModels("gemini");
   assert(geminiModels.length > 0, "Gemini has active models");
-  assert(geminiModels[0].id === "gemini-3.8-flash", "Gemini primary active model is gemini-3.8-flash");
+  assert(
+    geminiModels[0].id === "gemini-3.5-flash-lite",
+    "Gemini primary active model is gemini-3.5-flash-lite"
+  );
+  assert(
+    geminiModels.some((m) => m.id === "gemini-3.8-flash"),
+    "Gemini active models include gemini-3.8-flash"
+  );
   assert(
     !geminiModels.some((m) => m.id === "gemini-1.5-flash"),
     "Legacy gemini-1.5-flash is not in active models list"

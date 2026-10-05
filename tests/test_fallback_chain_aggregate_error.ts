@@ -130,7 +130,7 @@ console.log("\nTest 3: Aggregate error message format validation...");
 console.log("Error message:\n", capturedError.message);
 
 assert.ok(
-  capturedError.message.includes("All providers failed"),
+  capturedError.message.includes("All configured AI providers failed"),
   "Error message must start with aggregate failure notice"
 );
 assert.ok(
