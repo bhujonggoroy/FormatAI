@@ -27,7 +27,7 @@ interface UniversalModelTesterPanelProps {
   accentColor?: string;
 }
 
-export const UniversalModelTesterPanel: React.FC<UniversalModelTesterPanelProps> = ({
+export const UniversalModelTesterPanel: React.FC<UniversalModelTesterPanelProps> = React.memo(({
   providerId,
   providerName,
   apiKey,
@@ -90,7 +90,7 @@ export const UniversalModelTesterPanel: React.FC<UniversalModelTesterPanelProps>
             <button
               type="button"
               onClick={handleClear}
-              className="text-[10px] text-slate-400 hover:text-slate-600 px-1.5 py-0.5 rounded cursor-pointer"
+              className="text-[10px] text-slate-600 hover:text-slate-900 font-medium px-1.5 py-0.5 rounded cursor-pointer"
               title="Clear tested model cache"
             >
               <RotateCcw className="w-2.5 h-2.5 inline mr-1" />

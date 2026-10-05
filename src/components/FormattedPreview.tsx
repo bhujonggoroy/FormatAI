@@ -93,7 +93,7 @@ function getCssFontFamily(font: string): string {
   }
 }
 
-export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
+export const FormattedPreview: React.FC<FormattedPreviewProps> = React.memo(({
   markdown,
   docTitle,
   fontFamily = "Times New Roman",
@@ -1344,11 +1344,11 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = ({
           <span className="text-slate-300">·</span>
           <span>{mathFormulaCount} formulas</span>
         </div>
-        <div className="text-[11px] text-slate-400 hidden sm:flex items-center gap-1 shrink-0">
-          <Sparkles className="w-3 h-3 text-amber-500" />
+        <div className="text-[11px] text-slate-500 hidden sm:flex items-center gap-1 shrink-0">
+          <Sparkles className="w-3 h-3 text-amber-600" />
           <span>Office OMML Equations</span>
         </div>
       </div>
     </div>
   );
-};
+});

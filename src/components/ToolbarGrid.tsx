@@ -4,12 +4,9 @@ import {
   SquareRadical,
   Sparkles,
   GraduationCap,
-  Layers,
-  FileText,
   ChevronDown,
   Check,
   Loader2,
-  ExternalLink,
   SlidersHorizontal,
   Download,
   CheckCircle2,
@@ -19,8 +16,7 @@ import {
   Printer,
   BarChart2,
 } from "lucide-react";
-import { SAMPLE_NOTES, SampleNote } from "../data/samples";
-import { skillRegistry } from "../skills";
+import { SampleNote } from "../data/samples";
 import { ACADEMIC_THEMES, getAcademicTheme } from "../utils/theme";
 import { AIPolishDropdown } from "./AIPolishDropdown";
 
@@ -65,7 +61,7 @@ export interface ToolbarGridProps {
   wordCount?: number;
 }
 
-export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
+export const ToolbarGrid: React.FC<ToolbarGridProps> = React.memo(({
   fontFamily,
   onFontFamilyChange,
   accentColor,
@@ -97,8 +93,8 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
   const [openCard, setOpenCard] = useState<string | null>(null);
   const [mathTab, setMathTab] = useState<"stats" | "calc" | "algebra">("stats");
   const [mobileToolsTab, setMobileToolsTab] = useState<
-    "presets" | "skills" | "samples" | "typography" | "theme" | "math" | "metrics"
-  >("presets");
+    "typography" | "theme" | "math" | "metrics"
+  >("typography");
   const [isMobileScreen, setIsMobileScreen] = useState<boolean>(false);
   const containerRef = useRef<HTMLDivElement>(null);
   const lastTriggerRef = useRef<HTMLElement | null>(null);
@@ -162,9 +158,6 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
       font: "pill-toolbar-font",
       theme: "pill-toolbar-theme",
       math: "pill-toolbar-math",
-      "study-guide": "pill-toolbar-study-guide",
-      skills: "pill-toolbar-skills",
-      samples: "pill-toolbar-samples",
     };
 
     const btnId = buttonIdMap[openCard];
@@ -177,8 +170,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
 
       const btnRect = btnEl.getBoundingClientRect();
       const containerRect = containerEl.getBoundingClientRect();
-      const popoverWidth =
-        openCard === "math" ? 304 : openCard === "skills" || openCard === "samples" ? 288 : 272;
+      const popoverWidth = openCard === "math" ? 304 : openCard === "theme" ? 272 : 256;
 
       let left = btnRect.left - containerRect.left;
       const maxLeft = containerRect.width - popoverWidth - 12;
@@ -269,13 +261,6 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
       { symbol: "\\mathbb{R}", label: "ℝ Real numbers" },
     ],
   };
-
-  const currentFormatLabel =
-    formatMode === "study_guide"
-      ? "Study Guide"
-      : formatMode === "exam_bank"
-      ? "Exam Bank"
-      : "Auto Detect";
 
   const renderFontPopover = () => (
     <div className="w-64 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-slate-300 p-2 select-none">
@@ -445,122 +430,6 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
             title={item.label}
           >
             {item.symbol}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderStudyGuidePopover = () => (
-    <div className="w-72 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-slate-300 p-2 select-none">
-      <div className="px-2.5 py-1 text-[11px] font-semibold text-slate-500 border-b border-slate-100 mb-1">
-        Document Structure Preset
-      </div>
-      <div className="space-y-1">
-        {[
-          {
-            id: "study_guide",
-            title: "🎓 Study Guide & Formulas",
-            desc: "Numbered sections, highlighted formulas, definition tables",
-          },
-          {
-            id: "exam_bank",
-            title: "📝 Exam Question Bank",
-            desc: "Numbered problems, exam sections, step-by-step items",
-          },
-          {
-            id: "auto",
-            title: "⚡ Auto-Detect Structure",
-            desc: "Intelligently formats headers and math based on content",
-          },
-        ].map((mode) => (
-          <button
-            key={mode.id}
-            type="button"
-            onClick={() => {
-              onFormatModeChange(mode.id as any);
-              closeDropdown();
-            }}
-            className={`w-full flex items-center justify-between p-2 rounded-lg text-xs transition-colors duration-150 text-left cursor-pointer border ${
-              formatMode === mode.id
-                ? "bg-amber-50 text-amber-950 font-bold border-amber-300"
-                : "hover:bg-slate-50 text-slate-800 border-transparent"
-            }`}
-          >
-            <div className="min-w-0">
-              <div className="font-semibold text-slate-900">{mode.title}</div>
-              <div className="text-[10px] text-slate-600 line-clamp-1">{mode.desc}</div>
-            </div>
-            {formatMode === mode.id && (
-              <Check className="w-3.5 h-3.5 text-amber-700 shrink-0 ml-1.5" />
-            )}
-          </button>
-        ))}
-      </div>
-    </div>
-  );
-
-  const renderSkillsPopover = () => (
-    <div className="w-76 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-slate-300 p-2.5 select-none">
-      <div className="text-[11px] font-semibold text-slate-700 mb-1.5">
-        Academic Skills Pipeline
-      </div>
-      <div className="space-y-1 mb-2.5 max-h-52 overflow-y-auto pr-0.5">
-        {skillRegistry.getAllSkills().map((skill) => (
-          <div
-            key={skill.id}
-            className="flex items-center justify-between p-1.5 rounded-lg bg-slate-50 border border-slate-200 text-xs"
-          >
-            <div className="min-w-0 pr-2">
-              <div className="font-semibold text-slate-900 truncate">{skill.name}</div>
-              <div className="text-[10px] text-slate-600 truncate">{skill.description}</div>
-            </div>
-            <input
-              type="checkbox"
-              checked={skill.enabled}
-              onChange={() => {
-                skillRegistry.toggleSkill(skill.id);
-                if (onSkillsChanged) onSkillsChanged();
-              }}
-              className="w-3.5 h-3.5 accent-[#881337] rounded cursor-pointer shrink-0"
-              aria-label={`Toggle skill ${skill.name}`}
-            />
-          </div>
-        ))}
-      </div>
-      <button
-        type="button"
-        onClick={() => {
-          closeDropdown();
-          onOpenSkillsManager();
-        }}
-        className="w-full bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs py-2 px-2.5 rounded-lg flex items-center justify-center gap-1.5 transition-colors cursor-pointer shadow-xs active:scale-[0.98]"
-      >
-        <Layers className="w-3.5 h-3.5" />
-        <span>Open Skills Hub</span>
-        <ExternalLink className="w-3 h-3" />
-      </button>
-    </div>
-  );
-
-  const renderSamplesPopover = () => (
-    <div className="w-72 max-w-[calc(100vw-2rem)] bg-white rounded-xl shadow-xl border border-slate-300 p-2 select-none">
-      <div className="px-2 py-1 text-[11px] font-semibold text-slate-500 border-b border-slate-100 mb-1">
-        STEM Sample Templates
-      </div>
-      <div className="space-y-0.5 max-h-56 overflow-y-auto pr-0.5">
-        {SAMPLE_NOTES.map((sample) => (
-          <button
-            key={sample.id}
-            type="button"
-            onClick={() => {
-              onSelectSample(sample);
-              closeDropdown();
-            }}
-            className="w-full text-left px-2.5 py-1.5 text-xs hover:bg-slate-50 rounded-lg transition-colors duration-150 flex flex-col cursor-pointer"
-          >
-            <span className="font-semibold text-slate-900 truncate">{sample.title}</span>
-            <span className="text-[10px] text-slate-600">{sample.category}</span>
           </button>
         ))}
       </div>
@@ -866,6 +735,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 onClick={() => toggleCard("font")}
                 aria-expanded={openCard === "font"}
                 aria-haspopup="true"
+                aria-label={`Select document font, currently ${fontFamily}`}
                 className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 cursor-pointer border shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] active:scale-[0.98] ${
                   openCard === "font"
                     ? "bg-slate-100 border-slate-400 text-slate-950 font-bold shadow-xs"
@@ -891,6 +761,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 onClick={() => toggleCard("theme")}
                 aria-expanded={openCard === "theme"}
                 aria-haspopup="true"
+                aria-label={`Select university theme, currently ${currentTheme.label}`}
                 className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 cursor-pointer border shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] active:scale-[0.98] ${
                   openCard === "theme"
                     ? "bg-slate-100 border-slate-400 text-slate-950 font-bold shadow-xs"
@@ -919,6 +790,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 onClick={() => toggleCard("math")}
                 aria-expanded={openCard === "math"}
                 aria-haspopup="true"
+                aria-label={`Mathematical notation settings, currently ${equationFormat === "native" ? "Word OMML" : "LaTeX Math"}`}
                 className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 cursor-pointer border shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] active:scale-[0.98] ${
                   openCard === "math"
                     ? "bg-slate-100 border-slate-400 text-slate-950 font-bold shadow-xs"
@@ -938,89 +810,19 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               </button>
             </div>
 
-            {/* 4. DOCUMENT STRUCTURE / PRESET */}
-            <div className="relative shrink-0">
-              <button
-                id="pill-toolbar-study-guide"
-                type="button"
-                onClick={() => toggleCard("study-guide")}
-                aria-expanded={openCard === "study-guide"}
-                aria-haspopup="true"
-                className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 cursor-pointer border shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] active:scale-[0.98] ${
-                  openCard === "study-guide"
-                    ? "bg-slate-100 border-slate-400 text-slate-950 font-bold shadow-xs"
-                    : "bg-white border-slate-300 text-slate-800 hover:text-slate-950 hover:bg-slate-50 hover:border-slate-400"
-                }`}
-                title="Select Academic Document Structure"
-              >
-                <GraduationCap className="w-3.5 h-3.5 text-amber-700 shrink-0" />
-                <span className="truncate max-w-[85px]">{currentFormatLabel}</span>
-                <ChevronDown
-                  className={`w-3 h-3 text-slate-400 transition-transform duration-150 motion-reduce:transition-none ${
-                    openCard === "study-guide" ? "rotate-180 text-slate-800" : ""
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* 5. ACADEMIC SKILLS */}
-            <div className="relative shrink-0">
-              <button
-                id="pill-toolbar-skills"
-                type="button"
-                onClick={() => toggleCard("skills")}
-                aria-expanded={openCard === "skills"}
-                aria-haspopup="true"
-                className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 cursor-pointer border shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] active:scale-[0.98] ${
-                  openCard === "skills"
-                    ? "bg-slate-100 border-slate-400 text-slate-950 font-bold shadow-xs"
-                    : "bg-white border-slate-300 text-slate-800 hover:text-slate-950 hover:bg-slate-50 hover:border-slate-400"
-                }`}
-                title="Academic Skills Rules"
-              >
-                <Layers className="w-3.5 h-3.5 text-purple-700 shrink-0" />
-                <span>{activeSkillsCount} Skills</span>
-                <ChevronDown
-                  className={`w-3 h-3 text-slate-400 transition-transform duration-150 motion-reduce:transition-none ${
-                    openCard === "skills" ? "rotate-180 text-slate-800" : ""
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* 6. STEM SAMPLES */}
-            <div className="relative shrink-0">
-              <button
-                id="pill-toolbar-samples"
-                type="button"
-                onClick={() => toggleCard("samples")}
-                aria-expanded={openCard === "samples"}
-                aria-haspopup="true"
-                className={`h-8 px-2.5 rounded-lg text-xs font-semibold transition-all duration-150 flex items-center gap-1.5 cursor-pointer border shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] active:scale-[0.98] ${
-                  openCard === "samples"
-                    ? "bg-slate-100 border-slate-400 text-slate-950 font-bold shadow-xs"
-                    : "bg-white border-slate-300 text-slate-800 hover:text-slate-950 hover:bg-slate-50 hover:border-slate-400"
-                }`}
-                title="Load STEM Sample Notes"
-              >
-                <FileText className="w-3.5 h-3.5 text-cyan-700 shrink-0" />
-                <span>Samples</span>
-                <ChevronDown
-                  className={`w-3 h-3 text-slate-400 transition-transform duration-150 motion-reduce:transition-none ${
-                    openCard === "samples" ? "rotate-180 text-slate-800" : ""
-                  }`}
-                />
-              </button>
-            </div>
-
-            {/* 7. LIVE WORD COUNT / METRICS BADGE */}
+            {/* 4. LIVE WORD COUNT / METRICS BADGE */}
             {wordCount > 0 && (
               <div
-                className="hidden lg:flex items-center gap-1.5 text-xs text-slate-600 bg-slate-100/90 border border-slate-200 px-2 py-1 rounded-lg shrink-0 cursor-default"
+                className="hidden sm:flex items-center gap-1.5 text-xs text-slate-600 bg-slate-100/90 border border-slate-200 px-2.5 py-1 rounded-lg shrink-0 cursor-default"
                 title={`${charCount.toLocaleString()} total characters • ${wordCount.toLocaleString()} words in active document`}
               >
                 <BarChart2 className="w-3.5 h-3.5 text-slate-500" />
-                <span className="font-medium font-mono text-[11px]">{wordCount.toLocaleString()} words</span>
+                <span className="font-medium font-mono text-[11px]">
+                  {wordCount.toLocaleString()} words
+                  {charCount > 0 && (
+                    <span className="hidden md:inline text-slate-400"> • {charCount.toLocaleString()} chars</span>
+                  )}
+                </span>
               </div>
             )}
           </div>
@@ -1030,9 +832,6 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
             "font",
             "theme",
             "math",
-            "study-guide",
-            "skills",
-            "samples",
           ].includes(openCard) && (
             <div
               className="absolute top-full mt-1.5 z-50 animate-popover-in motion-reduce:transition-none"
@@ -1041,9 +840,6 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               {openCard === "font" && renderFontPopover()}
               {openCard === "theme" && renderThemePopover()}
               {openCard === "math" && renderMathPopover()}
-              {openCard === "study-guide" && renderStudyGuidePopover()}
-              {openCard === "skills" && renderSkillsPopover()}
-              {openCard === "samples" && renderSamplesPopover()}
             </div>
           )}
 
@@ -1305,11 +1101,12 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
           "FormatAI Academic Tools",
           <div className="space-y-3">
             {/* Horizontal Tabs in Bottom Sheet */}
-            <div className="flex overflow-x-auto no-scrollbar gap-1.5 pb-2 border-b border-slate-200">
+            <div
+              role="tablist"
+              aria-label="Academic tool options"
+              className="flex overflow-x-auto no-scrollbar gap-1.5 pb-2 border-b border-slate-200"
+            >
               {[
-                { id: "presets", label: "Structure" },
-                { id: "skills", label: "Skills" },
-                { id: "samples", label: "Samples" },
                 { id: "typography", label: "Font" },
                 { id: "theme", label: "Theme" },
                 { id: "math", label: "Math" },
@@ -1317,11 +1114,15 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               ].map((tab) => (
                 <button
                   key={tab.id}
+                  id={`mobile-tab-btn-${tab.id}`}
                   type="button"
+                  role="tab"
+                  aria-selected={mobileToolsTab === tab.id}
+                  aria-controls={`mobile-tab-panel-${tab.id}`}
                   onClick={() => setMobileToolsTab(tab.id as any)}
-                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer transition-all ${
+                  className={`px-3 py-1.5 rounded-xl text-xs font-semibold whitespace-nowrap cursor-pointer transition-all focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900 ${
                     mobileToolsTab === tab.id
-                      ? "bg-slate-900 text-white shadow-2xs"
+                      ? "bg-slate-900 text-white shadow-2xs font-bold"
                       : "bg-slate-100 text-slate-700 hover:bg-slate-200"
                   }`}
                 >
@@ -1330,110 +1131,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               ))}
             </div>
 
-            {/* Tab 1: Structure Presets */}
-            {mobileToolsTab === "presets" && (
-              <div className="space-y-2">
-                {[
-                  {
-                    id: "study_guide",
-                    title: "🎓 Study Guide & Formulas",
-                    desc: "Numbered sections, formulas, definition callouts",
-                  },
-                  {
-                    id: "exam_bank",
-                    title: "📝 Exam Question Bank",
-                    desc: "Numbered problems, exam sections, step-by-step items",
-                  },
-                  {
-                    id: "auto",
-                    title: "⚡ Auto-Detect Structure",
-                    desc: "Intelligently formats headers and math based on content",
-                  },
-                ].map((mode) => (
-                  <button
-                    key={mode.id}
-                    type="button"
-                    onClick={() => {
-                      onFormatModeChange(mode.id as any);
-                      setOpenCard(null);
-                    }}
-                    className={`w-full min-h-[44px] flex items-center justify-between p-3 rounded-xl text-xs transition-colors text-left cursor-pointer border ${
-                      formatMode === mode.id
-                        ? "bg-amber-50 text-amber-950 font-bold border-amber-300"
-                        : "hover:bg-slate-50 border-slate-200 text-slate-800"
-                    }`}
-                  >
-                    <div>
-                      <div className="font-semibold text-slate-900 text-xs">{mode.title}</div>
-                      <div className="text-xs text-slate-600 mt-0.5">{mode.desc}</div>
-                    </div>
-                    {formatMode === mode.id && <Check className="w-4 h-4 text-amber-700 shrink-0 ml-2" />}
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Tab 2: Skills */}
-            {mobileToolsTab === "skills" && (
-              <div className="space-y-2">
-                <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
-                  {skillRegistry.getAllSkills().map((skill) => (
-                    <div
-                      key={skill.id}
-                      className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs"
-                    >
-                      <div className="min-w-0 pr-2">
-                        <div className="font-semibold text-slate-900 text-xs">{skill.name}</div>
-                        <div className="text-xs text-slate-600 line-clamp-1">{skill.description}</div>
-                      </div>
-                      <input
-                        type="checkbox"
-                        checked={skill.enabled}
-                        onChange={() => {
-                          skillRegistry.toggleSkill(skill.id);
-                          if (onSkillsChanged) onSkillsChanged();
-                        }}
-                        className="w-4 h-4 accent-[#881337] rounded cursor-pointer shrink-0"
-                        aria-label={`Toggle skill ${skill.name}`}
-                      />
-                    </div>
-                  ))}
-                </div>
-                <button
-                  type="button"
-                  onClick={() => {
-                    setOpenCard(null);
-                    onOpenSkillsManager();
-                  }}
-                  className="w-full min-h-[44px] bg-purple-700 hover:bg-purple-800 text-white font-semibold text-xs py-2 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs active:scale-[0.98]"
-                >
-                  <Layers className="w-4 h-4" />
-                  <span>Open Full Skills Manager</span>
-                </button>
-              </div>
-            )}
-
-            {/* Tab 3: Samples */}
-            {mobileToolsTab === "samples" && (
-              <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
-                {SAMPLE_NOTES.map((sample) => (
-                  <button
-                    key={sample.id}
-                    type="button"
-                    onClick={() => {
-                      onSelectSample(sample);
-                      setOpenCard(null);
-                    }}
-                    className="w-full min-h-[44px] text-left p-2.5 text-xs hover:bg-slate-50 rounded-xl border border-slate-200 flex flex-col justify-center cursor-pointer"
-                  >
-                    <span className="font-semibold text-slate-900 text-xs">{sample.title}</span>
-                    <span className="text-xs text-slate-600">{sample.category}</span>
-                  </button>
-                ))}
-              </div>
-            )}
-
-            {/* Tab 4: Typography */}
+            {/* Tab 1: Typography */}
             {mobileToolsTab === "typography" && (
               <div className="space-y-1.5">
                 {fontOptions.map((f) => (
@@ -1462,7 +1160,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               </div>
             )}
 
-            {/* Tab 5: Theme */}
+            {/* Tab 2: Theme */}
             {mobileToolsTab === "theme" && (
               <div className="space-y-1.5 max-h-60 overflow-y-auto pr-1">
                 {ACADEMIC_THEMES.map((t) => {
@@ -1496,7 +1194,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               </div>
             )}
 
-            {/* Tab 6: Math */}
+            {/* Tab 3: Math */}
             {mobileToolsTab === "math" && (
               <div className="space-y-3">
                 <div>
@@ -1545,7 +1243,7 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
               </div>
             )}
 
-            {/* Tab 7: Metrics */}
+            {/* Tab 4: Metrics */}
             {mobileToolsTab === "metrics" && (
               <div className="p-3 bg-slate-50 rounded-xl border border-slate-200 space-y-2">
                 <div className="flex items-center justify-between text-xs">
@@ -1568,8 +1266,39 @@ export const ToolbarGrid: React.FC<ToolbarGridProps> = ({
                 </div>
               </div>
             )}
+
+            {/* Quick Link to Settings & Tools for Migrated Tools */}
+            <div className="pt-2 border-t border-slate-200">
+              <div className="bg-slate-50 border border-slate-200 rounded-xl p-3 flex items-center justify-between gap-2.5">
+                <div className="flex items-center gap-2 min-w-0">
+                  <div className="w-8 h-8 rounded-lg bg-amber-100 flex items-center justify-center shrink-0">
+                    <GraduationCap className="w-4 h-4 text-amber-800" />
+                  </div>
+                  <div className="min-w-0">
+                    <div className="text-xs font-bold text-slate-900 truncate">
+                      Study Guide, 12 Skills & Samples
+                    </div>
+                    <div className="text-[11px] text-slate-500 truncate">
+                      Available in Settings & Tools sidebar
+                    </div>
+                  </div>
+                </div>
+                <button
+                  type="button"
+                  onClick={() => {
+                    closeDropdown();
+                    const hamburger = document.getElementById("btn-hamburger-menu");
+                    hamburger?.click();
+                  }}
+                  aria-label="Open Settings and Tools sidebar"
+                  className="px-3 py-1.5 bg-slate-900 hover:bg-black active:bg-slate-950 text-white rounded-lg text-xs font-semibold shrink-0 cursor-pointer transition-colors shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-slate-900"
+                >
+                  Open
+                </button>
+              </div>
+            </div>
           </div>
         )}
     </div>
   );
-};
+});

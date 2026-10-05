@@ -29,7 +29,7 @@ interface TextDiffViewerProps {
   modelName?: string;
 }
 
-export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
+export const TextDiffViewer: React.FC<TextDiffViewerProps> = React.memo(({
   originalText,
   polishedText,
   onApplyChanges,
@@ -82,7 +82,8 @@ export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
           <div className="bg-slate-800 p-0.5 rounded-lg border border-slate-700 flex items-center text-xs">
             <button
               onClick={() => setViewMode("unified")}
-              className={`px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer ${
+              aria-pressed={viewMode === "unified"}
+              className={`px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                 viewMode === "unified"
                   ? "bg-indigo-600 text-white font-bold"
                   : "text-slate-300 hover:text-white"
@@ -94,7 +95,8 @@ export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
             </button>
             <button
               onClick={() => setViewMode("split")}
-              className={`px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer ${
+              aria-pressed={viewMode === "split"}
+              className={`px-2 py-1 rounded flex items-center gap-1 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400 ${
                 viewMode === "split"
                   ? "bg-indigo-600 text-white font-bold"
                   : "text-slate-300 hover:text-white"
@@ -108,7 +110,8 @@ export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
 
           <button
             onClick={handleCopyPolished}
-            className="px-2.5 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-lg flex items-center gap-1 transition-colors cursor-pointer"
+            aria-label="Copy polished text"
+            className="px-2.5 py-1 text-xs font-semibold bg-slate-800 hover:bg-slate-700 text-slate-200 border border-slate-600 rounded-lg flex items-center gap-1 transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
             title="Copy polished text"
           >
             {copied ? <Check className="w-3.5 h-3.5 text-emerald-400" /> : <Copy className="w-3.5 h-3.5" />}
@@ -118,7 +121,8 @@ export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
           {onClose && (
             <button
               onClick={onClose}
-              className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer"
+              aria-label="Close diff view"
+              className="p-1 text-slate-400 hover:text-white rounded transition-colors cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-indigo-400"
               title="Close diff view"
             >
               <X className="w-4 h-4" />
@@ -308,4 +312,4 @@ export const TextDiffViewer: React.FC<TextDiffViewerProps> = ({
       </div>
     </div>
   );
-};
+});

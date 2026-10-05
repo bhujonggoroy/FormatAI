@@ -22,6 +22,8 @@ import {
   Columns,
   FileDown,
   Loader2,
+  GraduationCap,
+  ExternalLink,
 } from "lucide-react";
 import { FormatAILogo } from "./FormatAILogo";
 import { ACADEMIC_THEMES, getAcademicTheme } from "../utils/theme";
@@ -33,6 +35,8 @@ import {
   getUserPreferences,
   saveUserPreferences,
 } from "../utils/userLocalStorage";
+import { SAMPLE_NOTES, SampleNote } from "../data/samples";
+import { skillRegistry } from "../skills";
 
 export interface SidebarSettingsDrawerProps {
   isOpen: boolean;
@@ -46,7 +50,10 @@ export interface SidebarSettingsDrawerProps {
   // Academic Skills
   activeSkillsCount: number;
   onOpenSkillsModal: () => void;
+  onSkillsChanged?: () => void;
   onOpenLicenseModal: () => void;
+  // Samples
+  onSelectSample?: (sample: SampleNote) => void;
   // Workspace Navigation & Actions
   viewLayout?: "editor" | "preview" | "split";
   onViewLayoutChange?: (layout: "editor" | "preview" | "split") => void;
@@ -171,7 +178,7 @@ const Row: React.FC<RowProps> = ({ children, className = "" }) => (
   </div>
 );
 
-export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
+export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = React.memo(({
   isOpen,
   onClose,
   readyProvidersCount,
@@ -181,7 +188,9 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
   onOpenAISettingsModal,
   activeSkillsCount,
   onOpenSkillsModal,
+  onSkillsChanged,
   onOpenLicenseModal,
+  onSelectSample,
   viewLayout,
   onViewLayoutChange,
   onTriggerAiPolish,
@@ -204,19 +213,47 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
   isInstalled = false,
   onInstallApp,
 }) => {
-  // Collapsible groups: Appearance open by default
+  // Collapsible groups: Appearance and Academic Tools open by default
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
     appearance: true,
     ai: false,
-    academic: false,
+    academicTools: true,
+    resources: false,
+    pipeline: false,
     app: false,
     about: false,
   });
 
+  const [skillsList, setSkillsList] = useState(() => skillRegistry.getAllSkills());
+  const [loadedSampleId, setLoadedSampleId] = useState<string | null>(null);
   const [showWorkflow, setShowWorkflow] = useState(false);
   const [isEditingPrompt, setIsEditingPrompt] = useState(false);
   const [copiedPrompt, setCopiedPrompt] = useState(false);
   const [isClosing, setIsClosing] = useState(false);
+
+  // Sync skills list when drawer opens or activeSkillsCount changes
+  useEffect(() => {
+    setSkillsList([...skillRegistry.getAllSkills()]);
+  }, [isOpen, activeSkillsCount]);
+
+  const handleToggleSkill = (skillId: string) => {
+    skillRegistry.toggleSkill(skillId);
+    setSkillsList([...skillRegistry.getAllSkills()]);
+    if (onSkillsChanged) {
+      onSkillsChanged();
+    }
+  };
+
+  const handleSelectSample = (sample: SampleNote) => {
+    if (onSelectSample) {
+      onSelectSample(sample);
+      setLoadedSampleId(sample.id);
+      setTimeout(() => setLoadedSampleId(null), 2500);
+      if (typeof window !== "undefined" && window.innerWidth < 640) {
+        requestClose();
+      }
+    }
+  };
 
   // Internal prompt buffer linked to preferences
   const [promptText, setPromptText] = useState<string>(() => {
@@ -538,8 +575,8 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             onToggle={() => toggleGroup("appearance")}
             icon={<Palette className="w-4.5 h-4.5 text-white" />}
             iconStyle={{ backgroundColor: currentTheme.hex }}
-            title="Appearance & Notation"
-            subtitle="Theme color, typography & formula format"
+            title="Appearance"
+            subtitle="Theme color, typography & equation notation"
             accent={currentTheme.hex}
           >
             {/* Theme Color Swatches */}
@@ -575,7 +612,7 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
 
             {/* Typography Selection (min-height >= 44px buttons) */}
             <div className="space-y-1.5 pt-1">
-              <span className="text-xs font-semibold text-slate-800">Typography Standard</span>
+              <span className="text-xs font-semibold text-slate-800">Typography</span>
               <div className="grid grid-cols-2 min-[400px]:grid-cols-3 gap-2">
                 {["Times New Roman", "Georgia", "Calibri", "Arial", "Aptos"].map((f) => {
                   const isSelected = fontFamily === f;
@@ -584,9 +621,11 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
                       key={f}
                       type="button"
                       onClick={() => onFontFamilyChange(f)}
+                      aria-pressed={isSelected}
+                      aria-label={`Select ${f} font`}
                       className={`min-h-[44px] px-2 rounded-xl text-xs font-semibold transition-all text-center border cursor-pointer truncate flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
                         isSelected
-                          ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                          ? "bg-slate-900 text-white border-slate-900 shadow-2xs font-bold"
                           : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                       }`}
                       style={{ fontFamily: f }}
@@ -615,9 +654,10 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
                   <button
                     type="button"
                     onClick={() => onEquationFormatChange("native")}
+                    aria-pressed={equationFormat === "native"}
                     className={`min-h-[44px] px-2 py-1.5 rounded-xl text-xs font-semibold border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
                       equationFormat === "native"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs font-bold"
                         : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                     }`}
                     title="Typeset directly into editable Microsoft Word mathematical equations (OMML)"
@@ -628,12 +668,13 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
                   <button
                     type="button"
                     onClick={() => onEquationFormatChange("latex")}
+                    aria-pressed={equationFormat === "latex"}
                     className={`min-h-[44px] px-2 py-1.5 rounded-xl text-xs font-semibold border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
                       equationFormat === "latex"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs font-bold"
                         : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                     }`}
-                    title="Keep standardized LaTeX expressions: \\( ... \\) and \\[ ... \\]"
+                    title="Keep standardized LaTeX expressions: \( ... \) and \[ ... \]"
                   >
                     <span className="font-mono font-bold text-xs">TeX</span>
                     <span className="text-[11px]">LaTeX Code</span>
@@ -641,48 +682,16 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
                   <button
                     type="button"
                     onClick={() => onEquationFormatChange("unicode")}
+                    aria-pressed={equationFormat === "unicode"}
                     className={`min-h-[44px] px-2 py-1.5 rounded-xl text-xs font-semibold border flex flex-col items-center justify-center gap-0.5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
                       equationFormat === "unicode"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
+                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs font-bold"
                         : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
                     }`}
                     title="Render mathematical operators as standard Unicode symbols"
                   >
-                    <span className="font-serif font-bold text-xs">∑</span >
+                    <span className="font-serif font-bold text-xs">∑</span>
                     <span className="text-[11px]">Unicode</span>
-                  </button>
-                </div>
-              </div>
-            )}
-
-            {/* Document Structure Mode */}
-            {onFormatModeChange && (
-              <div className="space-y-1.5 pt-1">
-                <span className="text-xs font-semibold text-slate-800">Document Structure Mode</span>
-                <div className="grid grid-cols-2 gap-2">
-                  <button
-                    type="button"
-                    onClick={() => onFormatModeChange("study_guide")}
-                    className={`min-h-[44px] px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
-                      formatMode === "study_guide"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <FileText className="w-3.5 h-3.5 shrink-0" />
-                    <span>Study Guide & Notes</span>
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => onFormatModeChange("exam_bank")}
-                    className={`min-h-[44px] px-2.5 py-1.5 rounded-xl text-xs font-semibold border flex items-center justify-center gap-1.5 transition-all cursor-pointer focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337] ${
-                      formatMode === "exam_bank"
-                        ? "bg-slate-900 text-white border-slate-900 shadow-2xs"
-                        : "bg-slate-50 text-slate-700 border-slate-200 hover:bg-slate-100"
-                    }`}
-                  >
-                    <BookOpen className="w-3.5 h-3.5 shrink-0" />
-                    <span>Exam Question Bank</span>
                   </button>
                 </div>
               </div>
@@ -696,8 +705,8 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             onToggle={() => toggleGroup("ai")}
             icon={<Cpu className="w-4.5 h-4.5 text-blue-700" />}
             iconClassName="bg-blue-100"
-            title="AI Engine & Models"
-            subtitle="Active provider, failover routing & API keys"
+            title="AI Engine"
+            subtitle="Provider settings, failover routing & model configuration"
           >
             <Row className="flex flex-wrap items-center justify-between gap-3">
               <div className="min-w-0 flex-1 basis-40">
@@ -731,34 +740,194 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             </Row>
           </GroupCard>
 
-          {/* ================= GROUP 3: ACADEMIC PIPELINE ================= */}
+          {/* ================= GROUP 3: ACADEMIC TOOLS (Study Guide & 12 Skills) ================= */}
           <GroupCard
-            id="academic"
-            open={openGroups.academic}
-            onToggle={() => toggleGroup("academic")}
-            icon={<Workflow className="w-4.5 h-4.5 text-purple-700" />}
-            iconClassName="bg-purple-100"
-            title="Academic Pipeline"
-            subtitle="Skills hub, system workflow & prompt"
+            id="academicTools"
+            open={openGroups.academicTools}
+            onToggle={() => toggleGroup("academicTools")}
+            icon={<GraduationCap className="w-4.5 h-4.5 text-amber-700" />}
+            iconClassName="bg-amber-100"
+            title="Academic Tools"
+            subtitle="Study Guide structure presets & 12 Academic Skills"
           >
-            {/* Skills Hub */}
-            <Row className="flex flex-wrap items-center justify-between gap-3">
-              <div className="min-w-0 flex-1 basis-40">
-                <div className="text-xs font-semibold text-slate-900">Academic Skills Hub</div>
-                <div className="text-xs text-slate-500 mt-0.5">{activeSkillsCount} modular skills active</div>
+            {/* 1. Study Guide Presets Section */}
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <GraduationCap className="w-4 h-4 text-amber-700 shrink-0" />
+                  <span className="text-xs font-bold text-slate-900">Study Guide</span>
+                </div>
+                <span className="text-[11px] text-slate-500 font-medium">Document Structure</span>
               </div>
+
+              <div className="space-y-1.5">
+                {[
+                  {
+                    id: "study_guide",
+                    title: "🎓 Study Guide & Formulas",
+                    desc: "Numbered sections, highlighted formulas, definition tables",
+                  },
+                  {
+                    id: "exam_bank",
+                    title: "📝 Exam Question Bank",
+                    desc: "Numbered problems, exam sections, step-by-step items",
+                  },
+                  {
+                    id: "auto",
+                    title: "⚡ Auto-Detect Structure",
+                    desc: "Intelligently formats headers and math based on content",
+                  },
+                ].map((mode) => {
+                  const isSelected = formatMode === mode.id;
+                  return (
+                    <button
+                      key={mode.id}
+                      type="button"
+                      onClick={() => {
+                        if (onFormatModeChange) {
+                          onFormatModeChange(mode.id as any);
+                        }
+                      }}
+                      aria-pressed={isSelected}
+                      className={`w-full min-h-[44px] flex items-center justify-between p-3 rounded-xl text-xs transition-colors text-left cursor-pointer border ${
+                        isSelected
+                          ? "bg-amber-50 text-amber-950 font-bold border-amber-300 shadow-2xs"
+                          : "hover:bg-slate-50 border-slate-200 text-slate-800 bg-white"
+                      }`}
+                    >
+                      <div className="min-w-0 pr-2">
+                        <div className="font-semibold text-slate-900 text-xs">{mode.title}</div>
+                        <div className="text-[11px] text-slate-600 mt-0.5 leading-snug">{mode.desc}</div>
+                      </div>
+                      {isSelected && (
+                        <Check className="w-4 h-4 text-amber-700 shrink-0 ml-2 stroke-[2.5]" />
+                      )}
+                    </button>
+                  );
+                })}
+              </div>
+            </div>
+
+            {/* 2. 12 Academic Skills Section */}
+            <div className="space-y-2 pt-2 border-t border-slate-200">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <Layers className="w-4 h-4 text-purple-700 shrink-0" />
+                  <span className="text-xs font-bold text-slate-900">12 Skills</span>
+                </div>
+                <span className="text-[11px] font-bold text-purple-800 bg-purple-50 px-2 py-0.5 rounded-full border border-purple-200">
+                  {skillsList.filter((s) => s.enabled).length} of 12 active
+                </span>
+              </div>
+              <p className="text-[11px] text-slate-500 leading-snug">
+                Academic typesetting rules enforced automatically during processing:
+              </p>
+
+              <div className="space-y-1.5 max-h-56 overflow-y-auto pr-1">
+                {skillsList.map((skill) => (
+                  <label
+                    key={skill.id}
+                    className="flex items-center justify-between p-2.5 rounded-xl bg-slate-50 border border-slate-200 text-xs hover:bg-purple-50/40 transition-colors cursor-pointer"
+                  >
+                    <div className="min-w-0 pr-3">
+                      <div className="font-semibold text-slate-900 text-xs">{skill.name}</div>
+                      <div className="text-[11px] text-slate-600 line-clamp-1 mt-0.5">
+                        {skill.description}
+                      </div>
+                    </div>
+                    <input
+                      type="checkbox"
+                      role="switch"
+                      aria-checked={skill.enabled}
+                      checked={skill.enabled}
+                      onChange={() => handleToggleSkill(skill.id)}
+                      className="w-4 h-4 min-w-[16px] min-h-[16px] accent-purple-700 rounded cursor-pointer shrink-0"
+                      aria-label={`Toggle skill ${skill.name}`}
+                    />
+                  </label>
+                ))}
+              </div>
+
               <button
                 type="button"
                 onClick={() => {
                   onClose();
                   onOpenSkillsModal();
                 }}
-                className="min-h-[40px] px-4 py-2 rounded-xl bg-purple-700 hover:bg-purple-800 text-white text-xs font-semibold transition-colors cursor-pointer shrink-0 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
+                className="w-full min-h-[44px] bg-purple-700 hover:bg-purple-800 active:bg-purple-900 text-white font-semibold text-xs py-2.5 px-3 rounded-xl flex items-center justify-center gap-2 cursor-pointer shadow-xs transition-colors focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-purple-600"
               >
-                View Skills
+                <Layers className="w-4 h-4 shrink-0" />
+                <span>Open Full Skills Manager Hub</span>
+                <ChevronRight className="w-4 h-4 shrink-0" />
               </button>
-            </Row>
+            </div>
+          </GroupCard>
 
+          {/* ================= GROUP 4: RESOURCES (Samples) ================= */}
+          <GroupCard
+            id="resources"
+            open={openGroups.resources}
+            onToggle={() => toggleGroup("resources")}
+            icon={<FileText className="w-4.5 h-4.5 text-cyan-700" />}
+            iconClassName="bg-cyan-100"
+            title="Resources"
+            subtitle="Curated STEM sample notes & templates"
+          >
+            <div className="space-y-2">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-1.5">
+                  <FileText className="w-4 h-4 text-cyan-700 shrink-0" />
+                  <span className="text-xs font-bold text-slate-900">Samples</span>
+                </div>
+                <span className="text-[11px] text-slate-500 font-medium">
+                  {SAMPLE_NOTES.length} STEM Templates
+                </span>
+              </div>
+
+              {loadedSampleId && (
+                <div className="p-2 bg-emerald-50 border border-emerald-200 rounded-xl text-xs text-emerald-800 font-medium flex items-center gap-2 animate-fadeIn">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-600 shrink-0" />
+                  <span>Sample loaded into editor successfully!</span>
+                </div>
+              )}
+
+              <div className="space-y-1.5 max-h-64 overflow-y-auto pr-1">
+                {SAMPLE_NOTES.map((sample) => (
+                  <button
+                    key={sample.id}
+                    type="button"
+                    onClick={() => handleSelectSample(sample)}
+                    aria-label={`Load sample: ${sample.title}`}
+                    className="w-full min-h-[44px] text-left p-2.5 text-xs bg-slate-50 hover:bg-cyan-50/50 hover:border-cyan-300 rounded-xl border border-slate-200 transition-colors flex items-center justify-between cursor-pointer group focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-cyan-600"
+                    title={`Click to load ${sample.title} into the editor`}
+                  >
+                    <div className="min-w-0 pr-2">
+                      <div className="font-semibold text-slate-900 text-xs truncate group-hover:text-cyan-900">
+                        {sample.title}
+                      </div>
+                      <div className="text-[11px] text-slate-500 mt-0.5 truncate">
+                        {sample.category}
+                      </div>
+                    </div>
+                    <span className="px-2 py-1 rounded-lg bg-white border border-slate-200 text-[10px] font-bold text-slate-700 shrink-0 group-hover:border-cyan-300 group-hover:text-cyan-800">
+                      Load
+                    </span>
+                  </button>
+                ))}
+              </div>
+            </div>
+          </GroupCard>
+
+          {/* ================= GROUP 5: ACADEMIC PIPELINE ================= */}
+          <GroupCard
+            id="pipeline"
+            open={openGroups.pipeline}
+            onToggle={() => toggleGroup("pipeline")}
+            icon={<Workflow className="w-4.5 h-4.5 text-purple-700" />}
+            iconClassName="bg-purple-100"
+            title="Academic Pipeline"
+            subtitle="Pipeline settings, 10-step workflow & prompt"
+          >
             {/* Publication Workflow */}
             <Row className="space-y-2">
               <div className="flex flex-wrap items-center justify-between gap-3">
@@ -848,15 +1017,15 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             </Row>
           </GroupCard>
 
-          {/* ================= GROUP 4: APP & TOOLS ================= */}
+          {/* ================= GROUP 6: FORMATAI APP ================= */}
           <GroupCard
             id="app"
             open={openGroups.app}
             onToggle={() => toggleGroup("app")}
             icon={<Download className="w-4.5 h-4.5 text-emerald-700" />}
             iconClassName="bg-emerald-100"
-            title="FormatAI App & Tools"
-            subtitle="Installation, stats & quick document tools"
+            title="FormatAI App"
+            subtitle="Application settings, installation & quick tools"
           >
             {/* PWA App Installation */}
             <Row className="flex flex-wrap items-center justify-between gap-3">
@@ -935,13 +1104,13 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
             </div>
           </GroupCard>
 
-          {/* ================= GROUP 5: ABOUT ================= */}
+          {/* ================= GROUP 7: ABOUT & ADVANCED ================= */}
           <GroupCard
             id="about"
             open={openGroups.about}
             onToggle={() => toggleGroup("about")}
-            icon={<BookOpen className="w-4.5 h-4.5 text-amber-700" />}
-            iconClassName="bg-amber-100"
+            icon={<BookOpen className="w-4.5 h-4.5 text-slate-700" />}
+            iconClassName="bg-slate-100"
             title="About & Advanced"
             subtitle="License, open source & academic mission"
           >
@@ -989,4 +1158,4 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = ({
       </div>
     </div>
   );
-};
+});

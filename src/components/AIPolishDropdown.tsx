@@ -30,7 +30,7 @@ interface AIPolishDropdownProps {
   onOpenFreeKeyModal?: (helpConfig: ProviderHelpConfig) => void;
 }
 
-export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
+export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = React.memo(({
   isAiPolishing,
   onTriggerAiPolish,
   onTriggerFormatAI,
@@ -319,7 +319,7 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
         <button
           type="button"
           onClick={onClose}
-          className="w-9 h-9 min-w-[36px] min-h-[36px] rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-150 ease-out cursor-pointer active:scale-95 motion-reduce:transform-none shrink-0"
+          className="w-10 h-10 min-w-[40px] min-h-[40px] rounded-lg text-slate-400 hover:text-slate-700 hover:bg-slate-100 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-500 transition-colors duration-150 ease-out cursor-pointer active:scale-95 motion-reduce:transform-none shrink-0"
           aria-label="Close engine selector"
         >
           <X className="w-4 h-4" />
@@ -531,4 +531,4 @@ export const AIPolishDropdown: React.FC<AIPolishDropdownProps> = ({
       </div>
     </div>
   );
-};
+});

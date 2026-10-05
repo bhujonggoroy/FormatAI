@@ -11,7 +11,7 @@ interface HeaderProps {
   accentColor?: string;
 }
 
-export const Header: React.FC<HeaderProps> = ({
+export const Header: React.FC<HeaderProps> = React.memo(({
   docTitle,
   onDocTitleChange,
   onToggleSidebar,
@@ -32,11 +32,11 @@ export const Header: React.FC<HeaderProps> = ({
             onClick={onToggleSidebar}
             aria-expanded={isSidebarOpen}
             aria-controls="sidebar-settings-drawer"
-            className="h-9 w-9 sm:h-8 sm:w-8 min-h-[36px] min-w-[36px] rounded-xl text-slate-800 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-300 transition-colors cursor-pointer shrink-0 flex items-center justify-center shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
+            className="h-10 w-10 sm:h-8 sm:w-8 min-h-[40px] min-w-[40px] sm:min-h-[32px] sm:min-w-[32px] rounded-xl text-slate-800 bg-slate-100 hover:bg-slate-200 active:bg-slate-300 border border-slate-300 transition-colors cursor-pointer shrink-0 flex items-center justify-center shadow-2xs focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
             title={isSidebarOpen ? "Close Navigation & Settings Menu (Esc)" : "Open Navigation, Settings & Academic Skills Menu"}
-            aria-label={isSidebarOpen ? "Close navigation menu" : "Open navigation and settings menu"}
+            aria-label={isSidebarOpen ? "Close navigation menu" : "Open navigation, settings and tools menu"}
           >
-            <Menu className="w-4.5 h-4.5 text-slate-900 stroke-[2.5]" />
+            <Menu className="w-5 h-5 sm:w-4.5 sm:h-4.5 text-slate-900 stroke-[2.5]" />
           </button>
 
           {/* Brand Logo & Name */}
@@ -75,6 +75,9 @@ export const Header: React.FC<HeaderProps> = ({
         {/* Center/Right: Document title box (Merged app bar and file name: inline-editable text with pencil) */}
         <div className="flex items-center gap-1.5 min-w-0 max-w-[140px] xs:max-w-xs sm:max-w-md w-full justify-end">
           <div className="relative flex items-center w-full group">
+            <label htmlFor="header-doc-title" className="sr-only">
+              Document Title
+            </label>
             <input
               id="header-doc-title"
               type="text"
@@ -93,4 +96,4 @@ export const Header: React.FC<HeaderProps> = ({
       </div>
     </header>
   );
-};
+});

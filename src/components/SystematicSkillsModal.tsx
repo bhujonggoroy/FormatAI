@@ -1,4 +1,4 @@
-import React, { useState, useEffect } from "react";
+import React, { useState, useEffect, useRef } from "react";
 import {
   X,
   GraduationCap,
@@ -112,6 +112,8 @@ export const SystematicSkillsModal: React.FC<SystematicSkillsModalProps> = ({
   const [activeTab, setActiveTab] = useState<"skills" | "instructions" | "api">("skills");
   const [copiedPrompt, setCopiedPrompt] = useState<boolean>(false);
   const [copiedUserPrompt, setCopiedUserPrompt] = useState<boolean>(false);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const triggerElRef = useRef<HTMLElement | null>(null);
 
   // Security password protection for AI Studio instructions tab
   // Password: "FormatAI 131219 Paste.Format.Get Documents"
@@ -149,19 +151,60 @@ export const SystematicSkillsModal: React.FC<SystematicSkillsModalProps> = ({
     } catch {}
   };
 
-  // Handle ESC key and lock body scroll when open
+  // Handle ESC key, focus trapping, autofocus, and lock body scroll when open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (triggerElRef.current) {
+        triggerElRef.current.focus();
+        triggerElRef.current = null;
+      }
+      return;
+    }
+
+    triggerElRef.current = document.activeElement as HTMLElement;
+
+    const timer = setTimeout(() => {
+      const closeBtn = document.getElementById("close-systematic-modal-btn");
+      closeBtn?.focus();
+    }, 50);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        return;
+      }
+
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
+      clearTimeout(timer);
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = originalOverflow;
     };
@@ -200,6 +243,7 @@ Text:
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-4 bg-slate-900/60 animate-modal-backdrop"
     >
       <div
+        ref={modalRef}
         className="bg-white w-full max-w-3xl rounded-t-2xl sm:rounded-2xl shadow-2xl border-t sm:border border-slate-200 overflow-hidden flex flex-col h-[92vh] sm:h-auto sm:max-h-[90vh] animate-modal-content"
         role="dialog"
         aria-modal="true"
@@ -229,6 +273,7 @@ Text:
             </div>
           </div>
           <button
+            id="close-systematic-modal-btn"
             type="button"
             onClick={onClose}
             className="min-h-[40px] min-w-[40px] p-2 text-slate-400 hover:text-white rounded-xl hover:bg-white/10 transition-colors cursor-pointer shrink-0 flex items-center justify-center focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-blue-400"

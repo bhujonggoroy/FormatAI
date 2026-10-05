@@ -1439,7 +1439,8 @@ export default function App() {
         onChange={handleFileUpload}
         accept=".txt,.md,.markdown,.tex,.json,.csv,.latex,.docx,.pdf"
         className="hidden"
-        aria-hidden="true"
+        aria-label="Upload document file"
+        tabIndex={-1}
       />
 
       {/* Precision Top Header */}
@@ -1715,6 +1716,8 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => { setSplitRatio(40); setCollapsedPane("none"); }}
+                        aria-pressed={splitRatio === 40 && collapsedPane === "none"}
+                        aria-label="Set split ratio to 40% editor and 60% preview"
                         className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
                           splitRatio === 40 && collapsedPane === "none"
                             ? "bg-white text-slate-950 font-bold shadow-2xs"
@@ -1727,6 +1730,8 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => { setSplitRatio(50); setCollapsedPane("none"); }}
+                        aria-pressed={splitRatio === 50 && collapsedPane === "none"}
+                        aria-label="Set split ratio to 50:50 balanced split"
                         className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
                           splitRatio === 50 && collapsedPane === "none"
                             ? "bg-white text-slate-950 font-bold shadow-2xs"
@@ -1739,6 +1744,8 @@ export default function App() {
                       <button
                         type="button"
                         onClick={() => { setSplitRatio(60); setCollapsedPane("none"); }}
+                        aria-pressed={splitRatio === 60 && collapsedPane === "none"}
+                        aria-label="Set split ratio to 60% editor and 40% preview"
                         className={`px-1.5 py-0.5 rounded transition-colors cursor-pointer ${
                           splitRatio === 60 && collapsedPane === "none"
                             ? "bg-white text-slate-950 font-bold shadow-2xs"
@@ -1754,6 +1761,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => setCollapsedPane(collapsedPane === "preview" ? "none" : "preview")}
+                      aria-label={collapsedPane === "preview" ? "Restore split view" : "Maximize editor (collapse preview)"}
                       className="hidden sm:inline-flex items-center gap-1 p-1 rounded-md border border-slate-300 bg-white hover:bg-slate-50 text-slate-600 hover:text-slate-900 shadow-2xs text-[10px] font-semibold cursor-pointer transition-colors"
                       title={collapsedPane === "preview" ? "Restore split view" : "Maximize editor (collapse preview)"}
                     >
@@ -1775,6 +1783,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => fileInputRef.current?.click()}
+                      aria-label="Upload document file (.txt, .md, .tex, .pdf, .docx)"
                       className="min-h-[30px] inline-flex items-center gap-1 text-xs font-semibold text-slate-700 hover:text-slate-900 bg-white hover:bg-slate-100 active:bg-slate-200 px-2 py-1 rounded-md border border-slate-300 shadow-2xs transition-colors cursor-pointer"
                       title="Upload document file (.txt, .md, .tex, .pdf, .docx)"
                     >
@@ -1784,6 +1793,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={handlePasteClipboard}
+                      aria-label="Paste content from clipboard"
                       className="min-h-[30px] inline-flex items-center gap-1 text-xs font-bold text-white px-2.5 py-1 rounded-md shadow-2xs transition-colors cursor-pointer"
                       style={{ backgroundColor: currentTheme.btnPrimary }}
                       title="Paste from clipboard"
@@ -1794,6 +1804,7 @@ export default function App() {
                     <button
                       type="button"
                       onClick={() => handleUpdateInput("", "FormatAI Document")}
+                      aria-label="Clear document text"
                       className="min-h-[30px] inline-flex items-center gap-1 text-xs font-semibold text-rose-700 hover:text-rose-800 bg-rose-50 hover:bg-rose-100 active:bg-rose-200 px-2 py-1 rounded-md border border-rose-300 shadow-2xs transition-colors cursor-pointer"
                       title="Clear input"
                     >
@@ -1807,6 +1818,7 @@ export default function App() {
                 <textarea
                   ref={editorTextareaRef}
                   value={inputText}
+                  aria-label="Raw academic notes and AI content editor"
                   onFocus={() => setIsEditorFocused(true)}
                   onBlur={() => setIsEditorFocused(false)}
                   onChange={(e) => {
@@ -1842,6 +1854,7 @@ export default function App() {
                     <button
                       key={idx}
                       type="button"
+                      aria-label={`Insert ${item.label} symbol`}
                       onMouseDown={(e) => e.preventDefault()}
                       onClick={() => handleInsertMathSnippet(item.snippet, item.offset)}
                       className="h-7 px-2 bg-white hover:bg-slate-200 active:bg-slate-300 text-slate-800 rounded text-xs font-mono border border-slate-300 shadow-2xs shrink-0 cursor-pointer transition-colors"
@@ -1880,15 +1893,40 @@ export default function App() {
               </div>
             )}
 
-            {/* Interactive Splitter Divider Bar on sm+ */}
+            {/* Interactive Splitter Divider Bar on sm+ with keyboard and ARIA support */}
             {collapsedPane === "none" && (
               <div
+                role="separator"
+                aria-orientation="vertical"
+                aria-valuenow={splitRatio}
+                aria-valuemin={25}
+                aria-valuemax={75}
+                aria-label="Editor and preview split pane resize divider"
+                tabIndex={0}
+                onKeyDown={(e) => {
+                  if (e.key === "ArrowLeft") {
+                    e.preventDefault();
+                    setSplitRatio((r) => Math.max(25, r - 5));
+                  } else if (e.key === "ArrowRight") {
+                    e.preventDefault();
+                    setSplitRatio((r) => Math.min(75, r + 5));
+                  } else if (e.key === "Home") {
+                    e.preventDefault();
+                    setSplitRatio(25);
+                  } else if (e.key === "End") {
+                    e.preventDefault();
+                    setSplitRatio(75);
+                  } else if (e.key === "Enter" || e.key === " ") {
+                    e.preventDefault();
+                    setSplitRatio(50);
+                  }
+                }}
                 onPointerDown={handleSplitterPointerDown}
                 onPointerMove={handleSplitterPointerMove}
                 onPointerUp={handleSplitterPointerUp}
                 onDoubleClick={() => setSplitRatio(50)}
-                className="hidden sm:flex flex-col items-center justify-center w-2 hover:w-3.5 bg-slate-200 hover:bg-slate-300 border-x border-slate-300/80 cursor-col-resize select-none shrink-0 transition-all group relative z-10 rounded-sm"
-                title="Drag to resize panes • Double-click to reset to 50:50"
+                className="hidden sm:flex flex-col items-center justify-center w-2 hover:w-3.5 bg-slate-200 hover:bg-slate-300 border-x border-slate-300/80 cursor-col-resize select-none shrink-0 transition-all group relative z-10 rounded-sm focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-[#881337]"
+                title="Drag or use Left/Right arrow keys to resize panes • Double-click to reset to 50:50"
               >
                 {/* Visual grip dots */}
                 <div className="flex flex-col gap-1 items-center justify-center pointer-events-none">
@@ -1905,7 +1943,8 @@ export default function App() {
                       e.stopPropagation();
                       setCollapsedPane("editor");
                     }}
-                    className="pointer-events-auto w-4 h-6 bg-white border border-slate-300 rounded shadow-xs text-slate-600 hover:text-slate-900 flex items-center justify-center text-[10px] cursor-pointer"
+                    aria-label="Collapse editor panel, maximize preview"
+                    className="pointer-events-auto w-4 h-6 bg-white border border-slate-300 rounded shadow-xs text-slate-600 hover:text-slate-900 flex items-center justify-center text-[10px] cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#881337]"
                     title="Collapse editor (full preview)"
                   >
                     <ChevronRight className="w-3 h-3" />
@@ -1916,7 +1955,8 @@ export default function App() {
                       e.stopPropagation();
                       setCollapsedPane("preview");
                     }}
-                    className="pointer-events-auto w-4 h-6 bg-white border border-slate-300 rounded shadow-xs text-slate-600 hover:text-slate-900 flex items-center justify-center text-[10px] cursor-pointer"
+                    aria-label="Collapse preview panel, maximize editor"
+                    className="pointer-events-auto w-4 h-6 bg-white border border-slate-300 rounded shadow-xs text-slate-600 hover:text-slate-900 flex items-center justify-center text-[10px] cursor-pointer focus-visible:outline-none focus-visible:ring-1 focus-visible:ring-[#881337]"
                     title="Collapse preview (full editor)"
                   >
                     <ChevronLeft className="w-3 h-3" />
@@ -2258,6 +2298,11 @@ export default function App() {
             setSkillsModalTab("skills");
             setIsSkillsManagerModalOpen(true);
           }}
+          onSkillsChanged={() => {
+            setActiveSkillsCount(skillRegistry.getEnabledSkillIds().length);
+            setCleanedMarkdown(null);
+          }}
+          onSelectSample={handleLoadSample}
           onOpenLicenseModal={() => {
             setSkillsModalTab("license");
             setIsSkillsManagerModalOpen(true);

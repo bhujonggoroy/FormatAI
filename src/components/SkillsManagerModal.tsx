@@ -418,6 +418,8 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
   const [skills, setSkills] = useState<Skill[]>(() => skillRegistry.getAllSkills());
   const [expandedSkillId, setExpandedSkillId] = useState<string | null>("math-docx");
   const [activeTab, setActiveTab] = useState<SkillsModalTab>(initialTab);
+  const modalRef = useRef<HTMLDivElement>(null);
+  const triggerElRef = useRef<HTMLElement | null>(null);
 
   // Tab Slide Bar & Scroll Controls
   const tabBarRef = useRef<HTMLDivElement>(null);
@@ -464,19 +466,60 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
     };
   }, [isOpen]);
   
-  // Handle ESC key and lock body scroll when open
+  // Handle ESC key, focus trapping, autofocus and lock body scroll when open
   useEffect(() => {
-    if (!isOpen) return;
+    if (!isOpen) {
+      if (triggerElRef.current) {
+        triggerElRef.current.focus();
+        triggerElRef.current = null;
+      }
+      return;
+    }
+
+    triggerElRef.current = document.activeElement as HTMLElement;
+
+    const timer = setTimeout(() => {
+      const closeBtn = document.getElementById("close-skills-modal-btn");
+      closeBtn?.focus();
+    }, 50);
+
     const handleKeyDown = (e: KeyboardEvent) => {
       if (e.key === "Escape") {
         e.stopPropagation();
         onClose();
+        return;
+      }
+
+      if (e.key === "Tab" && modalRef.current) {
+        const focusable = Array.from(
+          modalRef.current.querySelectorAll<HTMLElement>(
+            'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+          )
+        ).filter((el) => el.offsetParent !== null);
+
+        if (focusable.length === 0) return;
+        const first = focusable[0];
+        const last = focusable[focusable.length - 1];
+
+        if (e.shiftKey) {
+          if (document.activeElement === first) {
+            e.preventDefault();
+            last.focus();
+          }
+        } else {
+          if (document.activeElement === last) {
+            e.preventDefault();
+            first.focus();
+          }
+        }
       }
     };
+
     window.addEventListener("keydown", handleKeyDown);
     const originalOverflow = document.body.style.overflow;
     document.body.style.overflow = "hidden";
     return () => {
+      clearTimeout(timer);
       window.removeEventListener("keydown", handleKeyDown);
       document.body.style.overflow = originalOverflow;
     };
@@ -866,6 +909,7 @@ export const SkillsManagerModal: React.FC<SkillsManagerModalProps> = ({
       className="fixed inset-0 z-50 flex items-end sm:items-center justify-center p-0 sm:p-5 bg-slate-900/65 overflow-hidden animate-modal-backdrop"
     >
       <div
+        ref={modalRef}
         role="dialog"
         aria-modal="true"
         aria-labelledby="skills-manager-modal-title"
