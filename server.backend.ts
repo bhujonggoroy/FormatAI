@@ -3,6 +3,8 @@ dns.setDefaultResultOrder("ipv4first");
 
 import http from "node:http";
 import express from "express";
+import helmet from "helmet";
+import rateLimit from "express-rate-limit";
 import path from "path";
 import fs from "fs";
 import {
@@ -71,6 +73,62 @@ const PORT = getTargetPort();
 
 export function createServerApp(): express.Express {
   const app = express();
+  app.set("trust proxy", 1);
+
+  // Security Headers via helmet with tailored Content Security Policy
+  app.use(
+    helmet({
+      contentSecurityPolicy: {
+        directives: {
+          defaultSrc: ["'self'"],
+          scriptSrc: ["'self'", "'unsafe-inline'", "'unsafe-eval'"],
+          styleSrc: ["'self'", "'unsafe-inline'"],
+          fontSrc: ["'self'", "data:"],
+          imgSrc: ["'self'", "data:", "blob:", "https:"],
+          connectSrc: ["'self'", "https:", "http:"],
+          mediaSrc: ["'self'", "data:", "blob:"],
+          objectSrc: ["'none'"],
+          frameAncestors: ["'self'", "*"], // required for AI Studio preview iframe embedding
+        },
+      },
+      crossOriginEmbedderPolicy: false,
+      crossOriginResourcePolicy: { policy: "cross-origin" },
+      frameguard: false, // AI Studio preview iframe requires embedding
+    })
+  );
+
+  // Rate Limiting (per-instance in memory; Cloud Run may run several instances)
+  const rateLimitMax = parseInt(process.env.RATE_LIMIT_MAX || "30", 10);
+  const rateLimitWindowMs = parseInt(process.env.RATE_LIMIT_WINDOW_MS || "600000", 10); // 10 minutes default
+
+  const apiLimiter = rateLimit({
+    windowMs: rateLimitWindowMs,
+    max: rateLimitMax,
+    standardHeaders: true,
+    legacyHeaders: false,
+    statusCode: 429,
+    message: { error: "Too many requests. Please try again later." },
+  });
+
+  // Apply rate limiter to specified AI and conversion endpoints (health & static files are excluded)
+  const RATE_LIMITED_PATHS = [
+    "/api/polish",
+    "/api/preview-clean",
+    "/api/repair-block",
+    "/api/repair-fragment",
+    "/api/export",
+    "/api/convert",
+    "/convert",
+    "/export",
+    "/api/ai/test",
+    "/api/ai/test-all",
+    "/api/ai/models",
+    "/api/ai/providers/:id/test",
+  ];
+  RATE_LIMITED_PATHS.forEach((routePath) => {
+    app.use(routePath, apiLimiter);
+  });
+
   app.use(express.json({ limit: "10mb" }));
 
   // PWA Manifest and Service Worker routes
@@ -274,8 +332,8 @@ export function createServerApp(): express.Express {
     });
   });
 
-  // --- Modular Skills Management Endpoints ---
-  app.get("/api/skills", (req, res) => {
+  // --- Modular Skills Management Endpoints (Stateless) ---
+  app.get("/api/skills", (_req, res) => {
     try {
       res.json({ skills: skillRegistry.getAllSkills() });
     } catch (err: any) {
@@ -283,31 +341,14 @@ export function createServerApp(): express.Express {
     }
   });
 
-  app.post("/api/skills/toggle", (req, res) => {
-    try {
-      const { id, enabled } = req.body;
-      if (!id) {
-        return res.status(400).json({ error: "Missing skill id" });
-      }
-      skillRegistry.toggleSkill(id, enabled);
-      res.json({ success: true, skills: skillRegistry.getAllSkills() });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to toggle skill." });
-    }
+  app.post("/api/skills/toggle", (_req, res) => {
+    // Stateless: do not mutate shared server skillRegistry; state lives in each request's enabledSkillIds
+    res.json({ success: true, skills: skillRegistry.getAllSkills() });
   });
 
-  app.post("/api/skills/reset", (req, res) => {
-    try {
-      const { id } = req.body;
-      if (id) {
-        skillRegistry.resetSkill(id);
-      } else {
-        skillRegistry.resetAllSkills();
-      }
-      res.json({ success: true, skills: skillRegistry.getAllSkills() });
-    } catch (err: any) {
-      res.status(500).json({ error: err.message || "Failed to reset skills." });
-    }
+  app.post("/api/skills/reset", (_req, res) => {
+    // Stateless: do not mutate shared server skillRegistry; state lives in each request's enabledSkillIds
+    res.json({ success: true, skills: skillRegistry.getAllSkills() });
   });
 
   // --- Notes Cleaning using Multi-Provider AIRequestManager with Automatic Fallback ---
@@ -1852,6 +1893,7 @@ ${nextBlockText}
             accentColor: accent.replace('#', ''),
             equationFormat: equationFormat as any,
             enabledSkillIds,
+            skipPreprocess: Boolean(clientCleanedMarkdown && typeof clientCleanedMarkdown === "string" && clientCleanedMarkdown.trim()),
           });
 
           res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
@@ -1936,6 +1978,16 @@ ${nextBlockText}
     } catch (err: any) {
       res.status(500).json({ error: "Failed to read project files." });
     }
+  });
+
+  // Central error handling middleware: JSON 413 for oversized payloads, JSON 500 without stack traces
+  app.use((err: any, _req: express.Request, res: express.Response, _next: express.NextFunction) => {
+    if (err?.status === 413 || err?.type === "entity.too.large") {
+      return res.status(413).json({ error: "Payload too large. Request body exceeds limit of 10MB." });
+    }
+    const statusCode = typeof err?.statusCode === "number" ? err.statusCode : typeof err?.status === "number" ? err.status : 500;
+    const message = statusCode >= 500 ? "Internal server error" : (err?.message || "An unexpected error occurred");
+    return res.status(statusCode).json({ error: message });
   });
 
   return app;

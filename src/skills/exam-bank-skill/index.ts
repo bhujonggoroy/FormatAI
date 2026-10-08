@@ -117,8 +117,9 @@ TASKS:
     s = s.replace(/\((\d+)\s*pts?\)/gi, "[$1 Marks]");
 
     // 6. Standardize side-notes and repeated question notes
-    s = s.replace(/(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi, "**Repeated Question:** $1");
-    s = s.replace(/(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi, "**Side Note:** $1");
+    // Anchored to line start and limited to the same line => idempotent (running twice never adds extra **)
+    s = s.replace(/^[ \t]*(?:Repeated[ \t]*question|Repeat[ \t]*question|Repeated[ \t]*in|Identical[ \t]*to)[ \t]*:?[ \t]*(\S.*)$/gim, "**Repeated Question:** $1");
+    s = s.replace(/^[ \t]*(?:Side[ \t]*note|Sidenote)[ \t]*:?[ \t]*(\S.*)$/gim, "**Side Note:** $1");
 
     // 7. Matrix normalization: \begin{matrix} / \begin{pmatrix} -> \begin{bmatrix}
     s = s.replace(/\\begin\{(?:matrix|pmatrix|vmatrix)\}([\s\S]*?)\\end\{(?:matrix|pmatrix|vmatrix)\}/g, "\\begin{bmatrix}$1\\end{bmatrix}");

@@ -26,6 +26,7 @@ import type {
   TestResult,
 } from "./types.ts";
 import { DEFAULT_MANAGER_CONFIG, getInitialProviders } from "./defaultConfig.ts";
+import { assertSafeEndpoint } from "./safeUrl.ts";
 
 export interface FallbackLogEntry {
   id: string;
@@ -125,6 +126,18 @@ export class AIRequestManager {
       return { success: false, models: [], error: `Unknown provider '${providerId}'.` };
     }
 
+    if (customEndpoint && customEndpoint.trim()) {
+      try {
+        assertSafeEndpoint(customEndpoint.trim());
+      } catch (err: any) {
+        return {
+          success: false,
+          models: this.templateProviders.find(p => p.id === canonical || p.id === providerId)?.availableModels || [],
+          error: err?.message || "Invalid or prohibited custom endpoint.",
+        };
+      }
+    }
+
     try {
       const rawModels = await adapter.getModels(apiKey, { customEndpoint });
       const models: ModelInfo[] = (rawModels || []).map((m: any) =>
@@ -213,6 +226,37 @@ export class AIRequestManager {
           rawMessage: "No key provided.",
         },
       };
+    }
+
+    if (options?.customEndpoint && options.customEndpoint.trim()) {
+      try {
+        assertSafeEndpoint(options.customEndpoint.trim());
+      } catch (err: any) {
+        return {
+          success: false,
+          providerId,
+          providerName,
+          model: effectiveModel,
+          keyId,
+          maskedKey: masked,
+          latencyMs: 0,
+          errorCode: "INVALID_ENDPOINT" as any,
+          errorKind: "invalid_key",
+          errorTitle: "❌ Prohibited Endpoint",
+          errorMessage: err.message,
+          userFacingMessage: err.message,
+          diagnostic: {
+            provider: providerName,
+            keyId: keyId || "unassigned",
+            modelId: effectiveModel,
+            endpoint: options.customEndpoint,
+            maskedKey: masked,
+            result: "FORBIDDEN_ENDPOINT" as any,
+            latencyMs: 0,
+            rawMessage: err.message,
+          },
+        };
+      }
     }
 
     try {
@@ -310,6 +354,9 @@ export class AIRequestManager {
    * Resolves available server-side environment keys for a given provider if present.
    */
   public getServerEnvironmentKeys(providerId: string): string[] {
+    if (process.env.ALLOW_SERVER_KEYS_FOR_ANON === "false") {
+      return [];
+    }
     const keys: string[] = [];
     const addKey = (k?: string) => {
       const trimmed = k?.trim();
@@ -459,6 +506,25 @@ export class AIRequestManager {
 
       const adapter = this.adapters.get(provider.id);
       if (!adapter) continue;
+
+      if (provider.customEndpoint && provider.customEndpoint.trim()) {
+        try {
+          assertSafeEndpoint(provider.customEndpoint.trim());
+        } catch (err: any) {
+          fallbackChain.push({
+            providerId: provider.id,
+            providerName: provider.name,
+            keyMasked: "none",
+            keyName: "Endpoint Validation",
+            model: provider.selectedModel,
+            status: "network_error",
+            errorMessage: err?.message || "Prohibited custom endpoint",
+            latencyMs: 0,
+            timestamp: Date.now(),
+          });
+          continue;
+        }
+      }
 
       // RESOLVE USER KEYS: ONLY enabled === true keys can be used for normal generation!
       const hasConfiguredKeys = Array.isArray(provider.apiKeys) && provider.apiKeys.length > 0;

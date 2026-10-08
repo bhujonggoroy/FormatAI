@@ -14,6 +14,7 @@ import type {
 } from "../types.ts";
 import { CENTRAL_CATALOG } from "../../../shared/centralModelCatalog.ts";
 import { FORMATAI_DIAGNOSTIC_PROMPT } from "./OpenAICompatibleAdapter.ts";
+import { assertSafeEndpoint } from "../safeUrl.ts";
 
 export const CLOUDFLARE_DEFAULT_MODELS: ModelInfo[] = CENTRAL_CATALOG.cloudflare;
 
@@ -180,6 +181,7 @@ export class CloudflareAdapter implements AIProviderAdapter {
     const url =
       options?.customEndpoint ||
       `https://api.cloudflare.com/client/v4/accounts/${accountId}/ai/run/${effectiveModel}`;
+    assertSafeEndpoint(url);
 
     const messages: Array<{ role: string; content: string }> = [];
     if (req.systemPrompt) {
@@ -198,6 +200,7 @@ export class CloudflareAdapter implements AIProviderAdapter {
           Authorization: `Bearer ${key.trim()}`,
           "Content-Type": "application/json",
         },
+        redirect: "error",
         body: JSON.stringify({
           messages,
           max_tokens: options?.maxTokens ?? req.maxTokens ?? 2048,

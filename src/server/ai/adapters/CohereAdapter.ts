@@ -14,6 +14,7 @@ import type {
 } from "../types.ts";
 import { CENTRAL_CATALOG, normalizeModelInfo, DEPRECATED_OR_RETIRED_MODELS } from "../../../shared/centralModelCatalog.ts";
 import { FORMATAI_DIAGNOSTIC_PROMPT } from "./OpenAICompatibleAdapter.ts";
+import { assertSafeEndpoint } from "../safeUrl.ts";
 
 export class CohereAdapter implements AIProviderAdapter {
   readonly id = "cohere";
@@ -204,6 +205,7 @@ export class CohereAdapter implements AIProviderAdapter {
     }
 
     const endpoint = options?.customEndpoint || "https://api.cohere.com/v2/chat";
+    assertSafeEndpoint(endpoint);
     const messages: Array<{ role: string; content: string }> = [];
     if (req.systemPrompt) {
       messages.push({ role: "system", content: req.systemPrompt });
@@ -220,6 +222,7 @@ export class CohereAdapter implements AIProviderAdapter {
           "Content-Type": "application/json",
           Authorization: `Bearer ${key.trim()}`,
         },
+        redirect: "error",
         signal: controller.signal,
         body: JSON.stringify({
           model: effectiveModel,

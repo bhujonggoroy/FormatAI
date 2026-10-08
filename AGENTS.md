@@ -142,3 +142,13 @@ Tasks:
 11. Return only the corrected, standard-formatted document.
 ```
 
+## ENGINEERING RULES (added — do not remove or weaken)
+1. SINGLE SOURCE OF TRUTH: the markdown shown in the preview (`effectiveMarkdown`) is the only input for DOCX / PDF / TeX / MD / TXT export. The server must never re-run skills or math normalization on it (`skipPreprocess`). PDF must be built from the preview, never from raw input text.
+2. NORMALIZERS: all text normalizers live in src/utils/mathNormalize.ts and src/utils/mathBlocks.ts. Never copy a regex into another file. Every normalizer must be IDEMPOTENT: f(f(x)) === f(x). Note/marker regexes must be anchored to line start.
+3. MATH: display equations are `$$...$$`. A multi-line \begin{...}...\end{...} must always be inside `$$`. Word export must emit real OMML matrices (<m:m>), never text with newlines.
+4. NO PER-USER STATE in server globals (skill registry, API keys, settings). State comes from each request.
+5. SECURITY: never log secrets or full user text. Any user-supplied URL must pass assertSafeEndpoint(). Expensive routes stay rate-limited.
+6. DEFINITION OF DONE for ANY change: `npm run lint && npm run build && npm test` all pass. Never edit or delete tests just to make them pass. If a rule intentionally changes, update this file and the test together and say so in the reply.
+7. STABLE EXPORTS: server.backend.ts must keep exporting createServerApp, app (also default), getTargetPort, startStandaloneServer.
+8. PAST BUGS — NEVER REINTRODUCE: (a) export re-processing preview markdown; (b) PDF built from raw input instead of preview; (c) "****Repeated Question:** **" from non-idempotent regexes; (d) matrix split over lines without `$$`; (e) matrix exported as plain text instead of an OMML matrix.
+

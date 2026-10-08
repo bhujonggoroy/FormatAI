@@ -1294,16 +1294,22 @@ export default function App() {
           document.getElementById("preview-document-sheet") ||
           document.querySelector(".academic-paper-sheet")) as HTMLElement | null;
 
-        await downloadPreviewAsPdf({
+        const pdfOptions = {
           element: previewSheet,
           title: docTitle || safeBaseName,
-          markdown: activeContent,
+          markdown: effectiveMarkdown || activeContent,
           fontFamily,
           accentColor,
-          mode: "text",
-          onProgress: (stage) => setConversionStage(stage),
-        });
-        setSuccessMessage(`"${safeFilename}" (Text-based PDF) generated successfully!`);
+          onProgress: (stage: string) => setConversionStage(stage),
+        };
+        try {
+          await downloadPreviewAsPdf({ ...pdfOptions, mode: "visual" });
+          setSuccessMessage(`"${safeFilename}" (Preview-matched PDF) generated successfully!`);
+        } catch (visualErr) {
+          console.warn("Visual PDF failed, falling back to text PDF:", visualErr);
+          await downloadPreviewAsPdf({ ...pdfOptions, mode: "text" });
+          setSuccessMessage(`"${safeFilename}" (Text-based PDF) generated successfully!`);
+        }
         return;
       }
 

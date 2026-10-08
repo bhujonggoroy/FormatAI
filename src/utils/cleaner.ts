@@ -6,8 +6,33 @@
 
 import { executeSkillPipeline } from "../skills/pipeline.ts";
 import type { SkillMode } from "../skills/types.ts";
+import { wrapBareMathEnvironments } from "./mathBlocks.ts";
+import { cleanNotebookLMTreeArtifacts, standardizeMathToLatex } from "./mathNormalize.ts";
 
 export type FormatMode = "auto" | "study_guide" | "exam_bank";
+
+/**
+ * Standardizes "Repeated question: ..." / "Side note: ..." into bold markers.
+ * IDEMPOTENT: lines that already carry the markers are never touched again
+ * (the old regexes re-matched their own output and produced "****Repeated Question:** **").
+ */
+const NOTE_DONE_RE = /\*\*(?:Repeated Question|Side Note):\*\*/;
+function standardizeNoteMarkers(text: string, lead: string): string {
+  return text
+    .split("\n")
+    .map((line) => {
+      if (NOTE_DONE_RE.test(line)) return line;
+      return line
+        .replace(/(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi, `${lead}**Repeated Question:** $1`)
+        .replace(/(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi, `${lead}**Side Note:** $1`);
+    })
+    .join("\n");
+}
+
+/** Final, idempotent normalization shared with the server exporters so preview === export. */
+function finalizePreviewMarkdown(md: string): string {
+  return wrapBareMathEnvironments(standardizeMathToLatex(cleanNotebookLMTreeArtifacts(md)));
+}
 
 /**
  * Normalizes an arbitrary text string for insertion into a LaTeX math environment.
@@ -150,7 +175,7 @@ export function cleanClientSideNotebookLM(
 
   if (isExamBankDoc) {
     const examBankResult = formatAcademicExamBankDocument(mergedLines);
-    return normalizeMatrixSyntax(examBankResult.join("\n"));
+    return finalizePreviewMarkdown(normalizeMatrixSyntax(examBankResult.join("\n")));
   }
 
   // 4. Process lines and systematically recognize Document Title, Sections, Tables, Formulas
@@ -645,7 +670,7 @@ export function cleanClientSideNotebookLM(
     return text;
   }
 
-  return finalOutput;
+  return finalizePreviewMarkdown(finalOutput);
 }
 
 function extractBalancedBraceCleaner(str: string, startIndex: number): { content: string; endIndex: number } | null {
@@ -1006,14 +1031,7 @@ export function formatAcademicExamBankDocument(lines: string[]): string[] {
         formattedRemainder = formattedRemainder.replace(/(?:^|\s)\(?([ivxIVX]+)\)\s+/g, "\n\n**($1)** ");
 
         // Repeated question & side note
-        formattedRemainder = formattedRemainder.replace(
-          /(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi,
-          "\n\n**Repeated Question:** $1"
-        );
-        formattedRemainder = formattedRemainder.replace(
-          /(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi,
-          "\n\n**Side Note:** $1"
-        );
+        formattedRemainder = standardizeNoteMarkers(formattedRemainder, "\n\n");
 
         formattedRemainder = normalizeMatrixSyntax(formattedRemainder);
         formattedRemainder = normalizeLineMath(formattedRemainder);
@@ -1040,14 +1058,7 @@ export function formatAcademicExamBankDocument(lines: string[]): string[] {
     );
 
     // 9. Side-note & Repeated-question note standardization:
-    formattedLine = formattedLine.replace(
-      /(?:Repeated\s*question|Repeat\s*question|Repeated\s*in|Identical\s*to)\s*:?\s*(.+?)(?=\n|$)/gi,
-      "**Repeated Question:** $1"
-    );
-    formattedLine = formattedLine.replace(
-      /(?:Side\s*note|Sidenote)\s*:?\s*(.+?)(?=\n|$)/gi,
-      "**Side Note:** $1"
-    );
+    formattedLine = standardizeNoteMarkers(formattedLine, "");
 
     // 10. Matrix formatting:
     formattedLine = normalizeMatrixSyntax(formattedLine);

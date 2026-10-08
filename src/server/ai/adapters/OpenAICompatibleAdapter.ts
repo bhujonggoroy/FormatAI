@@ -12,6 +12,7 @@ import type {
   NormalizedAIError,
   TestResult,
 } from "../types.ts";
+import { assertSafeEndpoint } from "../safeUrl.ts";
 
 export const FORMATAI_DIAGNOSTIC_PROMPT =
   "Format the following mathematical expression into standard LaTeX notation: Var(X) = E[X^2] - (E[X])^2. Respond ONLY with the formatted math notation.";
@@ -53,12 +54,14 @@ export class OpenAICompatibleAdapter implements AIProviderAdapter {
 
     if (endpoint && endpoint !== this.defaultBaseUrl) {
       try {
+        assertSafeEndpoint(endpoint);
         const headers: Record<string, string> = { ...this.customHeaders };
         if (apiKey?.trim()) {
           headers["Authorization"] = `${this.authHeaderPrefix} ${apiKey.trim()}`;
         }
         const res = await fetch(endpoint, {
           headers,
+          redirect: "error",
           signal: AbortSignal.timeout(options?.timeoutMs || 8000),
         });
 
@@ -315,6 +318,7 @@ export class OpenAICompatibleAdapter implements AIProviderAdapter {
     }
 
     const endpoint = options?.customEndpoint || this.defaultBaseUrl;
+    assertSafeEndpoint(endpoint);
     const messages: Array<{ role: string; content: string }> = [];
     if (req.systemPrompt) {
       messages.push({ role: "system", content: req.systemPrompt });
@@ -334,6 +338,7 @@ export class OpenAICompatibleAdapter implements AIProviderAdapter {
       const response = await fetch(endpoint, {
         method: "POST",
         headers,
+        redirect: "error",
         signal: controller.signal,
         body: JSON.stringify({
           model: effectiveModel,
