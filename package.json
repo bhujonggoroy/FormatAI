@@ -2,7 +2,7 @@
   "name": "formatai",
   "version": "1.0.0",
   "license": "MIT",
-  "author": "Bhujonggo Roy <bhujonggoroy@gmail.com>",
+  "author": "Bhujonggo Roy",
   "private": true,
   "type": "module",
   "engines": {

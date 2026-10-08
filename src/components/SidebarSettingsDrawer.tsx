@@ -213,11 +213,11 @@ export const SidebarSettingsDrawer: React.FC<SidebarSettingsDrawerProps> = React
   isInstalled = false,
   onInstallApp,
 }) => {
-  // Collapsible groups: Appearance and Academic Tools open by default
+  // Collapsible groups: all sub-sections closed by default; user opens on demand
   const [openGroups, setOpenGroups] = useState<Record<string, boolean>>({
-    appearance: true,
+    appearance: false,
     ai: false,
-    academicTools: true,
+    academicTools: false,
     resources: false,
     pipeline: false,
     app: false,

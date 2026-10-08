@@ -179,7 +179,7 @@ export const GITHUB_REPOS_ATTRIBUTION = [
 
 export const FULL_MIT_LICENSE_TEXT = `FormatAI — MIT License
 
-Copyright (c) 2025-2026 Bhujonggo Roy <bhujonggoroy@gmail.com> & FormatAI Contributors
+Copyright (c) 2025-2026 Bhujonggo Roy & FormatAI Contributors
 
 Project: FormatAI (Academic Mathematical Editor, LaTeX Typesetter & Document Formatter)
 
