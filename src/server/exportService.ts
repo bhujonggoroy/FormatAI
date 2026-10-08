@@ -1,6 +1,7 @@
 import PDFDocument from "pdfkit";
 import { sanitizeMathToUnicode } from "./docxService.ts";
 import { generateFilenameFromContent } from "../utils/filename.ts";
+import { parseMarkdown, plainText } from "../shared/markdown/ast.ts";
 
 export { generateFilenameFromContent };
 
@@ -52,189 +53,7 @@ export function getSafeFilenameBase(title: string, defaultName = "academic_notes
 /**
  * Generates a complete, publication-ready LaTeX (.tex) document.
  */
-export function generateLaTeXDocument(markdown: string, title: string): string {
-  const safeTitle = (title || "Academic Notes")
-    .replace(/\\/g, "\\textbackslash{}")
-    .replace(/([%$&#_{}])/g, "\\$1");
-
-  const lines = markdown.split("\n");
-  const latexLines: string[] = [];
-
-  let inItemize = false;
-  let inEnumerate = false;
-
-  const closeLists = () => {
-    if (inItemize) {
-      latexLines.push("\\end{itemize}\n");
-      inItemize = false;
-    }
-    if (inEnumerate) {
-      latexLines.push("\\end{enumerate}\n");
-      inEnumerate = false;
-    }
-  };
-
-  for (let i = 0; i < lines.length; i++) {
-    const rawLine = lines[i];
-    const trimmed = rawLine.trim();
-
-    if (!trimmed) {
-      closeLists();
-      latexLines.push("");
-      continue;
-    }
-
-    // Display Math block: $$ ... $$
-    if (trimmed.startsWith("$$")) {
-      closeLists();
-      let mathContent = "";
-      if (trimmed.endsWith("$$") && trimmed.length > 2) {
-        mathContent = trimmed.slice(2, -2).trim();
-      } else {
-        const mathLines: string[] = [];
-        const first = trimmed.slice(2).trim();
-        if (first) mathLines.push(first);
-        i++;
-        while (i < lines.length) {
-          const next = lines[i].trim();
-          if (next.endsWith("$$")) {
-            const endPart = next.slice(0, -2).trim();
-            if (endPart) mathLines.push(endPart);
-            break;
-          }
-          mathLines.push(lines[i]);
-          i++;
-        }
-        mathContent = mathLines.join("\n").trim();
-      }
-      latexLines.push(`\\[\n${mathContent}\n\\]\n`);
-      continue;
-    }
-
-    // Headings
-    if (trimmed.startsWith("# ")) {
-      closeLists();
-      latexLines.push(`\\section{${escapeTextForLaTeX(trimmed.slice(2).trim())}}\n`);
-      continue;
-    }
-    if (trimmed.startsWith("## ")) {
-      closeLists();
-      latexLines.push(`\\subsection{${escapeTextForLaTeX(trimmed.slice(3).trim())}}\n`);
-      continue;
-    }
-    if (trimmed.startsWith("### ")) {
-      closeLists();
-      latexLines.push(`\\subsubsection{${escapeTextForLaTeX(trimmed.slice(4).trim())}}\n`);
-      continue;
-    }
-    if (trimmed.startsWith("#### ")) {
-      closeLists();
-      latexLines.push(`\\paragraph{${escapeTextForLaTeX(trimmed.slice(5).trim())}}\n`);
-      continue;
-    }
-
-    // Table: | col1 | col2 |
-    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-      closeLists();
-      const tableRows: string[][] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-        const row = lines[i].trim();
-        if (!/^\|[-:\s|]+\|$/.test(row)) {
-          const cells = row.slice(1, -1).split("|").map((c) => c.trim());
-          tableRows.push(cells);
-        }
-        i++;
-      }
-      i--; // Step back one line
-
-      if (tableRows.length > 0) {
-        const colCount = Math.max(...tableRows.map((r) => r.length));
-        const colAlign = "l".repeat(colCount);
-        latexLines.push("\\begin{table}[htbp]");
-        latexLines.push("\\centering");
-        latexLines.push(`\\begin{tabular}{${colAlign}}`);
-        latexLines.push("\\toprule");
-
-        const header = tableRows[0];
-        latexLines.push(header.map(formatTableCellLaTeX).join(" & ") + " \\\\");
-        latexLines.push("\\midrule");
-
-        for (let r = 1; r < tableRows.length; r++) {
-          const row = tableRows[r];
-          while (row.length < colCount) row.push("");
-          latexLines.push(row.map(formatTableCellLaTeX).join(" & ") + " \\\\");
-        }
-
-        latexLines.push("\\bottomrule");
-        latexLines.push("\\end{tabular}");
-        latexLines.push("\\end{table}\n");
-      }
-      continue;
-    }
-
-    // Bullet List
-    if (/^\s*[-*•]\s+/.test(rawLine)) {
-      if (inEnumerate) closeLists();
-      if (!inItemize) {
-        latexLines.push("\\begin{itemize}");
-        inItemize = true;
-      }
-      const itemText = trimmed.replace(/^[-*•]\s+/, "");
-      latexLines.push(`  \\item ${formatInlineLaTeX(itemText)}`);
-      continue;
-    }
-
-    // Numbered List
-    if (/^\s*\d+[\.\)]\s+/.test(trimmed)) {
-      if (inItemize) closeLists();
-      if (!inEnumerate) {
-        latexLines.push("\\begin{enumerate}");
-        inEnumerate = true;
-      }
-      const itemText = trimmed.replace(/^\d+[\.\)]\s+/, "");
-      latexLines.push(`  \\item ${formatInlineLaTeX(itemText)}`);
-      continue;
-    }
-
-    // Standard Paragraph
-    closeLists();
-    latexLines.push(`${formatInlineLaTeX(trimmed)}\n`);
-  }
-
-  closeLists();
-
-  return `\\documentclass[11pt,a4paper]{article}
-\\usepackage[utf8]{inputenc}
-\\usepackage[T1]{fontenc}
-\\usepackage{amsmath,amssymb,amsfonts,amsthm}
-\\usepackage{geometry}
-\\geometry{margin=1in}
-\\usepackage{booktabs}
-\\usepackage{hyperref}
-\\usepackage{enumitem}
-\\usepackage{microtype}
-
-\\hypersetup{
-    colorlinks=true,
-    linkcolor=blue!70!black,
-    citecolor=blue!70!black,
-    urlcolor=blue!70!black
-}
-
-\\title{\\textbf{${safeTitle}}}
-\\author{Formatted via Format AI}
-\\date{\\today}
-
-\\begin{document}
-\\maketitle
-
-${latexLines.join("\n")}
-
-\\end{document}
-`;
-}
-
-function escapeTextForLaTeX(text: string): string {
+export function escapeTextForLaTeX(text: string): string {
   return text
     .replace(/\\/g, "\\textbackslash{}")
     .replace(/([%$&#_{}])/g, "\\$1")
@@ -242,7 +61,7 @@ function escapeTextForLaTeX(text: string): string {
     .replace(/\^/g, "\\textasciicircum{}");
 }
 
-function formatInlineLaTeX(text: string): string {
+export function formatInlineLaTeX(text: string): string {
   // Protect math spans $...$ and \(...\)
   const mathSpans: string[] = [];
   let s = text.replace(/(\$[^$]+\$|\\\([^\\]+\\\))/g, (m) => {
@@ -278,88 +97,464 @@ function formatInlineLaTeX(text: string): string {
   return s;
 }
 
-function formatTableCellLaTeX(cell: string): string {
+export function formatTableCellLaTeX(cell: string): string {
   return formatInlineLaTeX(cell.trim());
 }
 
 /**
- * Generates clean Markdown (.md) document with standardized title.
+ * Generates a complete, publication-ready LaTeX (.tex) document from AST.
  */
-export function generateMarkdownDocument(markdown: string, title: string): string {
-  const trimmed = markdown.trim();
-  const safeTitle = title.trim() || "Academic Notes";
+export function generateLaTeXDocument(markdown: string, title: string): string {
+  const safeTitle = (title || "Academic Notes")
+    .replace(/\\/g, "\\textbackslash{}")
+    .replace(/([%$&#_{}])/g, "\\$1");
 
-  if (!trimmed.startsWith("# ")) {
-    return `# ${safeTitle}\n\n${trimmed}\n`;
+  const ast = parseMarkdown(markdown);
+  const latexLines: string[] = [];
+
+  function renderInline(nodeOrNodes: any): string {
+    if (!nodeOrNodes) return "";
+    if (Array.isArray(nodeOrNodes)) {
+      return nodeOrNodes.map(renderInline).join("");
+    }
+    const node = nodeOrNodes;
+    if (node.type === "text") {
+      return formatInlineLaTeX(node.value);
+    }
+    if (node.type === "inlineMath") {
+      return `$${node.value}$`;
+    }
+    if (node.type === "strong") {
+      return `\\textbf{${renderInline(node.children)}}`;
+    }
+    if (node.type === "emphasis") {
+      return `\\textit{${renderInline(node.children)}}`;
+    }
+    if (node.type === "inlineCode") {
+      return `\\texttt{${escapeTextForLaTeX(node.value)}}`;
+    }
+    if (node.type === "link") {
+      return `\\href{${node.url}}{${renderInline(node.children)}}`;
+    }
+    if (node.type === "break") {
+      return "\\\\ ";
+    }
+    if (node.type === "delete") {
+      return renderInline(node.children);
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      return renderInline(node.children);
+    }
+    if ("value" in node && typeof node.value === "string") {
+      return formatInlineLaTeX(node.value);
+    }
+    return "";
   }
-  return `${trimmed}\n`;
+
+  function renderBlock(node: any): void {
+    if (node.type === "heading") {
+      const text = renderInline(node.children).trim();
+      const depth = node.depth || 1;
+      if (depth === 1) {
+        latexLines.push(`\\section{${text}}\n`);
+      } else if (depth === 2) {
+        latexLines.push(`\\subsection{${text}}\n`);
+      } else if (depth === 3) {
+        latexLines.push(`\\subsubsection{${text}}\n`);
+      } else if (depth === 4) {
+        latexLines.push(`\\paragraph{${text}}\n`);
+      } else {
+        latexLines.push(`\\subparagraph{${text}}\n`);
+      }
+    } else if (node.type === "math") {
+      latexLines.push(`\\[\n${node.value}\n\\]\n`);
+    } else if (node.type === "table") {
+      const rows = (node.children || []).filter((c: any) => c.type === "tableRow");
+      if (rows.length > 0) {
+        const tableRows: string[][] = rows.map((r: any) =>
+          (r.children || []).map((c: any) => renderInline(c.children).trim())
+        );
+        const colCount = Math.max(...tableRows.map((r: any) => r.length), 1);
+        const colAlign = (node.align || [])
+          .map((a: string) => (a === "right" ? "r" : a === "center" ? "c" : "l"))
+          .join("")
+          .padEnd(colCount, "l")
+          .slice(0, colCount);
+
+        latexLines.push("\\begin{table}[htbp]");
+        latexLines.push("\\centering");
+        latexLines.push(`\\begin{tabular}{${colAlign}}`);
+        latexLines.push("\\toprule");
+
+        const header = tableRows[0];
+        latexLines.push(header.join(" & ") + " \\\\");
+        latexLines.push("\\midrule");
+
+        for (let r = 1; r < tableRows.length; r++) {
+          const row = tableRows[r];
+          while (row.length < colCount) row.push("");
+          latexLines.push(row.join(" & ") + " \\\\");
+        }
+
+        latexLines.push("\\bottomrule");
+        latexLines.push("\\end{tabular}");
+        latexLines.push("\\end{table}\n");
+      }
+    } else if (node.type === "list") {
+      const env = node.ordered ? "enumerate" : "itemize";
+      latexLines.push(`\\begin{${env}}`);
+      for (const item of (node.children || [])) {
+        if (item.type === "listItem") {
+          const itemText = (item.children || [])
+            .map((c: any) => {
+              if (c.type === "paragraph") return renderInline(c.children).trim();
+              if (c.type === "list") {
+                const subEnv = c.ordered ? "enumerate" : "itemize";
+                const subItems = (c.children || [])
+                  .map((sc: any) => `  \\item ${renderInline(sc.children).trim()}`)
+                  .join("\n");
+                return `\n\\begin{${subEnv}}\n${subItems}\n\\end{${subEnv}}`;
+              }
+              return renderInline(c).trim();
+            })
+            .join("\n");
+          latexLines.push(`  \\item ${itemText}`);
+        }
+      }
+      latexLines.push(`\\end{${env}}\n`);
+    } else if (node.type === "blockquote") {
+      const quoteText = (node.children || [])
+        .map((c: any) => {
+          if (c.type === "paragraph") return renderInline(c.children).trim();
+          return renderInline(c).trim();
+        })
+        .join("\n\n");
+      latexLines.push(`\\begin{quote}\n${quoteText}\n\\end{quote}\n`);
+    } else if (node.type === "code") {
+      latexLines.push(`\\begin{verbatim}\n${node.value}\n\\end{verbatim}\n`);
+    } else if (node.type === "thematicBreak") {
+      latexLines.push("\\noindent\\rule{\\textwidth}{0.4pt}\n");
+    } else if (node.type === "paragraph") {
+      latexLines.push(`${renderInline(node.children)}\n`);
+    } else {
+      const fallback = renderInline(node).trim();
+      if (fallback) latexLines.push(`${fallback}\n`);
+    }
+  }
+
+  for (const child of ast.children) {
+    renderBlock(child);
+  }
+
+  return `\\documentclass[11pt,a4paper]{article}
+\\usepackage[utf8]{inputenc}
+\\usepackage[T1]{fontenc}
+\\usepackage{amsmath,amssymb,amsfonts,amsthm}
+\\usepackage{geometry}
+\\geometry{margin=1in}
+\\usepackage{booktabs}
+\\usepackage{hyperref}
+\\usepackage{enumitem}
+\\usepackage{microtype}
+
+\\hypersetup{
+    colorlinks=true,
+    linkcolor=blue!70!black,
+    citecolor=blue!70!black,
+    urlcolor=blue!70!black
+}
+
+\\title{\\textbf{${safeTitle}}}
+\\author{Formatted via Format AI}
+\\date{\\today}
+
+\\begin{document}
+\\maketitle
+
+${latexLines.join("\n")}
+
+\\end{document}
+`;
 }
 
 /**
- * Generates Plain Text (.txt) with readable ASCII layout and Unicode math notation.
+ * Generates clean Markdown (.md) document with standardized title from AST.
+ */
+export function generateMarkdownDocument(markdown: string, title: string): string {
+  const safeTitle = title.trim() || "Academic Notes";
+  const ast = parseMarkdown(markdown);
+  const blocks: string[] = [];
+
+  const firstBlock = ast.children[0];
+  const hasH1AtTop = firstBlock && firstBlock.type === "heading" && (firstBlock as any).depth === 1;
+
+  if (!hasH1AtTop) {
+    blocks.push(`# ${safeTitle}`);
+  }
+
+  function renderInline(nodeOrNodes: any): string {
+    if (!nodeOrNodes) return "";
+    if (Array.isArray(nodeOrNodes)) {
+      return nodeOrNodes.map(renderInline).join("");
+    }
+    const node = nodeOrNodes;
+    if (node.type === "text") return node.value;
+    if (node.type === "inlineMath") return `$${node.value}$`;
+    if (node.type === "strong") return `**${renderInline(node.children)}**`;
+    if (node.type === "emphasis") return `*${renderInline(node.children)}*`;
+    if (node.type === "inlineCode") return `\`${node.value}\``;
+    if (node.type === "link") return `[${renderInline(node.children)}](${node.url})`;
+    if (node.type === "delete") return `~~${renderInline(node.children)}~~`;
+    if (node.type === "break") return "  \n";
+    if ("children" in node && Array.isArray(node.children)) return renderInline(node.children);
+    if ("value" in node && typeof node.value === "string") return node.value;
+    return "";
+  }
+
+  function renderBlock(node: any, indent = ""): string {
+    if (node.type === "heading") {
+      const hashes = "#".repeat(node.depth || 1);
+      return `${hashes} ${renderInline(node.children).trim()}`;
+    }
+    if (node.type === "math") {
+      return `$$\n${node.value.trim()}\n$$`;
+    }
+    if (node.type === "paragraph") {
+      return renderInline(node.children).trim();
+    }
+    if (node.type === "table") {
+      const rows = (node.children || []).filter((c: any) => c.type === "tableRow");
+      if (rows.length === 0) return "";
+      const tableRows: string[][] = rows.map((r: any) =>
+        (r.children || []).map((c: any) => renderInline(c.children).trim())
+      );
+      const colCount = Math.max(...tableRows.map((r: any) => r.length), 1);
+      const colWidths = new Array(colCount).fill(3);
+      for (const row of tableRows) {
+        for (let c = 0; c < row.length; c++) {
+          colWidths[c] = Math.max(colWidths[c], (row[c] || "").length);
+        }
+      }
+      const aligns = node.align || [];
+      const lines: string[] = [];
+      for (let r = 0; r < tableRows.length; r++) {
+        const row = tableRows[r];
+        const cells: string[] = [];
+        for (let c = 0; c < colCount; c++) {
+          cells.push((row[c] || "").padEnd(colWidths[c]));
+        }
+        lines.push(`| ${cells.join(" | ")} |`);
+        if (r === 0) {
+          const sepCells: string[] = [];
+          for (let c = 0; c < colCount; c++) {
+            const a = aligns[c];
+            const w = colWidths[c];
+            if (a === "center") sepCells.push(`:${"-".repeat(Math.max(1, w - 2))}:`);
+            else if (a === "right") sepCells.push(`${"-".repeat(Math.max(2, w - 1))}:`);
+            else sepCells.push("-".repeat(Math.max(3, w)));
+          }
+          lines.push(`| ${sepCells.join(" | ")} |`);
+        }
+      }
+      return lines.join("\n");
+    }
+    if (node.type === "list") {
+      const lines: string[] = [];
+      const ordered = !!node.ordered;
+      const startIdx = node.start || 1;
+      for (let i = 0; i < (node.children || []).length; i++) {
+        const item = node.children[i];
+        const prefix = ordered ? `${startIdx + i}. ` : "- ";
+        const itemChildren = item.children || [];
+        const itemLines: string[] = [];
+        for (let j = 0; j < itemChildren.length; j++) {
+          const c = itemChildren[j];
+          if (c.type === "paragraph") {
+            itemLines.push(renderInline(c.children).trim());
+          } else if (c.type === "list") {
+            itemLines.push(renderBlock(c, indent + "  "));
+          } else {
+            itemLines.push(renderBlock(c, indent + "  "));
+          }
+        }
+        const first = itemLines[0] || "";
+        const rest = itemLines.slice(1);
+        lines.push(`${indent}${prefix}${first}`);
+        for (const line of rest) {
+          lines.push(line.startsWith(indent) ? line : `${indent}  ${line}`);
+        }
+      }
+      return lines.join("\n");
+    }
+    if (node.type === "blockquote") {
+      const inner = (node.children || []).map((c: any) => renderBlock(c)).join("\n\n");
+      return inner
+        .split("\n")
+        .map((l: string) => `> ${l}`)
+        .join("\n");
+    }
+    if (node.type === "code") {
+      const lang = node.lang || "";
+      return `\`\`\`${lang}\n${node.value}\n\`\`\``;
+    }
+    if (node.type === "thematicBreak") {
+      return "---";
+    }
+    return plainText(node).trim();
+  }
+
+  for (const child of ast.children) {
+    const rendered = renderBlock(child).trim();
+    if (rendered) {
+      blocks.push(rendered);
+    }
+  }
+
+  return blocks.join("\n\n") + "\n";
+}
+
+/**
+ * Generates Plain Text (.txt) with readable ASCII layout and Unicode math notation from AST.
  */
 export function generatePlainTextDocument(markdown: string, title: string): string {
   const safeTitle = title.trim() || "Academic Notes";
   const divider = "=".repeat(Math.min(70, Math.max(safeTitle.length, 40)));
+  const ast = parseMarkdown(markdown);
+  const blocks: string[] = [];
 
-  let text = markdown;
-
-  // Convert LaTeX math in $...$ and $$...$$ to unicode notation
-  text = text.replace(/\$\$([\s\S]*?)\$\$/g, (_, math) => `\n    ${sanitizeMathToUnicode(math.trim())}\n`);
-  text = text.replace(/\$([^$\n]+)\$/g, (_, math) => sanitizeMathToUnicode(math.trim()));
-
-  // Headings
-  text = text.replace(/^#\s+(.*)$/gm, (_, h) => `\n\n${h.toUpperCase()}\n${"=".repeat(h.length)}`);
-  text = text.replace(/^##\s+(.*)$/gm, (_, h) => `\n\n${h}\n${"-".repeat(h.length)}`);
-  text = text.replace(/^###\s+(.*)$/gm, (_, h) => `\n\n--- ${h} ---`);
-
-  // Bold & Italic markdown tokens
-  text = text.replace(/\*\*([^*]+)\*\*/g, "$1");
-  text = text.replace(/\*([^*]+)\*/g, "$1");
-  text = text.replace(/`([^`]+)`/g, "$1");
-
-  // Format Tables into clean plain text columns
-  const lines = text.split("\n");
-  const processedLines: string[] = [];
-
-  for (let i = 0; i < lines.length; i++) {
-    const line = lines[i].trim();
-    if (line.startsWith("|") && line.endsWith("|")) {
-      const tableRows: string[][] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-        const row = lines[i].trim();
-        if (!/^\|[-:\s|]+\|$/.test(row)) {
-          tableRows.push(row.slice(1, -1).split("|").map((c) => c.trim()));
-        }
-        i++;
-      }
-      i--;
-
-      if (tableRows.length > 0) {
-        const colCount = Math.max(...tableRows.map((r) => r.length));
-        const colWidths = new Array(colCount).fill(0);
-        for (const row of tableRows) {
-          for (let c = 0; c < row.length; c++) {
-            colWidths[c] = Math.max(colWidths[c], row[c].length);
-          }
-        }
-
-        for (let r = 0; r < tableRows.length; r++) {
-          const row = tableRows[r];
-          const formattedCells = row.map((cell, c) => cell.padEnd(colWidths[c]));
-          processedLines.push(formattedCells.join("  |  "));
-          if (r === 0) {
-            processedLines.push(colWidths.map((w) => "-".repeat(w)).join("--+--"));
-          }
-        }
-        processedLines.push("");
-      }
-      continue;
+  function renderInline(nodeOrNodes: any): string {
+    if (!nodeOrNodes) return "";
+    if (Array.isArray(nodeOrNodes)) {
+      return nodeOrNodes.map(renderInline).join("");
     }
-    processedLines.push(lines[i]);
+    const node = nodeOrNodes;
+    if (node.type === "text") {
+      let t = node.value;
+      t = t.replace(/\$([^$\n]+)\$/g, (_: string, m: string) => sanitizeMathToUnicode(m.trim()));
+      return t;
+    }
+    if (node.type === "inlineMath") {
+      return sanitizeMathToUnicode(node.value.trim());
+    }
+    if (node.type === "strong" || node.type === "emphasis" || node.type === "delete") {
+      return renderInline(node.children);
+    }
+    if (node.type === "inlineCode") {
+      return node.value;
+    }
+    if (node.type === "link") {
+      const text = renderInline(node.children);
+      return text ? `${text} (${node.url})` : node.url;
+    }
+    if (node.type === "break") {
+      return "\n";
+    }
+    if ("children" in node && Array.isArray(node.children)) {
+      return renderInline(node.children);
+    }
+    if ("value" in node && typeof node.value === "string") {
+      return node.value;
+    }
+    return "";
   }
 
-  const body = processedLines.join("\n").replace(/\n{3,}/g, "\n\n").trim();
+  function renderBlock(node: any, indent = ""): string {
+    if (node.type === "heading") {
+      const text = renderInline(node.children).trim();
+      const depth = node.depth || 1;
+      if (depth === 1) {
+        return `${text.toUpperCase()}\n${"=".repeat(Math.max(text.length, 10))}`;
+      }
+      if (depth === 2) {
+        return `${text}\n${"-".repeat(Math.max(text.length, 10))}`;
+      }
+      if (depth === 3) {
+        return `--- ${text} ---`;
+      }
+      return `[${text}]`;
+    }
+    if (node.type === "math") {
+      const mathUnicode = sanitizeMathToUnicode(node.value.trim());
+      return mathUnicode
+        .split("\n")
+        .map((l) => `    ${l}`)
+        .join("\n");
+    }
+    if (node.type === "paragraph") {
+      return renderInline(node.children).trim();
+    }
+    if (node.type === "table") {
+      const rows = (node.children || []).filter((c: any) => c.type === "tableRow");
+      if (rows.length === 0) return "";
+      const tableRows: string[][] = rows.map((r: any) =>
+        (r.children || []).map((c: any) => renderInline(c.children).trim())
+      );
+      const colCount = Math.max(...tableRows.map((r: any) => r.length), 1);
+      const colWidths = new Array(colCount).fill(0);
+      for (const row of tableRows) {
+        for (let c = 0; c < row.length; c++) {
+          colWidths[c] = Math.max(colWidths[c], (row[c] || "").length);
+        }
+      }
+      const lines: string[] = [];
+      for (let r = 0; r < tableRows.length; r++) {
+        const row = tableRows[r];
+        const formattedCells = [];
+        for (let c = 0; c < colCount; c++) {
+          formattedCells.push((row[c] || "").padEnd(colWidths[c]));
+        }
+        lines.push(formattedCells.join("  |  "));
+        if (r === 0) {
+          lines.push(colWidths.map((w) => "-".repeat(Math.max(w, 1))).join("--+--"));
+        }
+      }
+      return lines.join("\n");
+    }
+    if (node.type === "list") {
+      const lines: string[] = [];
+      const ordered = !!node.ordered;
+      const startIdx = node.start || 1;
+      for (let i = 0; i < (node.children || []).length; i++) {
+        const item = node.children[i];
+        const prefix = ordered ? `${startIdx + i}. ` : "• ";
+        const itemText = (item.children || [])
+          .map((c: any) => {
+            if (c.type === "paragraph") return renderInline(c.children).trim();
+            if (c.type === "list") return renderBlock(c, indent + "  ");
+            return renderBlock(c, indent + "  ");
+          })
+          .join("\n");
+        lines.push(`${indent}${prefix}${itemText}`);
+      }
+      return lines.join("\n");
+    }
+    if (node.type === "blockquote") {
+      const inner = (node.children || []).map((c: any) => renderBlock(c)).join("\n\n");
+      return inner
+        .split("\n")
+        .map((l: string) => `| ${l}`)
+        .join("\n");
+    }
+    if (node.type === "code") {
+      return (node.value || "")
+        .split("\n")
+        .map((l: string) => `    ${l}`)
+        .join("\n");
+    }
+    if (node.type === "thematicBreak") {
+      return "----------------------------------------";
+    }
+    return plainText(node).trim();
+  }
+
+  for (const child of ast.children) {
+    const rendered = renderBlock(child).trim();
+    if (rendered) {
+      blocks.push(rendered);
+    }
+  }
+
+  const body = blocks.join("\n\n").trim();
   return `${divider}\n${safeTitle}\n${divider}\n\n${body}\n`;
 }
 
@@ -565,78 +760,18 @@ export async function generatePdfBuffer(
       doc.moveTo(48, doc.y).lineTo(doc.page.width - 48, doc.y).lineWidth(1.5).strokeColor(primaryColor).stroke();
       doc.moveDown(0.6);
 
-      const lines = markdown.split("\n");
-      let i = 0;
+      const ast = parseMarkdown(markdown);
 
-      while (i < lines.length) {
-        const rawLine = lines[i];
-        const trimmed = rawLine.trim();
-
-        if (!trimmed) {
-          doc.moveDown(0.35);
-          i++;
-          continue;
-        }
-
-        // 1. Display Math: $$ ... $$ or \[ ... \]
-        if (trimmed.startsWith("$$") || /^(?:\\)+\[/.test(trimmed)) {
-          let mathContent = "";
-          if (trimmed.startsWith("$$")) {
-            if (trimmed.endsWith("$$") && trimmed.length >= 4) {
-              mathContent = trimmed.slice(2, -2).trim();
-              i++;
-            } else {
-              const mathLines: string[] = [];
-              const first = trimmed.slice(2).trim();
-              if (first) mathLines.push(first);
-              i++;
-              while (i < lines.length) {
-                const next = lines[i].trim();
-                if (next.endsWith("$$")) {
-                  const endPart = next.slice(0, -2).trim();
-                  if (endPart) mathLines.push(endPart);
-                  i++;
-                  break;
-                }
-                mathLines.push(lines[i]);
-                i++;
-              }
-              mathContent = mathLines.join(" ").trim();
-            }
-          } else {
-            // \[ ... \]
-            const singleMatch = trimmed.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:\\)+\]$/);
-            if (singleMatch) {
-              mathContent = singleMatch[1].trim();
-              i++;
-            } else {
-              const mathLines: string[] = [];
-              const first = trimmed.replace(/^(?:\\)+\[\s*/, "").trim();
-              if (first) mathLines.push(first);
-              i++;
-              while (i < lines.length) {
-                const next = lines[i].trim();
-                if (/(?:\\)+\]$/.test(next)) {
-                  const endPart = next.replace(/(?:\\)+\]$/, "").trim();
-                  if (endPart) mathLines.push(endPart);
-                  i++;
-                  break;
-                }
-                mathLines.push(lines[i]);
-                i++;
-              }
-              mathContent = mathLines.join(" ").trim();
-            }
-          }
-
-          const formattedMath = formatLatexForPdf(mathContent, true);
+      for (const node of ast.children) {
+        // 1. Display Math: $$ ... $$
+        if (node.type === "math") {
+          const formattedMath = formatLatexForPdf(node.value, true);
           ensureSpace(42);
 
           doc.moveDown(0.3);
           const boxY = doc.y;
           const boxHeight = Math.max(30, doc.heightOfString(formattedMath, { width: contentWidth - 24 }) + 14);
 
-          // Subtle equation card with border
           doc.rect(48, boxY, contentWidth, boxHeight).fillColor("#F8FAFC").fill();
           doc.rect(48, boxY, contentWidth, boxHeight).lineWidth(0.75).strokeColor("#CBD5E1").stroke();
 
@@ -651,194 +786,88 @@ export async function generatePdfBuffer(
         }
 
         // 2. Headings
-        if (trimmed.startsWith("# ")) {
-          ensureSpace(40);
-          doc.moveDown(0.7);
-          const hText = formatInlineMathForPdf(trimmed.slice(2).trim());
-          doc.font(fontBold).fontSize(16).fillColor(primaryColor);
-          doc.text(hText, 48, doc.y, { width: contentWidth });
-          doc.moveDown(0.2);
-          doc.moveTo(48, doc.y).lineTo(doc.page.width - 48, doc.y).lineWidth(0.75).strokeColor("#CBD5E1").stroke();
-          doc.moveDown(0.4);
-          i++;
-          continue;
-        }
+        if (node.type === "heading") {
+          const rawHeading = plainText(node).trim();
+          const depth = (node as any).depth || 1;
 
-        if (trimmed.startsWith("## ")) {
-          ensureSpace(34);
-          doc.moveDown(0.55);
-          const hText = formatInlineMathForPdf(trimmed.slice(3).trim());
-          doc.font(fontBold).fontSize(13).fillColor(secondaryColor);
-          doc.text(hText, 48, doc.y, { width: contentWidth });
-          doc.moveDown(0.25);
-          i++;
-          continue;
-        }
+          // Section Header (e.g. Section A: Descriptive Statistics...)
+          const secMatch = rawHeading.match(/^(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i);
+          if (secMatch) {
+            const sectionLetter = secMatch[1].toUpperCase();
+            const sectionDesc = secMatch[2].trim().replace(/^[:\s-]+/, "").replace(/^\*+|\*+$/g, "");
+            const fullSectionTitle = `Section ${sectionLetter}:${sectionDesc ? " " + sectionDesc : ""}`;
+            const formattedTitle = formatInlineMathForPdf(fullSectionTitle);
 
-        if (trimmed.startsWith("### ")) {
-          ensureSpace(28);
-          doc.moveDown(0.45);
-          const hText = formatInlineMathForPdf(trimmed.slice(4).trim());
-          // Circular accent dot indicator
-          const dotY = doc.y + 4.5;
-          doc.circle(52, dotY, 2.5).fillColor(primaryColor).fill();
-          doc.font(fontBold).fontSize(11).fillColor("#1E293B");
-          doc.text(hText, 60, doc.y, { width: contentWidth - 12 });
-          doc.moveDown(0.2);
-          i++;
-          continue;
-        }
-
-        if (trimmed.startsWith("#### ")) {
-          ensureSpace(24);
-          doc.moveDown(0.35);
-          const hText = formatInlineMathForPdf(trimmed.slice(5).trim());
-          doc.font(fontBold).fontSize(9.5).fillColor("#475569");
-          doc.text(hText.toUpperCase(), 48, doc.y, { width: contentWidth });
-          doc.moveDown(0.2);
-          i++;
-          continue;
-        }
-
-        // 3. 4-digit Year Header (e.g. 2019, 2025)
-        if (/^\d{4}$/.test(trimmed)) {
-          ensureSpace(30);
-          doc.moveDown(0.5);
-          doc.font(fontBold).fontSize(15).fillColor(primaryColor);
-          doc.text(trimmed, 48, doc.y, { width: contentWidth });
-          doc.moveDown(0.15);
-          i++;
-          continue;
-        }
-
-        // 4. Exam Title (e.g. Final Examination, Midterm Examination)
-        if (/^(?:\*{0,2})(?:Final|Midterm|Mid-Semester)\s+Examination(?:\*{0,2})$/i.test(trimmed)) {
-          const cleanExam = trimmed.replace(/^\*+|\*+$/g, "").trim();
-          ensureSpace(22);
-          doc.font(fontItalic).fontSize(11).fillColor("#475569");
-          doc.text(cleanExam, 48, doc.y, { width: contentWidth });
-          doc.moveDown(0.3);
-          i++;
-          continue;
-        }
-
-        // 5. Section Header (e.g. Section A: Descriptive Statistics...)
-        if (/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i.test(trimmed)) {
-          const match = trimmed.match(/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i)!;
-          const sectionLetter = match[1].toUpperCase();
-          const sectionDesc = match[2].trim().replace(/^[:\s-]+/, "").replace(/^\*+|\*+$/g, "");
-          const fullSectionTitle = `Section ${sectionLetter}:${sectionDesc ? " " + sectionDesc : ""}`;
-          const formattedTitle = formatInlineMathForPdf(fullSectionTitle);
-
-          ensureSpace(32);
-          doc.moveDown(0.5);
-          doc.font(fontBold).fontSize(12.5).fillColor(primaryColor);
-          doc.text(formattedTitle, 48, doc.y, { width: contentWidth });
-          doc.moveDown(0.15);
-          doc.moveTo(48, doc.y).lineTo(doc.page.width - 48, doc.y).lineWidth(0.5).strokeColor("#E2E8F0").stroke();
-          doc.moveDown(0.3);
-          i++;
-          continue;
-        }
-
-        // 6. Topic Header (e.g. Topic 1: ...)
-        if (/^(?:#{2,4}\s*)?(?:\*{0,2})(Topic\s+\d+:?\s*.*?)(?:\*{0,2})$/i.test(trimmed)) {
-          const topicText = trimmed.replace(/^#{2,4}\s*/, "").replace(/^\*+|\*+$/g, "").trim();
-          const formattedTopic = formatInlineMathForPdf(topicText);
-
-          ensureSpace(26);
-          doc.moveDown(0.35);
-          const dotY = doc.y + 4;
-          doc.circle(52, dotY, 2).fillColor(primaryColor).fill();
-          doc.font(fontBold).fontSize(10.5).fillColor("#1E293B");
-          doc.text(formattedTopic, 60, doc.y, { width: contentWidth - 12 });
-          doc.moveDown(0.2);
-          i++;
-          continue;
-        }
-
-        // 7. Pure Data Array: Centered comma-separated sequence of numbers
-        if (/^(\s*\d+(?:\.\d+)?(?:,\s*|\s+)){3,}\d+(?:\.\d+)?(?:,\s*)?$/.test(trimmed)) {
-          const tokens = trimmed.replace(/,/g, " ").trim().split(/\s+/);
-          const formattedData = tokens.join(", ");
-          ensureSpace(24);
-
-          doc.moveDown(0.2);
-          const dataY = doc.y;
-          doc.rect(58, dataY, contentWidth - 20, 18).fillColor("#F8FAFC").fill();
-          doc.font(fontMono).fontSize(8.5).fillColor("#334155");
-          doc.text(formattedData, 62, dataY + 4, {
-            width: contentWidth - 28,
-            align: "center",
-          });
-          doc.y = dataY + 22;
-          i++;
-          continue;
-        }
-
-        // 8. Sub-questions & Lettered list items: e.g. a. Arithmetic mean... or (i) Draw...
-        const subMatch = trimmed.match(/^\s*(?:[-*•o]\s+)?(?:\*{0,2})([a-z]\.|\([a-z]\)|[a-z]\)|\(i{1,3}\)|[i-v]+\.|\([0-9]+\))\s*(.*)$/i);
-        if (subMatch) {
-          const prefix = subMatch[1].replace(/^\(/, "").replace(/\)$/, ".");
-          const subContent = formatInlineMathForPdf(
-            subMatch[2].replace(/^\*+|\*+$/g, "").trim()
-          );
-
-          ensureSpace(20);
-          const currentY = doc.y;
-          doc.font(fontBold).fontSize(9.5).fillColor("#0F172A");
-          doc.text(prefix, 64, currentY, { width: 22, align: "left" });
-          doc.font(fontRegular).fontSize(9.5).fillColor("#334155");
-          doc.text(subContent, 88, currentY, {
-            width: contentWidth - 40,
-            lineGap: 2.5,
-          });
-          doc.moveDown(0.15);
-          i++;
-          continue;
-        }
-
-        // 9. Metadata and Side notes (Frequency: ..., Side note: ...)
-        const metaMatch = trimmed.match(/^(?:\s*[-*•o]\s+)?(?:\*{0,2})(\(?Side note:|\(?Note:|Frequency:)\s*(.*?)(?:\*{0,2})$/i);
-        if (metaMatch) {
-          const label = metaMatch[1];
-          const noteContent = formatInlineMathForPdf(
-            metaMatch[2].replace(/^\*+|\*+$/g, "").trim()
-          );
-          const isSideNote = /side note|note/i.test(label);
-
-          ensureSpace(18);
-          doc.font(isSideNote ? fontItalic : fontBold).fontSize(8.5).fillColor("#64748B");
-          doc.text(`${label} ${noteContent}`, 64, doc.y, {
-            width: contentWidth - 24,
-            lineGap: 2,
-          });
-          doc.moveDown(0.15);
-          i++;
-          continue;
-        }
-
-        // 10. Tables: | col1 | col2 |
-        if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-          const tableRows: string[][] = [];
-          while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-            const rowText = lines[i].trim();
-            if (!/^\|[-:\s|]+\|$/.test(rowText)) {
-              tableRows.push(rowText.slice(1, -1).split("|").map((c) => c.trim()));
-            }
-            i++;
+            ensureSpace(32);
+            doc.moveDown(0.5);
+            doc.font(fontBold).fontSize(12.5).fillColor(primaryColor);
+            doc.text(formattedTitle, 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.15);
+            doc.moveTo(48, doc.y).lineTo(doc.page.width - 48, doc.y).lineWidth(0.5).strokeColor("#E2E8F0").stroke();
+            doc.moveDown(0.3);
+            continue;
           }
 
-          if (tableRows.length > 0) {
+          if (depth === 1) {
+            ensureSpace(40);
+            doc.moveDown(0.7);
+            const hText = formatInlineMathForPdf(rawHeading);
+            doc.font(fontBold).fontSize(16).fillColor(primaryColor);
+            doc.text(hText, 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.2);
+            doc.moveTo(48, doc.y).lineTo(doc.page.width - 48, doc.y).lineWidth(0.75).strokeColor("#CBD5E1").stroke();
+            doc.moveDown(0.4);
+            continue;
+          }
+
+          if (depth === 2) {
+            ensureSpace(34);
+            doc.moveDown(0.55);
+            const hText = formatInlineMathForPdf(rawHeading);
+            doc.font(fontBold).fontSize(13).fillColor(secondaryColor);
+            doc.text(hText, 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.25);
+            continue;
+          }
+
+          if (depth === 3) {
+            ensureSpace(28);
+            doc.moveDown(0.45);
+            const hText = formatInlineMathForPdf(rawHeading);
+            const dotY = doc.y + 4.5;
+            doc.circle(52, dotY, 2.5).fillColor(primaryColor).fill();
+            doc.font(fontBold).fontSize(11).fillColor("#1E293B");
+            doc.text(hText, 60, doc.y, { width: contentWidth - 12 });
+            doc.moveDown(0.2);
+            continue;
+          }
+
+          if (depth >= 4) {
+            ensureSpace(24);
             doc.moveDown(0.35);
-            const colCount = Math.max(...tableRows.map((r) => r.length));
+            const hText = formatInlineMathForPdf(rawHeading);
+            doc.font(fontBold).fontSize(9.5).fillColor("#475569");
+            doc.text(hText.toUpperCase(), 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.2);
+            continue;
+          }
+        }
+
+        // 3. Tables
+        if (node.type === "table") {
+          const rows = ((node as any).children || []).filter((c: any) => c.type === "tableRow");
+          if (rows.length > 0) {
+            doc.moveDown(0.35);
+            const tableRows: string[][] = rows.map((r: any) =>
+              ((r as any).children || []).map((c: any) => plainText(c).trim())
+            );
+            const colCount = Math.max(...tableRows.map((r) => r.length), 1);
             const colWidth = contentWidth / colCount;
 
             for (let r = 0; r < tableRows.length; r++) {
               const isHeader = r === 0;
               const rowCells = tableRows[r];
 
-              // Calculate maximum cell text height to prevent ANY truncation
               let maxCellHeight = 12;
               const formattedCells = rowCells.map((c) => formatInlineMathForPdf(c.replace(/\*\*([^*]+)\*\*/g, "$1")));
 
@@ -854,17 +883,14 @@ export async function generatePdfBuffer(
 
               const rowY = doc.y;
 
-              // Row background fill
               if (isHeader) {
                 doc.rect(48, rowY, contentWidth, rowHeight).fillColor("#F1F5F9").fill();
               } else if (r % 2 === 1) {
                 doc.rect(48, rowY, contentWidth, rowHeight).fillColor("#F8FAFC").fill();
               }
 
-              // Row border outline
               doc.rect(48, rowY, contentWidth, rowHeight).lineWidth(0.5).strokeColor("#CBD5E1").stroke();
 
-              // Draw cell content
               doc.font(isHeader ? fontBold : fontRegular).fontSize(isHeader ? 9 : 8.5);
               doc.fillColor(isHeader ? "#0F172A" : "#334155");
 
@@ -875,7 +901,6 @@ export async function generatePdfBuffer(
                   align: "left",
                   lineGap: 1.5,
                 });
-                // Vertical divider line between columns
                 if (c > 0) {
                   doc.moveTo(48 + c * colWidth, rowY).lineTo(48 + c * colWidth, rowY + rowHeight).lineWidth(0.5).strokeColor("#E2E8F0").stroke();
                 }
@@ -888,9 +913,46 @@ export async function generatePdfBuffer(
           continue;
         }
 
-        // 11. Blockquotes / Formula callouts: > ...
-        if (trimmed.startsWith("> ")) {
-          const quoteText = formatInlineMathForPdf(trimmed.slice(2).trim());
+        // 4. Lists
+        if (node.type === "list") {
+          const ordered = !!(node as any).ordered;
+          const startNum = (node as any).start || 1;
+          const items = (node as any).children || [];
+
+          for (let idx = 0; idx < items.length; idx++) {
+            const item = items[idx];
+            const itemText = formatInlineMathForPdf(
+              plainText(item).replace(/\*\*([^*]+)\*\*/g, "$1").trim()
+            );
+
+            ensureSpace(18);
+            const currentY = doc.y;
+
+            if (ordered) {
+              const prefix = `${startNum + idx}.`;
+              doc.font(fontBold).fontSize(9.5).fillColor(primaryColor);
+              doc.text(prefix, 50, currentY, { width: 18, align: "left" });
+              doc.font(fontRegular).fontSize(9.5).fillColor("#1E293B");
+              doc.text(itemText, 70, currentY, {
+                width: contentWidth - 22,
+                lineGap: 2.5,
+              });
+              doc.moveDown(0.15);
+            } else {
+              doc.font(fontRegular).fontSize(9.5).fillColor("#334155");
+              doc.text("• " + itemText, 56, currentY, {
+                width: contentWidth - 16,
+                lineGap: 2.5,
+              });
+              doc.moveDown(0.1);
+            }
+          }
+          continue;
+        }
+
+        // 5. Blockquote
+        if (node.type === "blockquote") {
+          const quoteText = formatInlineMathForPdf(plainText(node).trim());
           const quoteHeight = doc.heightOfString(quoteText, { width: contentWidth - 24 }) + 12;
           ensureSpace(quoteHeight);
 
@@ -906,65 +968,129 @@ export async function generatePdfBuffer(
           });
 
           doc.y = quoteY + quoteHeight + 4;
-          i++;
           continue;
         }
 
-        // 12. Bullet list items: - or * or •
-        if (/^\s*[-*•]\s+/.test(rawLine)) {
-          const itemText = formatInlineMathForPdf(
-            trimmed.replace(/^[-*•]\s+/, "").replace(/\*\*([^*]+)\*\*/g, "$1")
-          );
-          ensureSpace(18);
-          doc.font(fontRegular).fontSize(9.5).fillColor("#334155");
-          doc.text("• " + itemText, 56, doc.y, {
+        // 6. Code
+        if (node.type === "code") {
+          const codeText = (node as any).value || "";
+          const codeHeight = doc.heightOfString(codeText, { width: contentWidth - 24 }) + 12;
+          ensureSpace(codeHeight);
+
+          doc.moveDown(0.25);
+          const codeY = doc.y;
+          doc.rect(48, codeY, contentWidth, codeHeight).fillColor("#F8FAFC").fill();
+          doc.rect(48, codeY, contentWidth, codeHeight).lineWidth(0.5).strokeColor("#CBD5E1").stroke();
+
+          doc.font(fontMono).fontSize(8.5).fillColor("#1E293B");
+          doc.text(codeText, 56, codeY + 6, {
             width: contentWidth - 16,
-            lineGap: 2.5,
+            lineGap: 2,
           });
-          doc.moveDown(0.1);
-          i++;
+
+          doc.y = codeY + codeHeight + 4;
           continue;
         }
 
-        // 13. Numbered list item: 1. or 2)
-        if (/^\s*\d+[\.\)]\s+/.test(trimmed)) {
-          const match = trimmed.match(/^(\d+[\.\)])\s+(.*)$/);
-          if (match) {
-            const prefix = match[1];
-            const itemText = formatInlineMathForPdf(
-              match[2].replace(/\*\*([^*]+)\*\*/g, "$1")
+        // 7. Paragraph
+        if (node.type === "paragraph") {
+          const trimmed = plainText(node).trim();
+          if (!trimmed) continue;
+
+          // 4-digit Year Header (e.g. 2019, 2025)
+          if (/^\d{4}$/.test(trimmed)) {
+            ensureSpace(30);
+            doc.moveDown(0.5);
+            doc.font(fontBold).fontSize(15).fillColor(primaryColor);
+            doc.text(trimmed, 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.15);
+            continue;
+          }
+
+          // Exam Title (e.g. Final Examination)
+          if (/^(?:\*{0,2})(?:Final|Midterm|Mid-Semester)\s+Examination(?:\*{0,2})$/i.test(trimmed)) {
+            const cleanExam = trimmed.replace(/^\*+|\*+$/g, "").trim();
+            ensureSpace(22);
+            doc.font(fontItalic).fontSize(11).fillColor("#475569");
+            doc.text(cleanExam, 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.3);
+            continue;
+          }
+
+          // Section Header
+          const secMatch = trimmed.match(/^(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i);
+          if (secMatch) {
+            const sectionLetter = secMatch[1].toUpperCase();
+            const sectionDesc = secMatch[2].trim().replace(/^[:\s-]+/, "").replace(/^\*+|\*+$/g, "");
+            const fullSectionTitle = `Section ${sectionLetter}:${sectionDesc ? " " + sectionDesc : ""}`;
+            const formattedTitle = formatInlineMathForPdf(fullSectionTitle);
+
+            ensureSpace(32);
+            doc.moveDown(0.5);
+            doc.font(fontBold).fontSize(12.5).fillColor(primaryColor);
+            doc.text(formattedTitle, 48, doc.y, { width: contentWidth });
+            doc.moveDown(0.15);
+            doc.moveTo(48, doc.y).lineTo(doc.page.width - 48, doc.y).lineWidth(0.5).strokeColor("#E2E8F0").stroke();
+            doc.moveDown(0.3);
+            continue;
+          }
+
+          // Sub-questions & Lettered list items: e.g. (a) Define... or a. Define...
+          const subMatch = trimmed.match(/^\s*(?:[-*•o]\s+)?(?:\*{0,2})([a-z]\.|\([a-z]\)|[a-z]\)|\(i{1,3}\)|[i-v]+\.|\([0-9]+\))\s*(.*)$/i);
+          if (subMatch) {
+            const prefix = subMatch[1].replace(/^\(/, "").replace(/\)$/, ".");
+            const subContent = formatInlineMathForPdf(
+              subMatch[2].replace(/^\*+|\*+$/g, "").trim()
             );
-            ensureSpace(18);
+
+            ensureSpace(20);
             const currentY = doc.y;
-            doc.font(fontBold).fontSize(9.5).fillColor(primaryColor);
-            doc.text(prefix, 50, currentY, { width: 18, align: "left" });
-            doc.font(fontRegular).fontSize(9.5).fillColor("#1E293B");
-            doc.text(itemText, 70, currentY, {
-              width: contentWidth - 22,
+            doc.font(fontBold).fontSize(9.5).fillColor("#0F172A");
+            doc.text(prefix, 64, currentY, { width: 22, align: "left" });
+            doc.font(fontRegular).fontSize(9.5).fillColor("#334155");
+            doc.text(subContent, 88, currentY, {
+              width: contentWidth - 40,
               lineGap: 2.5,
             });
             doc.moveDown(0.15);
-            i++;
             continue;
           }
+
+          // Metadata and Side notes
+          const metaMatch = trimmed.match(/^(?:\s*[-*•o]\s+)?(?:\*{0,2})(\(?Side note:|\(?Note:|Frequency:)\s*(.*?)(?:\*{0,2})$/i);
+          if (metaMatch) {
+            const label = metaMatch[1];
+            const noteContent = formatInlineMathForPdf(
+              metaMatch[2].replace(/^\*+|\*+$/g, "").trim()
+            );
+            const isSideNote = /side note|note/i.test(label);
+
+            ensureSpace(18);
+            doc.font(isSideNote ? fontItalic : fontBold).fontSize(8.5).fillColor("#64748B");
+            doc.text(`${label} ${noteContent}`, 64, doc.y, {
+              width: contentWidth - 24,
+              lineGap: 2,
+            });
+            doc.moveDown(0.15);
+            continue;
+          }
+
+          // Regular Paragraph
+          const cleanParagraph = formatInlineMathForPdf(
+            trimmed
+              .replace(/\*\*([^*]+)\*\*/g, "$1")
+              .replace(/\*([^*]+)\*/g, "$1")
+              .replace(/`([^`]+)`/g, "$1")
+          );
+
+          ensureSpace(20);
+          doc.font(fontRegular).fontSize(9.5).fillColor("#1E293B");
+          doc.text(cleanParagraph, 48, doc.y, {
+            width: contentWidth,
+            lineGap: 2.8,
+          });
+          doc.moveDown(0.2);
         }
-
-        // 14. Regular Paragraph
-        const cleanParagraph = formatInlineMathForPdf(
-          trimmed
-            .replace(/\*\*([^*]+)\*\*/g, "$1")
-            .replace(/\*([^*]+)\*/g, "$1")
-            .replace(/`([^`]+)`/g, "$1")
-        );
-
-        ensureSpace(20);
-        doc.font(fontRegular).fontSize(9.5).fillColor("#1E293B");
-        doc.text(cleanParagraph, 48, doc.y, {
-          width: contentWidth,
-          lineGap: 2.8,
-        });
-        doc.moveDown(0.2);
-        i++;
       }
 
       // Running Headers and Footers on all pages

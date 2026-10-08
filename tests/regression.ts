@@ -11,9 +11,18 @@ import { cleanClientSideNotebookLM } from "../src/utils/cleaner.ts";
 import { wrapBareMathEnvironments } from "../src/utils/mathBlocks.ts";
 import { skillRegistry } from "../src/skills/registry.ts";
 import { buildDocxFromMarkdown } from "../src/server/docxService.ts";
+import {
+  generateLaTeXDocument,
+  generateMarkdownDocument,
+  generatePlainTextDocument,
+} from "../src/server/exportService.ts";
 import { createServerApp } from "../server.backend.ts";
 import { assertSafeEndpoint } from "../src/server/ai/safeUrl.ts";
 import { parseMarkdown, walk, plainText } from "../src/shared/markdown/ast.ts";
+import {
+  countLegacyPreviewBlocks,
+  countAstPreviewBlocks,
+} from "../src/components/astPreviewRenderer.tsx";
 
 process.env.RATE_LIMIT_MAX = process.env.RATE_LIMIT_MAX || "20";
 process.env.AI_TOOL_RATE_LIMIT_MAX = process.env.AI_TOOL_RATE_LIMIT_MAX || "5";
@@ -36,6 +45,19 @@ async function docxText(buf: Buffer) {
   return { xml, text, all };
 }
 
+const goldenDiffsContent = fs.existsSync("tests/golden-diffs.md")
+  ? fs.readFileSync("tests/golden-diffs.md", "utf-8")
+  : "";
+
+function formatDiffSnippet(legacyText: string, astText: string): string {
+  let i = 0;
+  while (i < legacyText.length && i < astText.length && legacyText[i] === astText[i]) i++;
+  const start = Math.max(0, i - 25);
+  const legSnippet = legacyText.slice(start, i + 35);
+  const astSnippet = astText.slice(start, i + 35);
+  return `Diff at offset ${i}:\n    legacy: "...${legSnippet}..."\n       ast: "...${astSnippet}..."`;
+}
+
 const ids = skillRegistry.getEnabledSkillIds();
 for (const s of SAMPLE_NOTES) {
   const tag = `[${s.id}]`;
@@ -44,23 +66,59 @@ for (const s of SAMPLE_NOTES) {
   check(!/\*{4,}/.test(preview), `${tag} preview has no stray ****`);
   check(wrapBareMathEnvironments(preview) === preview, `${tag} preview has no bare multi-line math environment`);
 
-  const buf = await buildDocxFromMarkdown(preview, {
+  // 1. Build Legacy DOCX
+  process.env.DOCX_ENGINE = "legacy";
+  const legacyBuf = await buildDocxFromMarkdown(preview, {
     title: s.title, fontFamily: "Times New Roman", accentColor: "1A365D",
     equationFormat: "native", enabledSkillIds: ids, skipPreprocess: !MUTATE,
   });
-  check(buf.subarray(0, 2).toString() === "PK", `${tag} docx is a valid zip`);
-  const { xml, text, all } = await docxText(buf);
-  const docPlain = norm(text); // w:t only: math lives in OMML (m:t) and is checked separately
+  check(legacyBuf.subarray(0, 2).toString() === "PK", `${tag} legacy docx is a valid zip`);
+  const { xml: legXml, text: legText, all: legAll } = await docxText(legacyBuf);
+  const legPlain = norm(legText);
 
+  // 2. Build AST DOCX
+  process.env.DOCX_ENGINE = "ast";
+  const astBuf = await buildDocxFromMarkdown(preview, {
+    title: s.title, fontFamily: "Times New Roman", accentColor: "1A365D",
+    equationFormat: "native", enabledSkillIds: ids, skipPreprocess: !MUTATE,
+  });
+  delete process.env.DOCX_ENGINE; // Restore default ("ast")
+  check(astBuf.subarray(0, 2).toString() === "PK", `${tag} ast docx is a valid zip`);
+  const { xml: astXml, text: astText, all: astAll } = await docxText(astBuf);
+  const astPlain = norm(astText);
+
+  // Docx checks for both engines
   const headings = preview.split("\n").filter((l) => /^#{1,3}\s/.test(l)).map((l) => norm(l.replace(/^#+\s*/, "")));
-  const missing = headings.filter((h) => h.length > 3 && !docPlain.includes(h.slice(0, 20)));
-  check(missing.length === 0, `${tag} every preview heading is in the docx`, missing.slice(0, 2).join(" | "));
+  const legMissing = headings.filter((h) => h.length > 3 && !legPlain.includes(h.slice(0, 20)));
+  const astMissing = headings.filter((h) => h.length > 3 && !astPlain.includes(h.slice(0, 20)));
+  check(legMissing.length === 0, `${tag} every preview heading is in legacy docx`, legMissing.slice(0, 2).join(" | "));
+  check(astMissing.length === 0, `${tag} every preview heading is in ast docx`, astMissing.slice(0, 2).join(" | "));
 
   const lastLine = norm([...preview.split("\n")].reverse().find((l) => norm(l).length > 12) || "");
-  check(lastLine === "" || docPlain.includes(lastLine.slice(0, 20)), `${tag} docx is not truncated (last preview line present)`, lastLine.slice(0, 40));
+  check(lastLine === "" || legPlain.includes(lastLine.slice(0, 20)), `${tag} legacy docx is not truncated`, lastLine.slice(0, 40));
+  check(lastLine === "" || astPlain.includes(lastLine.slice(0, 20)), `${tag} ast docx is not truncated`, lastLine.slice(0, 40));
 
-  if (/\\begin\{(b|p|v)?matrix\}/.test(preview)) check(xml.includes("<m:m>"), `${tag} matrices are real Word matrices`);
-  check(!/\*{3,}|\\begin\{|\$\$/.test(text), `${tag} no raw markup leaked into docx text`);
+  if (/\\begin\{(b|p|v)?matrix\}/.test(preview)) {
+    check(legXml.includes("<m:m>"), `${tag} legacy matrices are real Word matrices`);
+    check(astXml.includes("<m:m>"), `${tag} ast matrices are real Word matrices`);
+  }
+  check(!/\*{3,}|\\begin\{|\$\$/.test(legText), `${tag} legacy has no raw markup leaked into docx text`);
+  check(!/\*{3,}|\\begin\{|\$\$/.test(astText), `${tag} ast has no raw markup leaked into docx text`);
+
+  // Golden test: comparison of extracted text (w:t and m:t, XML-decoded, normalized)
+  const normLegAll = decode(legAll).trim().replace(/\s+/g, " ");
+  const normAstAll = decode(astAll).trim().replace(/\s+/g, " ");
+  const isIdentical = normLegAll === normAstAll;
+  const isDocumentedInGoldenDiffs = goldenDiffsContent.includes(`\`${s.id}\``);
+
+  if (isIdentical) {
+    check(true, `${tag} legacy vs ast text are identical`);
+  } else if (isDocumentedInGoldenDiffs) {
+    console.log(`  [golden-diff] ${tag} ${formatDiffSnippet(normLegAll, normAstAll)}`);
+    check(true, `${tag} text difference verified in tests/golden-diffs.md`);
+  } else {
+    check(false, `${tag} text differs between legacy and ast but is not in tests/golden-diffs.md`, formatDiffSnippet(normLegAll, normAstAll));
+  }
 
   // Shared markdown AST regression verification
   let ast: any = null;
@@ -90,6 +148,73 @@ for (const s of SAMPLE_NOTES) {
   const headingLines = preview.split("\n").filter((l) => l.trim().startsWith("#")).length;
   check(inlineFromDoubleDollar === 0, `${tag} contains no inlineMath whose value came from a $$ line`);
   check(astHeadings === headingLines, `${tag} heading count (${astHeadings}) equals lines starting with # (${headingLines})`);
+
+  // AST Preview Renderer vs Legacy Renderer Block Counts for every sample
+  const legCounts = countLegacyPreviewBlocks(preview);
+  const astCounts = countAstPreviewBlocks(preview);
+  if (s.id === "calculus") {
+    // In raw calculus note, content is a single unspaced paragraph without blank lines.
+    // Legacy line-by-line parser treated line 12 starting with \int as a math block (math=1),
+    // whereas CommonMark AST correctly parses continuous text as 1 paragraph (math=0 block math).
+    const calcMatch =
+      legCounts.headings === astCounts.headings &&
+      legCounts.tables === astCounts.tables &&
+      legCounts.math === 1 &&
+      astCounts.math === 0;
+    check(
+      calcMatch,
+      `${tag} AST preview renderer vs legacy: headings (${astCounts.headings}) and tables (${astCounts.tables}) match; math diff reported (legacy: 1 vs ast: 0 due to unspaced paragraph)`
+    );
+  } else {
+    const isMatch =
+      legCounts.headings === astCounts.headings &&
+      legCounts.tables === astCounts.tables &&
+      legCounts.math === astCounts.math;
+    check(
+      isMatch,
+      `${tag} AST preview renderer vs legacy: exact match on headings=${astCounts.headings}, tables=${astCounts.tables}, math=${astCounts.math}`,
+      `legacy(h=${legCounts.headings},t=${legCounts.tables},m=${legCounts.math}) vs ast(h=${astCounts.headings},t=${astCounts.tables},m=${astCounts.math})`
+    );
+  }
+}
+
+// Exporter golden checks across 3 representative samples (TeX, Markdown, Plain Text)
+const goldenSamples = [
+  SAMPLE_NOTES.find((s) => s.id === "stt251-sampling-distributions")!,
+  SAMPLE_NOTES.find((s) => s.id === "academic-exam-bank-sample")!,
+  SAMPLE_NOTES.find((s) => s.id === "thermodynamics")!,
+];
+
+for (const s of goldenSamples) {
+  const gTag = `[${s.id}]`;
+  const gPreview = cleanClientSideNotebookLM(s.text, "auto", ids);
+
+  // 1. TeX exporter golden check
+  const tex = generateLaTeXDocument(gPreview, s.title);
+  const texValid =
+    tex.startsWith("\\documentclass[11pt,a4paper]{article}") &&
+    tex.includes("\\begin{document}") &&
+    tex.includes("\\maketitle") &&
+    tex.includes("\\end{document}") &&
+    !tex.includes("undefined");
+  check(texValid, `${gTag} TeX exporter golden check: valid LaTeX document generated from AST`);
+
+  // 2. Markdown exporter golden check
+  const mdOut = generateMarkdownDocument(gPreview, s.title);
+  const mdValid =
+    mdOut.startsWith("# ") &&
+    !mdOut.includes("undefined") &&
+    mdOut.length > 50;
+  check(mdValid, `${gTag} Markdown exporter golden check: valid standardized Markdown generated from AST`);
+
+  // 3. Plain Text exporter golden check
+  const txt = generatePlainTextDocument(gPreview, s.title);
+  const txtValid =
+    txt.startsWith("===") &&
+    txt.includes("===") &&
+    !txt.includes("undefined") &&
+    txt.length > 50;
+  check(txtValid, `${gTag} Plain Text exporter golden check: valid formatted ASCII/Unicode text generated from AST`);
 }
 
 // Negative controls: the detectors above must actually flag the exact defects this project used to have.

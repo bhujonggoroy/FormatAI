@@ -27,6 +27,7 @@ import {
 import katex from "katex";
 import { TextDiffViewer } from "./TextDiffViewer";
 import { parseDocumentBlocks, type BlockFormattingIssue, type BrokenFragment } from "../utils/blockIntegrity";
+import { renderAstDocument } from "./astPreviewRenderer";
 
 export interface ValidationAlertState {
   failed: boolean;
@@ -73,6 +74,25 @@ interface FormattedPreviewProps {
   repairProgress?: { current: number; total: number; currentBlockId?: string } | null;
   onToggleMaximize?: () => void;
   isMaximized?: boolean;
+  previewRenderer?: "legacy" | "ast";
+}
+
+export function getPreviewRendererPreference(): "legacy" | "ast" {
+  if (typeof window !== "undefined") {
+    try {
+      const params = new URLSearchParams(window.location.search);
+      const urlRenderer = params.get("renderer");
+      if (urlRenderer === "ast") return "ast";
+      if (urlRenderer === "legacy") return "legacy";
+
+      const stored = window.localStorage?.getItem("preview_renderer");
+      if (stored === "ast") return "ast";
+      if (stored === "legacy") return "legacy";
+    } catch {
+      // Ignore security/storage exceptions
+    }
+  }
+  return "legacy";
 }
 
 function escapeHtml(str: string): string {
@@ -131,7 +151,9 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = React.memo(({
   repairProgress = null,
   onToggleMaximize,
   isMaximized = false,
+  previewRenderer,
 }) => {
+  const effectiveRenderer = previewRenderer ?? getPreviewRendererPreference();
   const [copied, setCopied] = useState(false);
   const [internalViewMode, setInternalViewMode] = useState<"rendered" | "source" | "diff">("rendered");
   const viewMode = activeViewMode ?? internalViewMode;
@@ -925,6 +947,22 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = React.memo(({
   const renderedElements = useMemo(() => {
     if (!blocks || blocks.length === 0) return [];
 
+    if (effectiveRenderer === "ast") {
+      return renderAstDocument({
+        markdown,
+        blocks,
+        failedBlockIds,
+        blockIssuesMap,
+        blockFragmentsMap,
+        fontFamily,
+        accentColor,
+        equationFormat,
+        isRepairing,
+        onRepairSingleBlock,
+        onRepairFragment,
+      });
+    }
+
     const elements: React.ReactNode[] = [];
 
     // Keep cache size bounded
@@ -992,7 +1030,7 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = React.memo(({
     });
 
     return elements;
-  }, [markdown, fontFamily, accentColor, equationFormat, failedBlockIds, blockIssuesMap, blockFragmentsMap, fragments, isRepairing, onRepairSingleBlock, onRepairFragment]);
+  }, [markdown, fontFamily, accentColor, equationFormat, failedBlockIds, blockIssuesMap, blockFragmentsMap, fragments, isRepairing, onRepairSingleBlock, onRepairFragment, effectiveRenderer]);
 
   const wordCount = markdown.trim().split(/\s+/).filter(Boolean).length;
   const mathFormulaCount = (markdown.match(/\$[^$]+\$/g) || []).length;

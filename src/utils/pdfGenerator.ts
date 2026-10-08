@@ -22,6 +22,7 @@
 import { jsPDF } from "jspdf";
 import html2canvas from "html2canvas-pro";
 import { generateFilenameFromContent } from "./filename.ts";
+import { parseMarkdown, plainText } from "../shared/markdown/ast.ts";
 
 export interface GeneratePdfOptions {
   element?: HTMLElement | null;
@@ -420,71 +421,12 @@ export async function generateTextBasedPdf(options: GeneratePdfOptions): Promise
 
   onProgress?.("2/3: Generating text-based vector layout & typography...");
 
-  const lines = markdown.split("\n");
-  let i = 0;
+  const ast = parseMarkdown(markdown);
 
-  while (i < lines.length) {
-    const rawLine = lines[i];
-    const trimmed = rawLine.trim();
-
-    if (!trimmed) {
-      currentY += 6;
-      i++;
-      continue;
-    }
-
-    // 1. Display Math Block: $$ ... $$ or \[ ... \]
-    if (trimmed.startsWith("$$") || /^(?:\\)+\[/.test(trimmed)) {
-      let mathContent = "";
-      if (trimmed.startsWith("$$")) {
-        if (trimmed.endsWith("$$") && trimmed.length >= 4) {
-          mathContent = trimmed.slice(2, -2).trim();
-          i++;
-        } else {
-          const mathLines: string[] = [];
-          const first = trimmed.slice(2).trim();
-          if (first) mathLines.push(first);
-          i++;
-          while (i < lines.length) {
-            const next = lines[i].trim();
-            if (next.endsWith("$$")) {
-              const endPart = next.slice(0, -2).trim();
-              if (endPart) mathLines.push(endPart);
-              i++;
-              break;
-            }
-            mathLines.push(lines[i]);
-            i++;
-          }
-          mathContent = mathLines.join(" ").trim();
-        }
-      } else {
-        // \[ ... \]
-        const singleMatch = trimmed.match(/^(?:\\)+\[\s*([\s\S]*?)\s*(?:\\)+\]$/);
-        if (singleMatch) {
-          mathContent = singleMatch[1].trim();
-          i++;
-        } else {
-          const mathLines: string[] = [];
-          const first = trimmed.replace(/^(?:\\)+\[\s*/, "").trim();
-          if (first) mathLines.push(first);
-          i++;
-          while (i < lines.length) {
-            const next = lines[i].trim();
-            if (/(?:\\)+\]$/.test(next)) {
-              const endPart = next.replace(/(?:\\)+\]$/, "").trim();
-              if (endPart) mathLines.push(endPart);
-              i++;
-              break;
-            }
-            mathLines.push(lines[i]);
-            i++;
-          }
-          mathContent = mathLines.join(" ").trim();
-        }
-      }
-
-      const formattedMath = formatLatexForPdfText(mathContent, true);
+  for (const node of ast.children) {
+    // 1. Display Math Block
+    if (node.type === "math") {
+      const formattedMath = formatLatexForPdfText(node.value, true);
       pdf.setFont(FONT_REGULAR, "italic");
       pdf.setFontSize(10.5);
       const mathLinesWrapped = pdf.splitTextToSize(formattedMath, CONTENT_WIDTH - 24);
@@ -509,108 +451,100 @@ export async function generateTextBasedPdf(options: GeneratePdfOptions): Promise
       continue;
     }
 
-    // 2. Headings: #, ##, ###, ####
-    if (trimmed.startsWith("# ")) {
-      const headingText = formatInlineMathInText(trimmed.slice(2).trim());
-      addPageIfNeeded(42); // Keep-with-next guarantee
-      currentY += 8;
+    // 2. Headings
+    if (node.type === "heading") {
+      const headingRaw = plainText(node).trim();
+      const headingText = formatInlineMathInText(headingRaw);
+      const depth = (node as any).depth || 1;
 
-      pdf.setFont(FONT_REGULAR, "bold");
-      pdf.setFontSize(15);
-      pdf.setTextColor(accentR, accentG, accentB);
-      pdf.text(headingText, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
-      currentY += 18;
+      // Section Header (e.g. Section A: ...)
+      const sectionMatch = headingRaw.match(/^(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i);
+      if (sectionMatch) {
+        const fullSection = `Section ${sectionMatch[1].toUpperCase()}:${sectionMatch[2] ? " " + sectionMatch[2].trim() : ""}`;
+        const formattedTitle = formatInlineMathInText(fullSection);
 
-      pdf.setDrawColor(203, 213, 225); // #CBD5E1
-      pdf.setLineWidth(0.75);
-      pdf.line(MARGIN_LEFT, currentY, PAGE_WIDTH - MARGIN_RIGHT, currentY);
-      currentY += 10;
-      i++;
-      continue;
-    }
+        addPageIfNeeded(32);
+        currentY += 6;
 
-    if (trimmed.startsWith("## ")) {
-      const headingText = formatInlineMathInText(trimmed.slice(3).trim());
-      addPageIfNeeded(34);
-      currentY += 6;
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setFontSize(12);
+        pdf.setTextColor(accentR, accentG, accentB);
+        pdf.text(formattedTitle, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
+        currentY += 16;
 
-      pdf.setFont(FONT_REGULAR, "bold");
-      pdf.setFontSize(12.5);
-      pdf.setTextColor(accentR, accentG, accentB);
-      pdf.text(headingText, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
-      currentY += 16;
-      i++;
-      continue;
-    }
-
-    if (trimmed.startsWith("### ")) {
-      const headingText = formatInlineMathInText(trimmed.slice(4).trim());
-      addPageIfNeeded(28);
-      currentY += 4;
-
-      // Small accent dot
-      pdf.setFillColor(accentR, accentG, accentB);
-      pdf.circle(MARGIN_LEFT + 3, currentY - 3.5, 2.5, "F");
-
-      pdf.setFont(FONT_REGULAR, "bold");
-      pdf.setFontSize(11);
-      pdf.setTextColor(30, 41, 59);
-      pdf.text(headingText, MARGIN_LEFT + 12, currentY, { maxWidth: CONTENT_WIDTH - 12 });
-      currentY += 15;
-      i++;
-      continue;
-    }
-
-    if (trimmed.startsWith("#### ")) {
-      const headingText = formatInlineMathInText(trimmed.slice(5).trim()).toUpperCase();
-      addPageIfNeeded(22);
-
-      pdf.setFont(FONT_REGULAR, "bold");
-      pdf.setFontSize(9.5);
-      pdf.setTextColor(71, 85, 105); // #475569
-      pdf.text(headingText, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
-      currentY += 14;
-      i++;
-      continue;
-    }
-
-    // 3. Section Header (e.g. Section A: ...)
-    if (/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i.test(trimmed)) {
-      const match = trimmed.match(/^(?:#{1,3}\s*)?(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i)!;
-      const fullSection = `Section ${match[1].toUpperCase()}:${match[2] ? " " + match[2].trim() : ""}`;
-      const formattedTitle = formatInlineMathInText(fullSection);
-
-      addPageIfNeeded(32);
-      currentY += 6;
-
-      pdf.setFont(FONT_REGULAR, "bold");
-      pdf.setFontSize(12);
-      pdf.setTextColor(accentR, accentG, accentB);
-      pdf.text(formattedTitle, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
-      currentY += 16;
-
-      pdf.setDrawColor(226, 232, 240);
-      pdf.setLineWidth(0.5);
-      pdf.line(MARGIN_LEFT, currentY, PAGE_WIDTH - MARGIN_RIGHT, currentY);
-      currentY += 8;
-      i++;
-      continue;
-    }
-
-    // 4. Tables: | col1 | col2 |
-    if (trimmed.startsWith("|") && trimmed.endsWith("|")) {
-      const tableRows: string[][] = [];
-      while (i < lines.length && lines[i].trim().startsWith("|") && lines[i].trim().endsWith("|")) {
-        const rowText = lines[i].trim();
-        if (!/^\|[-:\s|]+\|$/.test(rowText)) {
-          tableRows.push(rowText.slice(1, -1).split("|").map((c) => c.trim()));
-        }
-        i++;
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.5);
+        pdf.line(MARGIN_LEFT, currentY, PAGE_WIDTH - MARGIN_RIGHT, currentY);
+        currentY += 8;
+        continue;
       }
 
-      if (tableRows.length > 0) {
+      if (depth === 1) {
+        addPageIfNeeded(42); // Keep-with-next guarantee
+        currentY += 8;
+
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setFontSize(15);
+        pdf.setTextColor(accentR, accentG, accentB);
+        pdf.text(headingText, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
+        currentY += 18;
+
+        pdf.setDrawColor(203, 213, 225); // #CBD5E1
+        pdf.setLineWidth(0.75);
+        pdf.line(MARGIN_LEFT, currentY, PAGE_WIDTH - MARGIN_RIGHT, currentY);
+        currentY += 10;
+        continue;
+      }
+
+      if (depth === 2) {
+        addPageIfNeeded(34);
+        currentY += 6;
+
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setFontSize(12.5);
+        pdf.setTextColor(accentR, accentG, accentB);
+        pdf.text(headingText, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
+        currentY += 16;
+        continue;
+      }
+
+      if (depth === 3) {
+        addPageIfNeeded(28);
         currentY += 4;
-        const colCount = Math.max(...tableRows.map((r) => r.length));
+
+        // Small accent dot
+        pdf.setFillColor(accentR, accentG, accentB);
+        pdf.circle(MARGIN_LEFT + 3, currentY - 3.5, 2.5, "F");
+
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setFontSize(11);
+        pdf.setTextColor(30, 41, 59);
+        pdf.text(headingText, MARGIN_LEFT + 12, currentY, { maxWidth: CONTENT_WIDTH - 12 });
+        currentY += 15;
+        continue;
+      }
+
+      if (depth >= 4) {
+        addPageIfNeeded(22);
+
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setFontSize(9.5);
+        pdf.setTextColor(71, 85, 105); // #475569
+        pdf.text(headingText.toUpperCase(), MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
+        currentY += 14;
+        continue;
+      }
+    }
+
+    // 3. Tables
+    if (node.type === "table") {
+      const rows = ((node as any).children || []).filter((c: any) => c.type === "tableRow");
+      if (rows.length > 0) {
+        currentY += 4;
+        const tableRows: string[][] = rows.map((r: any) =>
+          ((r as any).children || []).map((c: any) => plainText(c).trim())
+        );
+        const colCount = Math.max(...tableRows.map((r) => r.length), 1);
         const colWidth = CONTENT_WIDTH / colCount;
 
         for (let r = 0; r < tableRows.length; r++) {
@@ -664,77 +598,174 @@ export async function generateTextBasedPdf(options: GeneratePdfOptions): Promise
       continue;
     }
 
-    // 5. Bullet List: - item or * item
-    if (/^\s*[-*•]\s+/.test(rawLine)) {
-      const itemText = formatInlineMathInText(trimmed.replace(/^[-*•]\s+/, ""));
-      pdf.setFont(FONT_REGULAR, "normal");
-      pdf.setFontSize(10);
-      const wrapped = pdf.splitTextToSize(itemText, CONTENT_WIDTH - 20);
+    // 4. Lists
+    if (node.type === "list") {
+      const ordered = !!(node as any).ordered;
+      const startNum = (node as any).start || 1;
+      const items = (node as any).children || [];
 
-      addPageIfNeeded(wrapped.length * 14 + 4);
+      for (let idx = 0; idx < items.length; idx++) {
+        const item = items[idx];
+        const itemText = formatInlineMathInText(plainText(item).trim());
+        pdf.setFont(FONT_REGULAR, "normal");
+        pdf.setFontSize(10);
 
-      // Vector bullet point dot
-      pdf.setFillColor(71, 85, 105);
-      pdf.circle(MARGIN_LEFT + 6, currentY + 7, 2, "F");
+        if (ordered) {
+          const prefix = `${startNum + idx}.`;
+          const wrapped = pdf.splitTextToSize(itemText, CONTENT_WIDTH - 24);
+          addPageIfNeeded(wrapped.length * 14 + 4);
 
-      pdf.setTextColor(30, 41, 59);
-      let textY = currentY + 10;
-      for (const line of wrapped) {
-        pdf.text(line, MARGIN_LEFT + 16, textY);
-        textY += 14;
+          pdf.setFont(FONT_REGULAR, "bold");
+          pdf.setTextColor(15, 23, 42);
+          pdf.text(prefix, MARGIN_LEFT + 4, currentY + 10);
+
+          pdf.setFont(FONT_REGULAR, "normal");
+          pdf.setTextColor(30, 41, 59);
+          let textY = currentY + 10;
+          for (const line of wrapped) {
+            pdf.text(line, MARGIN_LEFT + 22, textY);
+            textY += 14;
+          }
+          currentY += wrapped.length * 14 + 4;
+        } else {
+          const wrapped = pdf.splitTextToSize(itemText, CONTENT_WIDTH - 20);
+          addPageIfNeeded(wrapped.length * 14 + 4);
+
+          // Vector bullet point dot
+          pdf.setFillColor(71, 85, 105);
+          pdf.circle(MARGIN_LEFT + 6, currentY + 7, 2, "F");
+
+          pdf.setTextColor(30, 41, 59);
+          let textY = currentY + 10;
+          for (const line of wrapped) {
+            pdf.text(line, MARGIN_LEFT + 16, textY);
+            textY += 14;
+          }
+          currentY += wrapped.length * 14 + 4;
+        }
       }
-
-      currentY += wrapped.length * 14 + 4;
-      i++;
       continue;
     }
 
-    // 6. Numbered List: 1. item or a. item
-    const numMatch = trimmed.match(/^(\d+[\.\)]|[a-z][\.\)])\s+(.*)$/i);
-    if (numMatch) {
-      const prefix = numMatch[1];
-      const itemText = formatInlineMathInText(numMatch[2]);
+    // 5. Blockquote
+    if (node.type === "blockquote") {
+      const quoteText = formatInlineMathInText(plainText(node).trim());
+      pdf.setFont(FONT_REGULAR, "italic");
+      pdf.setFontSize(9.5);
+      const wrapped = pdf.splitTextToSize(quoteText, CONTENT_WIDTH - 24);
+      const boxHeight = wrapped.length * 14 + 10;
+      addPageIfNeeded(boxHeight + 4);
 
-      pdf.setFont(FONT_REGULAR, "normal");
-      pdf.setFontSize(10);
-      const wrapped = pdf.splitTextToSize(itemText, CONTENT_WIDTH - 24);
+      pdf.setFillColor(240, 247, 255);
+      pdf.rect(MARGIN_LEFT, currentY, CONTENT_WIDTH, boxHeight, "F");
+      pdf.setFillColor(accentR, accentG, accentB);
+      pdf.rect(MARGIN_LEFT, currentY, 3.5, boxHeight, "F");
 
-      addPageIfNeeded(wrapped.length * 14 + 4);
-
-      pdf.setFont(FONT_REGULAR, "bold");
-      pdf.setTextColor(15, 23, 42);
-      pdf.text(prefix, MARGIN_LEFT + 4, currentY + 10);
-
-      pdf.setFont(FONT_REGULAR, "normal");
       pdf.setTextColor(30, 41, 59);
-      let textY = currentY + 10;
+      let textY = currentY + 11;
       for (const line of wrapped) {
-        pdf.text(line, MARGIN_LEFT + 22, textY);
+        pdf.text(line, MARGIN_LEFT + 12, textY);
         textY += 14;
       }
-
-      currentY += wrapped.length * 14 + 4;
-      i++;
+      currentY += boxHeight + 6;
       continue;
     }
 
-    // 7. Standard Paragraph
-    const paragraphText = formatInlineMathInText(trimmed);
-    pdf.setFont(FONT_REGULAR, "normal");
-    pdf.setFontSize(10);
-    pdf.setTextColor(30, 41, 59);
-    const wrapped = pdf.splitTextToSize(paragraphText, CONTENT_WIDTH);
+    // 6. Code block
+    if (node.type === "code") {
+      const codeLines = ((node as any).value || "").split("\n");
+      const boxHeight = Math.max(20, codeLines.length * 12 + 10);
+      addPageIfNeeded(boxHeight + 4);
 
-    addPageIfNeeded(wrapped.length * 14 + 4);
+      pdf.setFillColor(248, 250, 252);
+      pdf.setDrawColor(203, 213, 225);
+      pdf.roundedRect(MARGIN_LEFT, currentY, CONTENT_WIDTH, boxHeight, 2, 2, "FD");
 
-    let textY = currentY + 10;
-    for (const line of wrapped) {
-      pdf.text(line, MARGIN_LEFT, textY);
-      textY += 14;
+      pdf.setFont("courier", "normal");
+      pdf.setFontSize(8.5);
+      pdf.setTextColor(30, 41, 59);
+      let codeY = currentY + 10;
+      for (const line of codeLines) {
+        pdf.text(line.slice(0, 80), MARGIN_LEFT + 8, codeY);
+        codeY += 12;
+      }
+      currentY += boxHeight + 8;
+      continue;
     }
 
-    currentY += wrapped.length * 14 + 6;
-    i++;
+    // 7. Paragraph
+    if (node.type === "paragraph") {
+      const trimmed = plainText(node).trim();
+      if (!trimmed) continue;
+
+      // Section Header check inside paragraph
+      const sectionMatch = trimmed.match(/^(?:\*{0,2})Section\s+([A-Z]):?\s*(.*?)(?:\*{0,2})$/i);
+      if (sectionMatch) {
+        const fullSection = `Section ${sectionMatch[1].toUpperCase()}:${sectionMatch[2] ? " " + sectionMatch[2].trim() : ""}`;
+        const formattedTitle = formatInlineMathInText(fullSection);
+
+        addPageIfNeeded(32);
+        currentY += 6;
+
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setFontSize(12);
+        pdf.setTextColor(accentR, accentG, accentB);
+        pdf.text(formattedTitle, MARGIN_LEFT, currentY, { maxWidth: CONTENT_WIDTH });
+        currentY += 16;
+
+        pdf.setDrawColor(226, 232, 240);
+        pdf.setLineWidth(0.5);
+        pdf.line(MARGIN_LEFT, currentY, PAGE_WIDTH - MARGIN_RIGHT, currentY);
+        currentY += 8;
+        continue;
+      }
+
+      // Numbered question or sub-question item inside paragraph: (a) or 1. or a.
+      const numMatch = trimmed.match(/^(\d+[\.\)]|[a-z][\.\)]|\([a-z0-9]+\))\s+(.*)$/i);
+      if (numMatch) {
+        const prefix = numMatch[1];
+        const itemText = formatInlineMathInText(numMatch[2]);
+
+        pdf.setFont(FONT_REGULAR, "normal");
+        pdf.setFontSize(10);
+        const wrapped = pdf.splitTextToSize(itemText, CONTENT_WIDTH - 24);
+
+        addPageIfNeeded(wrapped.length * 14 + 4);
+
+        pdf.setFont(FONT_REGULAR, "bold");
+        pdf.setTextColor(15, 23, 42);
+        pdf.text(prefix, MARGIN_LEFT + 4, currentY + 10);
+
+        pdf.setFont(FONT_REGULAR, "normal");
+        pdf.setTextColor(30, 41, 59);
+        let textY = currentY + 10;
+        for (const line of wrapped) {
+          pdf.text(line, MARGIN_LEFT + 22, textY);
+          textY += 14;
+        }
+
+        currentY += wrapped.length * 14 + 4;
+        continue;
+      }
+
+      // Standard Paragraph
+      const paragraphText = formatInlineMathInText(trimmed);
+      pdf.setFont(FONT_REGULAR, "normal");
+      pdf.setFontSize(10);
+      pdf.setTextColor(30, 41, 59);
+      const wrapped = pdf.splitTextToSize(paragraphText, CONTENT_WIDTH);
+
+      addPageIfNeeded(wrapped.length * 14 + 4);
+
+      let textY = currentY + 10;
+      for (const line of wrapped) {
+        pdf.text(line, MARGIN_LEFT, textY);
+        textY += 14;
+      }
+
+      currentY += wrapped.length * 14 + 6;
+      continue;
+    }
   }
 
   // Running Footers on all pages ("Page X of Y")

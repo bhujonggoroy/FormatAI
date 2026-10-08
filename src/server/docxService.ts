@@ -27,27 +27,38 @@ import {
 import { wrapBareMathEnvironments } from "../utils/mathBlocks.ts";
 import { executeSkillPipeline, getActiveDocxOptions } from "../skills/pipeline.ts";
 
-import { UNICODE_MATH_REPLACEMENTS, cleanNotebookLMTreeArtifacts, standardizeMathToLatex, sanitizeMathToUnicode } from "../utils/mathNormalize.ts";
-export { UNICODE_MATH_REPLACEMENTS, cleanNotebookLMTreeArtifacts, standardizeMathToLatex, sanitizeMathToUnicode };
+import {
+  UNICODE_MATH_REPLACEMENTS,
+  cleanNotebookLMTreeArtifacts,
+  standardizeMathToLatex,
+  sanitizeMathToUnicode,
+} from "../utils/mathNormalize.ts";
+import { buildDocxFromAst } from "./docx/astToDocx.ts";
+export {
+  UNICODE_MATH_REPLACEMENTS,
+  cleanNotebookLMTreeArtifacts,
+  standardizeMathToLatex,
+  sanitizeMathToUnicode,
+};
 
 /**
  * Real OMML matrix (<m:m><m:mr><m:e>…) — the docx library has no matrix class, so build one.
  * Word renders this as a proper aligned matrix instead of a bracket with text and "\n".
  */
-class OmmlCell extends XmlComponent {
+export class OmmlCell extends XmlComponent {
   constructor(children: any[]) {
     super("m:e");
     const items = children.length > 0 ? children : [new MathRun(" ")];
     for (const c of items) (this as any).root.push(c);
   }
 }
-class OmmlMatrixRow extends XmlComponent {
+export class OmmlMatrixRow extends XmlComponent {
   constructor(cells: any[][]) {
     super("m:mr");
     for (const cell of cells) (this as any).root.push(new OmmlCell(cell));
   }
 }
-class OmmlMatrix extends XmlComponent {
+export class OmmlMatrix extends XmlComponent {
   constructor(rows: any[][][]) {
     super("m:m");
     for (const row of rows) (this as any).root.push(new OmmlMatrixRow(row));
@@ -77,7 +88,7 @@ const STRUCTURAL_COMMANDS = new Set([
   "\\right",
 ]);
 
-function cleanMathSymbols(text: string): string {
+export function cleanMathSymbols(text: string): string {
   let s = text;
 
   // Strip math display control commands
@@ -152,7 +163,7 @@ function cleanMathSymbols(text: string): string {
  * Supports fractions, radicals, summations, integrals, products, round/square brackets,
  * subscripts, superscripts, combined sub-superscripts, and Greek/statistical variables.
  */
-function parseLatexComponents(latex: string): any[] {
+export function parseLatexComponents(latex: string): any[] {
   const cleaned = cleanMathSymbols(latex.trim());
   const components: any[] = [];
   let i = 0;
@@ -627,6 +638,11 @@ export async function buildDocxFromMarkdown(
   markdownText: string,
   options: DocxOptions = {}
 ): Promise<Buffer> {
+  const engine = process.env.DOCX_ENGINE || "ast";
+  if (engine !== "legacy") {
+    return await buildDocxFromAst(markdownText, options);
+  }
+
   const mergedOptions = getActiveDocxOptions(options, options.enabledSkillIds);
   const font = mergedOptions.fontFamily || "Times New Roman";
   const primaryAccent = mergedOptions.accentColor || "1A365D"; // Navy default
