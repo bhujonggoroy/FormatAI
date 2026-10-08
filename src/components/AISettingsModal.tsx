@@ -506,7 +506,28 @@ export const AISettingsModal: React.FC<AISettingsModalProps> = ({
           accountId: prov?.accountId,
         }),
       });
-      const result: TestResult = await res.json();
+      let result: TestResult;
+      if (res.status === 429) {
+        let serverMsg = "Too many requests. Please wait a few minutes.";
+        try {
+          const body = await res.json();
+          serverMsg = body.error || serverMsg;
+        } catch {}
+        result = {
+          success: false,
+          providerId,
+          providerName: prov?.name || providerId,
+          model: targetModel || "default",
+          latencyMs: 0,
+          errorMessage: serverMsg,
+          userFacingMessage: serverMsg,
+          errorKind: "rate_limit",
+          errorCode: "RATE_LIMIT",
+          statusCode: 429,
+        };
+      } else {
+        result = await res.json();
+      }
       setTestResults((prev) => ({ ...prev, [testId]: result }));
 
       if (keyObj) {

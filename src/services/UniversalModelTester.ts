@@ -424,6 +424,34 @@ export async function runUniversalModelTest(
       signal: options?.signal,
     });
 
+    if (keyProbeRes.status === 429) {
+      let serverMsg = "Too many requests. Please wait a few minutes.";
+      try {
+        const body = await keyProbeRes.json();
+        serverMsg = body.error || serverMsg;
+      } catch {}
+      onProgress?.({
+        providerId: pId,
+        stage: "error",
+        totalModels: 0,
+        testedCount: 0,
+        readyCount: 0,
+        notReadyCount: 0,
+        progressPercent: 0,
+        errorMessage: serverMsg,
+      });
+      return {
+        providerId: pId,
+        testedAt: Date.now(),
+        apiKeyMasked: maskedKey,
+        readyModels: [],
+        notReadyModels: [],
+        totalTested: 0,
+        status: "error",
+        errorMessage: serverMsg,
+      };
+    }
+
     const keyProbeData: TestResult = await keyProbeRes.json();
 
     if (keyProbeData.errorCode === "INVALID_API_KEY" || keyProbeData.errorKind === "invalid_key") {
@@ -611,7 +639,28 @@ export async function runUniversalModelTest(
         signal: options?.signal,
       });
 
-      const result: TestResult = await testRes.json();
+      let result: TestResult;
+      if (testRes.status === 429) {
+        let serverMsg = "Too many requests. Please wait a few minutes.";
+        try {
+          const body = await testRes.json();
+          serverMsg = body.error || serverMsg;
+        } catch {}
+        result = {
+          success: false,
+          providerId: pId,
+          providerName: pId,
+          model: model.id,
+          latencyMs: 0,
+          errorMessage: serverMsg,
+          userFacingMessage: serverMsg,
+          errorKind: "rate_limit",
+          errorCode: "RATE_LIMIT",
+          statusCode: 429,
+        };
+      } else {
+        result = await testRes.json();
+      }
 
       if (result.success) {
         readyModels.push({

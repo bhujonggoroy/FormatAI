@@ -3,6 +3,7 @@
  * Locks in the invariants that keep PREVIEW == DOCX == PDF input.  Any future change that breaks
  * one of these must be fixed (not the test) unless the product rule itself intentionally changes.
  */
+import fs from "node:fs";
 import http from "node:http";
 import JSZip from "jszip";
 import { SAMPLE_NOTES } from "../src/data/samples.ts";
@@ -14,6 +15,7 @@ import { createServerApp } from "../server.backend.ts";
 import { assertSafeEndpoint } from "../src/server/ai/safeUrl.ts";
 
 process.env.RATE_LIMIT_MAX = process.env.RATE_LIMIT_MAX || "20";
+process.env.AI_TOOL_RATE_LIMIT_MAX = process.env.AI_TOOL_RATE_LIMIT_MAX || "5";
 const MUTATE = process.env.REGRESSION_MUTATE === "1"; // proves the tests can fail (must NOT be used in CI)
 let failures = 0;
 const check = (ok: boolean, name: string, detail = "") => {
@@ -114,6 +116,70 @@ for (let i = 0; i < 40; i++) {
 }
 check(hit429, "40 rapid POSTs to /api/export end with a 429");
 check(last429Msg === "Too many requests. Please try again later.", "rate limit 429 message matches expectation");
+
+// Check that model-test burst does not block document routes
+let lastTestStatus = 0;
+for (let i = 0; i < 8; i++) {
+  const r = await fetch(`http://127.0.0.1:${port}/api/ai/test`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ providerId: "formatai" }),
+  });
+  lastTestStatus = r.status;
+}
+const cleanRes = await fetch(`http://127.0.0.1:${port}/api/preview-clean`, {
+  method: "POST",
+  headers: { "Content-Type": "application/json" },
+  body: JSON.stringify({ text: "hello" }),
+});
+check(
+  lastTestStatus === 429 && cleanRes.status !== 429,
+  "model-test burst does not block document routes"
+);
+
+// Route table snapshot verification
+function extractRoutes(app: any): string[] {
+  const routes: string[] = [];
+  function walk(stack: any[], prefix = "") {
+    for (const layer of stack) {
+      if (layer.route) {
+        const routePath = (prefix + layer.route.path).replace(/\/+/g, "/");
+        for (const method of Object.keys(layer.route.methods)) {
+          routes.push(`${method.toUpperCase()} ${routePath}`);
+        }
+      } else if (layer.name === "router" && layer.handle?.stack) {
+        let p = prefix;
+        if (layer.regexp && !layer.regexp.fast_slash) {
+          const match = layer.regexp.source
+            .replace("^\\/", "/")
+            .replace("\\/?(?=\\/|$)", "")
+            .replace(/\\\//g, "/")
+            .replace(/\^/g, "")
+            .replace(/\$$/g, "");
+          p = (prefix + match).replace(/\/+/g, "/");
+        }
+        walk(layer.handle.stack, p);
+      }
+    }
+  }
+  if (app?._router?.stack) {
+    walk(app._router.stack);
+  }
+  return Array.from(new Set(routes)).sort();
+}
+
+const expectedRoutesRaw = fs.readFileSync("tests/routes.snapshot.json", "utf-8");
+const expectedRoutes: string[] = JSON.parse(expectedRoutesRaw);
+const actualRoutes = extractRoutes(createServerApp());
+const addedRoutes = actualRoutes.filter((r) => !expectedRoutes.includes(r));
+const removedRoutes = expectedRoutes.filter((r) => !actualRoutes.includes(r));
+check(
+  addedRoutes.length === 0 && removedRoutes.length === 0,
+  "route table matches tests/routes.snapshot.json",
+  addedRoutes.length > 0 || removedRoutes.length > 0
+    ? `Added: [${addedRoutes.join(", ")}], Removed: [${removedRoutes.join(", ")}]`
+    : ""
+);
 
 server.close();
 

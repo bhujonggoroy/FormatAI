@@ -623,6 +623,7 @@ export default function App() {
         return;
       }
       if (!res.ok) {
+        const rateLimitMessage = res.status === 429 ? (data.error || "Too many requests. Please wait a few minutes.") : undefined;
         // Record Telemetry Metric & Audit Log for failure
         recordProviderMetric(
           userConfig.activeProviderId || "formatai",
@@ -632,7 +633,7 @@ export default function App() {
           res.status === 429,
           Math.round(inputText.length / 4),
           0,
-          data.error || "Failed to polish notes with AI."
+          rateLimitMessage || data.error || "Failed to polish notes with AI."
         );
         recordAuditLogEntry({
           requestSummary: `Academic LaTeX Polish (${inputText.slice(0, 42).replace(/[\n\r]+/g, " ")}...)`,
@@ -650,7 +651,7 @@ export default function App() {
                   keyMasked: "Client Key",
                   model: userConfig.activeModel || "default",
                   status: res.status === 429 ? "rate_limited" : "server_error",
-                  errorMessage: data.error,
+                  errorMessage: rateLimitMessage || data.error,
                   latencyMs,
                   timestamp: Date.now(),
                 },
@@ -683,7 +684,7 @@ export default function App() {
         // rather than blindly using unconfigured fallback
         const classified = classifyFallbackChain(
           data.fallback_chain,
-          data.error || "Failed to polish notes with AI.",
+          rateLimitMessage || data.error || "Failed to polish notes with AI.",
           res.status
         );
         const activeProvider = classified.providerName || userConfig.activeProviderId || "AI Provider";
@@ -691,6 +692,8 @@ export default function App() {
 
         setAiStatus({
           ...classified,
+          title: rateLimitMessage || classified.title,
+          secondaryText: rateLimitMessage ? "Please wait a few minutes and try again." : classified.secondaryText,
           providerName: activeProvider,
           modelName: activeModel,
           latencyMs,
@@ -701,7 +704,7 @@ export default function App() {
             requestStatus: `${res.status}`,
             errorCategory: classified.badgeLabel,
             executionTime: `${latencyMs}ms`,
-            technicalErrorMessage: data.error || "Request failed",
+            technicalErrorMessage: rateLimitMessage || data.error || "Request failed",
             rawChain: data.fallback_chain,
           },
         });
@@ -943,6 +946,7 @@ export default function App() {
     let currentMarkdown = effectiveMarkdown;
     let successCount = 0;
     let failCount = 0;
+    let lastRateLimitMsg: string | null = null;
 
     const userConfig = getUserSettings();
     const userProvs = getUserProviders();
@@ -989,7 +993,14 @@ export default function App() {
         });
 
         if (!res.ok) {
-          throw new Error(`HTTP ${res.status}`);
+          const body = await res.json().catch(() => ({}));
+          const errMsg = res.status === 429
+            ? (body?.error || "Too many requests. Please wait a few minutes.")
+            : (body?.error || `HTTP ${res.status}`);
+          if (res.status === 429) {
+            lastRateLimitMsg = errMsg;
+          }
+          throw new Error(errMsg);
         }
 
         const data = await res.json();
@@ -1041,7 +1052,7 @@ export default function App() {
       setSuccessMessage(`Repaired: ${successCount} succeeded, ${failCount} failed`);
       setErrorMessage(null);
     } else if (failCount > 0) {
-      setErrorMessage(`Repair: 0 succeeded, ${failCount} failed`);
+      setErrorMessage(lastRateLimitMsg || `Repair: 0 succeeded, ${failCount} failed`);
       setSuccessMessage(null);
     }
   };
@@ -1097,7 +1108,11 @@ export default function App() {
       });
 
       if (!res.ok) {
-        throw new Error(`HTTP ${res.status}`);
+        const body = await res.json().catch(() => ({}));
+        const errMsg = res.status === 429
+          ? (body?.error || "Too many requests. Please wait a few minutes.")
+          : (body?.error || `HTTP ${res.status}`);
+        throw new Error(errMsg);
       }
 
       const data = await res.json();
@@ -1150,7 +1165,7 @@ export default function App() {
         setSuccessMessage("Repaired: 1 succeeded, 0 failed");
         setErrorMessage(null);
       } else {
-        setErrorMessage("Repair: 0 succeeded, 1 failed");
+        setErrorMessage(err.message?.includes("Too many") ? err.message : "Repair: 0 succeeded, 1 failed");
         setSuccessMessage(null);
       }
     } finally {
@@ -1209,7 +1224,7 @@ export default function App() {
       });
 
       if (!res.ok) {
-        let serverMsg = `HTTP ${res.status}`;
+        let serverMsg = res.status === 429 ? "Too many requests. Please wait a few minutes." : `HTTP ${res.status}`;
         try {
           const errBody = await res.json();
           serverMsg = errBody.error || serverMsg;
@@ -1253,7 +1268,7 @@ export default function App() {
       setSuccessMessage("Repaired: 1 succeeded, 0 failed");
       setErrorMessage(null);
     } catch (err: any) {
-      setErrorMessage("Repair: 0 succeeded, 1 failed");
+      setErrorMessage(err.message?.includes("Too many") ? err.message : "Repair: 0 succeeded, 1 failed");
       setSuccessMessage(null);
     } finally {
       setIsRepairing(false);
@@ -1339,7 +1354,7 @@ export default function App() {
       });
 
       if (!response.ok) {
-        let errText = "Export failed.";
+        let errText = response.status === 429 ? "Too many requests. Please wait a few minutes." : "Export failed.";
         try {
           const errJson = await response.json();
           errText = errJson.error || errText;
