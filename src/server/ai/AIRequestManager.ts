@@ -697,20 +697,52 @@ export class AIRequestManager {
             attempt++;
             const callStart = Date.now();
 
-            try {
-              // BUILD & SEND REQUEST through Authoritative Adapter
-              const result = await adapter.generate(
-                { ...request, model: currentModel },
-                apiKey,
-                currentModel,
-                {
-                  timeoutMs: provider.timeoutMs || config.defaultTimeoutMs,
-                  customEndpoint: provider.customEndpoint,
-                  accountId: provider.accountId,
-                  temperature: request.temperature,
-                  maxTokens: request.maxTokens,
-                }
+            const callTimeoutMs =
+              Number(process.env.AI_TIMEOUT_MS) ||
+              provider.timeoutMs ||
+              config.defaultTimeoutMs ||
+              60000;
+            const abortController = new AbortController();
+            const timeoutTimer = setTimeout(() => {
+              abortController.abort(
+                new Error(
+                  `AI request to provider "${provider.name}" (${currentModel}) timed out after ${callTimeoutMs}ms`
+                )
               );
+            }, callTimeoutMs);
+
+            try {
+              // BUILD & SEND REQUEST through Authoritative Adapter with AbortController timeout race
+              const timeoutPromise = new Promise<never>((_, reject) => {
+                abortController.signal.addEventListener("abort", () => {
+                  const timeoutErr: any = new Error(
+                    `AI request to provider "${provider.name}" (${currentModel}) timed out after ${callTimeoutMs}ms`
+                  );
+                  timeoutErr.name = "TimeoutError";
+                  timeoutErr.code = "TIMEOUT";
+                  timeoutErr.statusCode = 408;
+                  timeoutErr.status = 408;
+                  reject(timeoutErr);
+                });
+              });
+
+              const result = await Promise.race([
+                adapter.generate(
+                  { ...request, model: currentModel },
+                  apiKey,
+                  currentModel,
+                  {
+                    timeoutMs: callTimeoutMs,
+                    signal: abortController.signal,
+                    customEndpoint: provider.customEndpoint,
+                    accountId: provider.accountId,
+                    temperature: request.temperature,
+                    maxTokens: request.maxTokens,
+                  }
+                ),
+                timeoutPromise,
+              ]);
+              clearTimeout(timeoutTimer);
 
               const latency = Date.now() - callStart;
               const effectiveModel = (result as any).modelUsed || currentModel;
@@ -740,8 +772,26 @@ export class AIRequestManager {
                 fallbackChain,
               };
             } catch (err: any) {
+              clearTimeout(timeoutTimer);
               const latency = Date.now() - callStart;
-              const normalized: NormalizedAIError = adapter.normalizeError
+              const isTimeout =
+                err?.name === "TimeoutError" ||
+                err?.code === "TIMEOUT" ||
+                err?.status === 408 ||
+                err?.message?.toLowerCase().includes("timed out");
+
+              const normalized: NormalizedAIError = isTimeout
+                ? {
+                    code: "TIMEOUT",
+                    kind: "timeout",
+                    statusCode: 408,
+                    title: `⚠️ ${provider.name} Request Timeout`,
+                    message: err?.message || `Request timed out after ${callTimeoutMs}ms`,
+                    userFacingMessage: `The request timed out waiting for ${provider.name} to respond.`,
+                    retryable: true,
+                    rawError: err,
+                  }
+                : adapter.normalizeError
                 ? adapter.normalizeError(err)
                 : {
                     kind: typeof adapter.classifyError === "function" ? (adapter.classifyError(err) as any) : "unknown",
@@ -751,7 +801,9 @@ export class AIRequestManager {
                   };
 
               const stepStatus =
-                normalized.code === "RATE_LIMIT" || normalized.kind === "rate_limit"
+                isTimeout || normalized.code === "TIMEOUT" || normalized.kind === "timeout"
+                  ? "timeout"
+                  : normalized.code === "RATE_LIMIT" || normalized.kind === "rate_limit"
                   ? "rate_limited"
                   : normalized.code === "INVALID_API_KEY" || normalized.kind === "invalid_key"
                   ? "invalid_key"
@@ -759,8 +811,6 @@ export class AIRequestManager {
                   ? "model_unavailable"
                   : normalized.code === "FORBIDDEN" || normalized.kind === "permission_denied"
                   ? "permission_denied"
-                  : normalized.code === "TIMEOUT" || normalized.kind === "timeout"
-                  ? "timeout"
                   : "server_error";
 
               fallbackChain.push({

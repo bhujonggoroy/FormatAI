@@ -1,18 +1,34 @@
 import React, { useState, useMemo, useEffect, useRef } from "react";
 import { Header } from "./components/Header";
 import { FormattedPreview } from "./components/FormattedPreview";
-import { AISettingsModal } from "./components/AISettingsModal";
-import { SystematicSkillsModal } from "./components/SystematicSkillsModal";
-import { SkillsManagerModal, SkillsModalTab } from "./components/SkillsManagerModal";
-import { SidebarSettingsDrawer } from "./components/SidebarSettingsDrawer";
+import type { SkillsModalTab } from "./components/SkillsManagerModal";
 import { ToolbarGrid } from "./components/ToolbarGrid";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SplashScreen } from "./components/SplashScreen";
 import { SAMPLE_NOTES, SampleNote } from "./data/samples";
 import { cleanClientSideNotebookLM } from "./utils/cleaner";
 import { generateFilenameFromContent, getDisplayTitleFromContent } from "./utils/filename";
-import { downloadPreviewAsPdf, generateDocumentPdf } from "./utils/pdfGenerator";
 import { usePWAInstallPrompt } from "./utils/pwaInstall";
+
+// Lazy-load heavy, rarely-used modal and drawer UI
+const AISettingsModal = React.lazy(() =>
+  import("./components/AISettingsModal").then((m) => ({ default: m.AISettingsModal }))
+);
+const SystematicSkillsModal = React.lazy(() =>
+  import("./components/SystematicSkillsModal").then((m) => ({ default: m.SystematicSkillsModal }))
+);
+const SkillsManagerModal = React.lazy(() =>
+  import("./components/SkillsManagerModal").then((m) => ({ default: m.SkillsManagerModal }))
+);
+const SidebarSettingsDrawer = React.lazy(() =>
+  import("./components/SidebarSettingsDrawer").then((m) => ({ default: m.SidebarSettingsDrawer }))
+);
+
+const LazyModalFallback = () => (
+  <div className="fixed inset-0 z-50 flex items-center justify-center bg-black/20 backdrop-blur-xs">
+    <div className="w-8 h-8 border-3 border-rose-900 border-t-transparent rounded-full animate-spin" />
+  </div>
+);
 import { skillRegistry } from "./skills";
 import { ACADEMIC_THEMES, getAcademicTheme } from "./utils/theme";
 import { validateAIPolishOutput } from "./utils/aiValidation";
@@ -302,11 +318,20 @@ export default function App() {
     });
   }, []);
 
-  // Compute live markdown instantly
+  // Debounce raw input typing for preview cleaning by ~200ms
+  const [debouncedInputText, setDebouncedInputText] = useState<string>(inputText);
+  useEffect(() => {
+    const timer = setTimeout(() => {
+      setDebouncedInputText(inputText);
+    }, 200);
+    return () => clearTimeout(timer);
+  }, [inputText]);
+
+  // Compute live markdown from debounced input or explicit cleaned markdown
   const effectiveMarkdown = useMemo(() => {
     if (cleanedMarkdown) return cleanedMarkdown;
-    return cleanClientSideNotebookLM(inputText, formatMode, skillRegistry.getEnabledSkillIds());
-  }, [cleanedMarkdown, inputText, formatMode, activeSkillsCount]);
+    return cleanClientSideNotebookLM(debouncedInputText, formatMode, skillRegistry.getEnabledSkillIds());
+  }, [cleanedMarkdown, debouncedInputText, formatMode, activeSkillsCount]);
 
   // Parse document into atomic blocks for deterministic integrity and targeted repairs
   const docBlocks = useMemo(() => {
@@ -335,6 +360,7 @@ export default function App() {
   const handleUpdateInput = (newText: string, newTitle?: string) => {
     activePolishRequestIdRef.current++;
     setInputText(newText);
+    setDebouncedInputText(newText);
     setDocTitle(newTitle !== undefined ? newTitle : getDisplayTitleFromContent(newText));
     setCleanedMarkdown(null);
     setValidationAlert(null);
@@ -1318,10 +1344,12 @@ export default function App() {
           onProgress: (stage: string) => setConversionStage(stage),
         };
         try {
+          const { downloadPreviewAsPdf } = await import("./utils/pdfGenerator");
           await downloadPreviewAsPdf({ ...pdfOptions, mode: "visual" });
           setSuccessMessage(`"${safeFilename}" (Preview-matched PDF) generated successfully!`);
         } catch (visualErr) {
           console.warn("Visual PDF failed, falling back to text PDF:", visualErr);
+          const { downloadPreviewAsPdf } = await import("./utils/pdfGenerator");
           await downloadPreviewAsPdf({ ...pdfOptions, mode: "text" });
           setSuccessMessage(`"${safeFilename}" (Text-based PDF) generated successfully!`);
         }
@@ -1530,7 +1558,7 @@ export default function App() {
           role="tablist"
           aria-label="Document view options"
           onKeyDown={handleViewSwitcherKeyDown}
-          className="relative z-10 w-full h-10 bg-slate-200 p-0.5 rounded-xl border border-slate-300 flex items-center select-none shrink-0 shadow-2xs"
+          className="sticky top-[84px] sm:relative sm:top-auto z-10 w-full h-9 bg-slate-200/80 p-0.5 rounded-lg border border-slate-300 flex items-center select-none shrink-0"
         >
           {/* Sliding Active Tab Background Indicator */}
           <div
@@ -2314,109 +2342,112 @@ export default function App() {
         </div>
       </footer>
 
-      {/* 3-Lines (Hamburger) Drawer holding all configuration settings */}
-      {isSidebarOpen && (
-        <SidebarSettingsDrawer
-          isOpen={isSidebarOpen}
-          onClose={() => setIsSidebarOpen(false)}
-          readyProvidersCount={aiHealthInfo?.readyCount || 1}
-          aiProvidersSummary={aiHealthInfo?.providersSummary || []}
-          aiMode={aiHealthInfo?.mode || "failover"}
-          isFreeOnly={aiHealthInfo?.freeOnly || false}
-          onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
-          activeSkillsCount={activeSkillsCount}
-          onOpenSkillsModal={() => {
-            setSkillsModalTab("skills");
-            setIsSkillsManagerModalOpen(true);
-          }}
-          onSkillsChanged={() => {
-            setActiveSkillsCount(skillRegistry.getEnabledSkillIds().length);
-            setCleanedMarkdown(null);
-          }}
-          onSelectSample={handleLoadSample}
-          onOpenLicenseModal={() => {
-            setSkillsModalTab("license");
-            setIsSkillsManagerModalOpen(true);
-          }}
-          viewLayout={viewLayout}
-          onViewLayoutChange={setViewLayout}
-          onTriggerAiPolish={isNoAI ? handleRunFormatAI : handlePreviewClean}
-          isAiPolishing={isConverting}
-          onDownloadDocx={handleConvertToDocx}
-          fontFamily={fontFamily}
-          onFontFamilyChange={setFontFamily}
-          accentColor={accentColor}
-          onAccentColorChange={setAccentColor}
-          equationFormat={equationFormat}
-          onEquationFormatChange={setEquationFormat}
-          formatMode={formatMode}
-          onFormatModeChange={(mode) => {
-            setFormatMode(mode);
-            setCleanedMarkdown(null);
-          }}
-          onPasteClipboard={handlePasteClipboard}
-          onClearText={() => {
-            setInputText("");
-            setDocTitle("FormatAI Document");
-            setCleanedMarkdown(null);
-          }}
-          charCount={charCount}
-          wordCount={wordCount}
-          isInstalled={isInstalled}
-          hasNativePrompt={hasNativePrompt}
-          onInstallApp={handleInstallApp}
-        />
-      )}
-
-      {/* Multi-Provider AI Settings Modal */}
-      {isAISettingsModalOpen && (
-        <AISettingsModal
-          isOpen={isAISettingsModalOpen}
-          initialTab={aiSettingsInitialTab}
-          onClose={() => {
-            setIsAISettingsModalOpen(false);
-            fetchAIHealth();
-          }}
-          onConfigChanged={fetchAIHealth}
-        />
-      )}
-
-      {/* Systematic Formatting Skills Modal */}
-      {isSkillModalOpen && (
-        <SystematicSkillsModal
-          isOpen={isSkillModalOpen}
-          onClose={() => setIsSkillModalOpen(false)}
-          activeMode={formatMode}
-          onSelectMode={(mode) => {
-            setFormatMode(mode);
-            setCleanedMarkdown(null);
-          }}
-          onLoadSample={() => {
-            handleLoadSample(SAMPLE_NOTES[0]);
-            setFormatMode("study_guide");
-          }}
-        />
-      )}
-
-      {/* Modular GitHub Skills Manager Modal */}
-      <ErrorBoundary fallbackTitle="Academic Skills Modal Paused">
-        {isSkillsManagerModalOpen && (
-          <SkillsManagerModal
-            isOpen={isSkillsManagerModalOpen}
-            initialTab={skillsModalTab}
-            onClose={() => setIsSkillsManagerModalOpen(false)}
+      {/* Lazy-Loaded Settings Drawer & Modals wrapped in React.Suspense */}
+      <React.Suspense fallback={<LazyModalFallback />}>
+        {/* 3-Lines (Hamburger) Drawer holding all configuration settings */}
+        {isSidebarOpen && (
+          <SidebarSettingsDrawer
+            isOpen={isSidebarOpen}
+            onClose={() => setIsSidebarOpen(false)}
+            readyProvidersCount={aiHealthInfo?.readyCount || 1}
+            aiProvidersSummary={aiHealthInfo?.providersSummary || []}
+            aiMode={aiHealthInfo?.mode || "failover"}
+            isFreeOnly={aiHealthInfo?.freeOnly || false}
+            onOpenAISettingsModal={() => setIsAISettingsModalOpen(true)}
+            activeSkillsCount={activeSkillsCount}
+            onOpenSkillsModal={() => {
+              setSkillsModalTab("skills");
+              setIsSkillsManagerModalOpen(true);
+            }}
             onSkillsChanged={() => {
               setActiveSkillsCount(skillRegistry.getEnabledSkillIds().length);
               setCleanedMarkdown(null);
             }}
-            onApplyText={(text) => {
-              setInputText(text);
-              setDocTitle(getDisplayTitleFromContent(text));
+            onSelectSample={handleLoadSample}
+            onOpenLicenseModal={() => {
+              setSkillsModalTab("license");
+              setIsSkillsManagerModalOpen(true);
+            }}
+            viewLayout={viewLayout}
+            onViewLayoutChange={setViewLayout}
+            onTriggerAiPolish={isNoAI ? handleRunFormatAI : handlePreviewClean}
+            isAiPolishing={isConverting}
+            onDownloadDocx={handleConvertToDocx}
+            fontFamily={fontFamily}
+            onFontFamilyChange={setFontFamily}
+            accentColor={accentColor}
+            onAccentColorChange={setAccentColor}
+            equationFormat={equationFormat}
+            onEquationFormatChange={setEquationFormat}
+            formatMode={formatMode}
+            onFormatModeChange={(mode) => {
+              setFormatMode(mode);
               setCleanedMarkdown(null);
+            }}
+            onPasteClipboard={handlePasteClipboard}
+            onClearText={() => {
+              setInputText("");
+              setDocTitle("FormatAI Document");
+              setCleanedMarkdown(null);
+            }}
+            charCount={charCount}
+            wordCount={wordCount}
+            isInstalled={isInstalled}
+            hasNativePrompt={hasNativePrompt}
+            onInstallApp={handleInstallApp}
+          />
+        )}
+
+        {/* Multi-Provider AI Settings Modal */}
+        {isAISettingsModalOpen && (
+          <AISettingsModal
+            isOpen={isAISettingsModalOpen}
+            initialTab={aiSettingsInitialTab}
+            onClose={() => {
+              setIsAISettingsModalOpen(false);
+              fetchAIHealth();
+            }}
+            onConfigChanged={fetchAIHealth}
+          />
+        )}
+
+        {/* Systematic Formatting Skills Modal */}
+        {isSkillModalOpen && (
+          <SystematicSkillsModal
+            isOpen={isSkillModalOpen}
+            onClose={() => setIsSkillModalOpen(false)}
+            activeMode={formatMode}
+            onSelectMode={(mode) => {
+              setFormatMode(mode);
+              setCleanedMarkdown(null);
+            }}
+            onLoadSample={() => {
+              handleLoadSample(SAMPLE_NOTES[0]);
+              setFormatMode("study_guide");
             }}
           />
         )}
-      </ErrorBoundary>
+
+        {/* Modular GitHub Skills Manager Modal */}
+        <ErrorBoundary fallbackTitle="Academic Skills Modal Paused">
+          {isSkillsManagerModalOpen && (
+            <SkillsManagerModal
+              isOpen={isSkillsManagerModalOpen}
+              initialTab={skillsModalTab}
+              onClose={() => setIsSkillsManagerModalOpen(false)}
+              onSkillsChanged={() => {
+                setActiveSkillsCount(skillRegistry.getEnabledSkillIds().length);
+                setCleanedMarkdown(null);
+              }}
+              onApplyText={(text) => {
+                setInputText(text);
+                setDocTitle(getDisplayTitleFromContent(text));
+                setCleanedMarkdown(null);
+              }}
+            />
+          )}
+        </ErrorBoundary>
+      </React.Suspense>
 
       {/* Initial FormatAI Splash / Loading Screen */}
       <SplashScreen isAppReady={isAppReady} />

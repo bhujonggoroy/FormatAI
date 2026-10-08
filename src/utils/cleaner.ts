@@ -81,11 +81,12 @@ export function cleanMathFormula(expr: string): string {
  * Main systematic note cleaner and academic formatter.
  */
 export function cleanClientSideNotebookLM(
-  text: string,
+  textOrSample: string | { text: string },
   formatMode: FormatMode = "auto",
   enabledSkillIds?: string[],
   skillMode?: SkillMode
 ): string {
+  const text = typeof textOrSample === "string" ? textOrSample : (textOrSample?.text ?? "");
   if (!text) return "";
 
   // 1. Execute Modular Skills Pipeline in priority order:

@@ -1,3 +1,4 @@
+import crypto from "node:crypto";
 import express from "express";
 import {
   validateExportFormat,
@@ -12,6 +13,82 @@ import { buildDocxFromMarkdown } from "../docxService.ts";
 import { cleanNotesWithMultiProviderAI } from "../services/cleanService.ts";
 
 export const exportRouter = express.Router();
+
+interface ExportCacheEntry {
+  buffer: Buffer;
+  contentType: string;
+  providerName: string;
+  modelName: string;
+  fallbackCount: number;
+  timestamp: number;
+  size: number;
+}
+
+const MAX_EXPORT_CACHE_ENTRIES = 20;
+const MAX_EXPORT_CACHE_BYTES = 50 * 1024 * 1024; // 50 MB
+const EXPORT_CACHE_TTL_MS = 10 * 60 * 1000; // 10 minutes
+
+class ExportLRUCache {
+  private cache = new Map<string, ExportCacheEntry>();
+  private currentBytes = 0;
+
+  private pruneExpired() {
+    const now = Date.now();
+    for (const [key, entry] of this.cache.entries()) {
+      if (now - entry.timestamp > EXPORT_CACHE_TTL_MS) {
+        this.currentBytes -= entry.size;
+        this.cache.delete(key);
+      }
+    }
+  }
+
+  get(key: string): ExportCacheEntry | undefined {
+    this.pruneExpired();
+    const entry = this.cache.get(key);
+    if (!entry) return undefined;
+    if (Date.now() - entry.timestamp > EXPORT_CACHE_TTL_MS) {
+      this.currentBytes -= entry.size;
+      this.cache.delete(key);
+      return undefined;
+    }
+    // Refresh LRU ordering
+    this.cache.delete(key);
+    this.cache.set(key, entry);
+    return entry;
+  }
+
+  set(key: string, entry: Omit<ExportCacheEntry, "timestamp" | "size">): void {
+    this.pruneExpired();
+    const size = entry.buffer.length;
+    if (size > MAX_EXPORT_CACHE_BYTES) return;
+
+    if (this.cache.has(key)) {
+      this.currentBytes -= this.cache.get(key)!.size;
+      this.cache.delete(key);
+    }
+
+    while (
+      (this.cache.size >= MAX_EXPORT_CACHE_ENTRIES || this.currentBytes + size > MAX_EXPORT_CACHE_BYTES) &&
+      this.cache.size > 0
+    ) {
+      const oldestKey = this.cache.keys().next().value;
+      if (!oldestKey) break;
+      const oldestEntry = this.cache.get(oldestKey);
+      if (oldestEntry) this.currentBytes -= oldestEntry.size;
+      this.cache.delete(oldestKey);
+    }
+
+    const fullEntry: ExportCacheEntry = {
+      ...entry,
+      timestamp: Date.now(),
+      size,
+    };
+    this.cache.set(key, fullEntry);
+    this.currentBytes += size;
+  }
+}
+
+const exportLRUCache = new ExportLRUCache();
 
 // Main export & conversion endpoint: Supports docx, pdf, tex, md, txt
 export const handleExport = async (req: express.Request, res: express.Response) => {
@@ -74,16 +151,50 @@ export const handleExport = async (req: express.Request, res: express.Response) 
     const asciiFallback = exportFilename.replace(/[^a-zA-Z0-9._-]/g, "_");
     const contentDispositionHeader = `attachment; filename="${asciiFallback}"; filename*=UTF-8''${encodedFilename}`;
 
+    // Requirement 7: Export cache check: sha256(format + title + options + markdown)
+    const normalizedSkills = Array.isArray(enabledSkillIds) ? [...enabledSkillIds].sort() : [];
+    const cacheKey = crypto
+      .createHash("sha256")
+      .update(
+        JSON.stringify({
+          format: targetFormat,
+          title,
+          font,
+          accent: accent.replace('#', ''),
+          equationFormat,
+          formatMode,
+          enabledSkillIds: normalizedSkills,
+          markdown: markdownToBuild,
+        })
+      )
+      .digest("hex");
+
+    const cached = exportLRUCache.get(cacheKey);
+    if (cached) {
+      res.setHeader("x-ai-provider", cached.providerName);
+      res.setHeader("x-ai-model", cached.modelName);
+      res.setHeader("x-ai-fallback-count", String(cached.fallbackCount));
+      res.setHeader("x-export-cache", "HIT");
+      res.setHeader("Content-Type", cached.contentType);
+      res.setHeader("Content-Disposition", contentDispositionHeader);
+      res.setHeader("Content-Length", cached.buffer.length);
+      return res.end(cached.buffer);
+    }
+
     // Common AI telemetry headers
     res.setHeader("x-ai-provider", providerName);
     res.setHeader("x-ai-model", modelName);
     res.setHeader("x-ai-fallback-count", String(fallbackCount));
+    res.setHeader("x-export-cache", "MISS");
+
+    let outBuffer: Buffer;
+    let contentType: string;
 
     // Handle each supported format
     switch (targetFormat) {
       case "docx": {
         // Build DOCX buffer with native Word Math & typography (Preserved Original)
-        const docxBuffer = await buildDocxFromMarkdown(markdownToBuild, {
+        outBuffer = await buildDocxFromMarkdown(markdownToBuild, {
           title,
           fontFamily: font,
           accentColor: accent.replace('#', ''),
@@ -91,63 +202,62 @@ export const handleExport = async (req: express.Request, res: express.Response) 
           enabledSkillIds,
           skipPreprocess: Boolean(clientCleanedMarkdown && typeof clientCleanedMarkdown === "string" && clientCleanedMarkdown.trim()),
         });
-
-        res.setHeader("Content-Type", "application/vnd.openxmlformats-officedocument.wordprocessingml.document");
-        res.setHeader("Content-Disposition", contentDispositionHeader);
-        res.setHeader("Content-Length", docxBuffer.length);
-        return res.end(docxBuffer);
+        contentType = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+        break;
       }
 
       case "pdf": {
         // Generate PDF with PDFKit
-        const pdfBuffer = await generatePdfBuffer(markdownToBuild, {
+        outBuffer = await generatePdfBuffer(markdownToBuild, {
           title,
           fontFamily: font,
           accentColor: accent,
         });
-
-        res.setHeader("Content-Type", "application/pdf");
-        res.setHeader("Content-Disposition", contentDispositionHeader);
-        res.setHeader("Content-Length", pdfBuffer.length);
-        return res.end(pdfBuffer);
+        contentType = "application/pdf";
+        break;
       }
 
       case "tex": {
         // Generate LaTeX document (.tex)
         const texContent = generateLaTeXDocument(markdownToBuild, title);
-        const texBuffer = Buffer.from(texContent, "utf-8");
-
-        res.setHeader("Content-Type", "text/x-tex; charset=utf-8");
-        res.setHeader("Content-Disposition", contentDispositionHeader);
-        res.setHeader("Content-Length", texBuffer.length);
-        return res.end(texBuffer);
+        outBuffer = Buffer.from(texContent, "utf-8");
+        contentType = "text/x-tex; charset=utf-8";
+        break;
       }
 
       case "md": {
         // Generate clean Markdown (.md)
         const mdContent = generateMarkdownDocument(markdownToBuild, title);
-        const mdBuffer = Buffer.from(mdContent, "utf-8");
-
-        res.setHeader("Content-Type", "text/markdown; charset=utf-8");
-        res.setHeader("Content-Disposition", contentDispositionHeader);
-        res.setHeader("Content-Length", mdBuffer.length);
-        return res.end(mdBuffer);
+        outBuffer = Buffer.from(mdContent, "utf-8");
+        contentType = "text/markdown; charset=utf-8";
+        break;
       }
 
       case "txt": {
         // Generate Plain Text (.txt)
         const txtContent = generatePlainTextDocument(markdownToBuild, title);
-        const txtBuffer = Buffer.from(txtContent, "utf-8");
-
-        res.setHeader("Content-Type", "text/plain; charset=utf-8");
-        res.setHeader("Content-Disposition", contentDispositionHeader);
-        res.setHeader("Content-Length", txtBuffer.length);
-        return res.end(txtBuffer);
+        outBuffer = Buffer.from(txtContent, "utf-8");
+        contentType = "text/plain; charset=utf-8";
+        break;
       }
 
       default:
         return res.status(400).json({ error: "Unsupported export format." });
     }
+
+    // Save to LRU cache
+    exportLRUCache.set(cacheKey, {
+      buffer: outBuffer,
+      contentType,
+      providerName,
+      modelName,
+      fallbackCount,
+    });
+
+    res.setHeader("Content-Type", contentType);
+    res.setHeader("Content-Disposition", contentDispositionHeader);
+    res.setHeader("Content-Length", outBuffer.length);
+    return res.end(outBuffer);
   } catch (err: any) {
     console.error("Export error:", err);
     res.status(500).json({ error: err.message || "Failed to export document." });

@@ -13,6 +13,7 @@ import { skillRegistry } from "../src/skills/registry.ts";
 import { buildDocxFromMarkdown } from "../src/server/docxService.ts";
 import { createServerApp } from "../server.backend.ts";
 import { assertSafeEndpoint } from "../src/server/ai/safeUrl.ts";
+import { parseMarkdown, walk, plainText } from "../src/shared/markdown/ast.ts";
 
 process.env.RATE_LIMIT_MAX = process.env.RATE_LIMIT_MAX || "20";
 process.env.AI_TOOL_RATE_LIMIT_MAX = process.env.AI_TOOL_RATE_LIMIT_MAX || "5";
@@ -60,6 +61,35 @@ for (const s of SAMPLE_NOTES) {
 
   if (/\\begin\{(b|p|v)?matrix\}/.test(preview)) check(xml.includes("<m:m>"), `${tag} matrices are real Word matrices`);
   check(!/\*{3,}|\\begin\{|\$\$/.test(text), `${tag} no raw markup leaked into docx text`);
+
+  // Shared markdown AST regression verification
+  let ast: any = null;
+  let parseThrew = false;
+  try {
+    ast = parseMarkdown(cleanClientSideNotebookLM(s));
+  } catch {
+    parseThrew = true;
+  }
+  check(!parseThrew && !!ast, `${tag} parseMarkdown(cleanClientSideNotebookLM(sample)) does not throw`);
+
+  let astHeadings = 0;
+  let inlineFromDoubleDollar = 0;
+  if (ast) {
+    walk(ast, (node) => {
+      if (node.type === "heading") astHeadings++;
+      if (node.type === "inlineMath" && (node as any).position) {
+        const pos = (node as any).position;
+        const raw = preview.slice(pos.start.offset, pos.end.offset).trim();
+        if (raw.startsWith("$$") && raw.endsWith("$$")) {
+          inlineFromDoubleDollar++;
+        }
+      }
+    });
+  }
+
+  const headingLines = preview.split("\n").filter((l) => l.trim().startsWith("#")).length;
+  check(inlineFromDoubleDollar === 0, `${tag} contains no inlineMath whose value came from a $$ line`);
+  check(astHeadings === headingLines, `${tag} heading count (${astHeadings}) equals lines starting with # (${headingLines})`);
 }
 
 // Negative controls: the detectors above must actually flag the exact defects this project used to have.

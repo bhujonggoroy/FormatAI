@@ -369,7 +369,7 @@ ${preCleaned}`;
     let totalFallbacks = 0;
     let aggregatedChain: any[] = [];
 
-    for (const chunk of chunks) {
+    const processSingleChunk = async (chunk: (typeof chunks)[0]) => {
       const chunkPrompt = `You are acting as the AI Polish & Quality-Enhancement Layer for FormatAI (Processing Section ${chunk.chunkIndex + 1} of ${chunk.totalChunks}).
 Preserve all equations ($$...$$, \\(...\\)), tables, headers, and content intact. Fix formatting and notation without omitting anything.
 
@@ -383,6 +383,16 @@ ${chunk.rawText}
 OUTPUT FORMAT: Return raw polished Markdown directly with NO conversational filler and NO top-level \`\`\`markdown fence.`;
 
       let chunkCandidateText = chunk.rawText; // Default to local baseline
+      let failed = false;
+      let failureReason: string | undefined;
+      let errorCategory: AIErrorCategory | undefined;
+      let isRateLimited = false;
+      let providerId = "unknown";
+      let providerName = "AI Provider";
+      let model = "default";
+      let chain: any[] = [];
+      let fallbacks = 0;
+
       try {
         const chunkAiRes = await aiRequestManager.executeRequestScoped(
           {
@@ -395,11 +405,11 @@ OUTPUT FORMAT: Return raw polished Markdown directly with NO conversational fill
           userProviders
         );
 
-        lastProviderId = chunkAiRes.providerId;
-        lastProviderName = chunkAiRes.providerName;
-        lastModel = chunkAiRes.model;
-        if (chunkAiRes.fallbackChain) aggregatedChain = chunkAiRes.fallbackChain;
-        totalFallbacks = Math.max(totalFallbacks, chunkAiRes.fallbackChain.length - 1);
+        providerId = chunkAiRes.providerId;
+        providerName = chunkAiRes.providerName;
+        model = chunkAiRes.model;
+        if (chunkAiRes.fallbackChain) chain = chunkAiRes.fallbackChain;
+        fallbacks = Math.max(0, chunkAiRes.fallbackChain.length - 1);
 
         let candidate = cleanAiText(chunkAiRes.text);
         let validation = validateAIPolishOutput(candidate, chunk.rawText, chunk.rawText, chunk.expectedBlockIds);
@@ -426,15 +436,16 @@ OUTPUT FORMAT: Return raw polished Markdown directly with NO conversational fill
               candidate = retryCandidate;
               validation = retryVal;
             } else {
-              hadChunkFailure = true;
-              chunkFailureReason = retryVal.discardReason || "Section failed validation after repair retry.";
-              chunkErrorCategory = retryVal.errorCategory || "truncated";
+              failed = true;
+              failureReason = retryVal.discardReason || "Section failed validation after repair retry.";
+              errorCategory = retryVal.errorCategory || "truncated";
               candidate = chunk.rawText; // Local formatting fallback
             }
           } catch (retryErr: any) {
-            hadChunkFailure = true;
-            chunkFailureReason = retryErr.message;
-            chunkErrorCategory = classifyErrorDetails(retryErr.message).errorCategory;
+            failed = true;
+            failureReason = retryErr.message;
+            errorCategory = classifyErrorDetails(retryErr.message).errorCategory;
+            if (errorCategory === "rate_limit") isRateLimited = true;
             candidate = chunk.rawText; // Local formatting fallback
           }
         }
@@ -442,17 +453,54 @@ OUTPUT FORMAT: Return raw polished Markdown directly with NO conversational fill
         chunkCandidateText = validation.isValid ? candidate : chunk.rawText;
       } catch (chunkErr: any) {
         console.warn(`Chunk ${chunk.chunkIndex + 1}/${chunk.totalChunks} AI call failed, using local formatting fallback:`, chunkErr.message);
-        hadChunkFailure = true;
-        chunkFailureReason = chunkErr.message;
-        chunkErrorCategory = classifyErrorDetails(chunkErr.message).errorCategory;
+        failed = true;
+        failureReason = chunkErr.message;
+        errorCategory = classifyErrorDetails(chunkErr.message).errorCategory;
+        if (errorCategory === "rate_limit") isRateLimited = true;
         chunkCandidateText = chunk.rawText; // Local formatting fallback
       }
 
-      polishedChunkResults.push({
-        chunkIndex: chunk.chunkIndex,
-        text: chunkCandidateText,
-        expectedBlockIds: chunk.expectedBlockIds,
-      });
+      return {
+        chunkResult: {
+          chunkIndex: chunk.chunkIndex,
+          text: chunkCandidateText,
+          expectedBlockIds: chunk.expectedBlockIds,
+        },
+        failed,
+        failureReason,
+        errorCategory,
+        isRateLimited,
+        providerId,
+        providerName,
+        model,
+        chain,
+        fallbacks,
+      };
+    };
+
+    let forceSequential = false;
+    for (let i = 0; i < chunks.length; ) {
+      const concurrency = forceSequential ? 1 : Math.min(2, chunks.length - i);
+      const chunkBatch = chunks.slice(i, i + concurrency);
+      const batchResults = await Promise.all(chunkBatch.map(processSingleChunk));
+
+      for (const res of batchResults) {
+        if (res.isRateLimited) {
+          forceSequential = true; // Fall back to sequential if a provider returns a rate-limit error
+        }
+        if (res.failed) {
+          hadChunkFailure = true;
+          if (res.failureReason) chunkFailureReason = res.failureReason;
+          if (res.errorCategory) chunkErrorCategory = res.errorCategory;
+        }
+        if (res.providerId !== "unknown") lastProviderId = res.providerId;
+        if (res.providerName !== "AI Provider") lastProviderName = res.providerName;
+        if (res.model !== "default") lastModel = res.model;
+        if (res.chain.length > 0) aggregatedChain = res.chain;
+        totalFallbacks = Math.max(totalFallbacks, res.fallbacks);
+        polishedChunkResults.push(res.chunkResult);
+      }
+      i += concurrency;
     }
 
     // REQUIREMENT 3: Order ঠিক রেখে deterministic ভাবে জোড়া দাও

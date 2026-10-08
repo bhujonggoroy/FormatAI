@@ -18,6 +18,7 @@ import type {
 
 export interface AdapterOptions {
   timeoutMs?: number;
+  signal?: AbortSignal;
   customEndpoint?: string;
   temperature?: number;
   maxTokens?: number;

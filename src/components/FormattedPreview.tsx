@@ -25,7 +25,6 @@ import {
   Loader2,
 } from "lucide-react";
 import katex from "katex";
-import { downloadPreviewAsPdf, generateDocumentPdf } from "../utils/pdfGenerator";
 import { TextDiffViewer } from "./TextDiffViewer";
 import { parseDocumentBlocks, type BlockFormattingIssue, type BrokenFragment } from "../utils/blockIntegrity";
 
@@ -912,19 +911,39 @@ export const FormattedPreview: React.FC<FormattedPreviewProps> = React.memo(({
   }
 
   // Parse document into atomic blocks with deterministic stable IDs
+  // Ref cache for expensive block rendering (math parsing, KaTeX, tables)
+  const blockRenderCacheRef = useRef<Map<string, React.ReactNode>>(new Map());
+
+  // Expensive document block parsing memoized strictly by markdown string
+  const blocks = useMemo(() => {
+    if (!markdown || !markdown.trim()) return [];
+    return parseDocumentBlocks(markdown);
+  }, [markdown]);
+
+  // Parse document into atomic blocks with deterministic stable IDs
   // Blocks with formatting/KaTeX issues have fine-grained fragments highlighted inline
   const renderedElements = useMemo(() => {
-    if (!markdown || !markdown.trim()) return [];
+    if (!blocks || blocks.length === 0) return [];
 
-    const blocks = parseDocumentBlocks(markdown);
     const elements: React.ReactNode[] = [];
+
+    // Keep cache size bounded
+    if (blockRenderCacheRef.current.size > 300) {
+      blockRenderCacheRef.current.clear();
+    }
 
     blocks.forEach((block) => {
       const isFailed = failedBlockIds.includes(block.id);
       const issue = isFailed ? blockIssuesMap?.[block.id] : null;
       const blockFrags = blockFragmentsMap?.[block.id] || issue?.fragments || [];
-      const blockLines = block.rawText.split("\n");
-      const blockContent = renderLinesToElements(blockLines, block.id, blockFrags);
+
+      const cacheKey = `${block.id}:${block.rawText}:${isFailed}:${blockFrags.length}:${fontFamily}:${accentColor}:${equationFormat}`;
+      let blockContent = blockRenderCacheRef.current.get(cacheKey);
+      if (!blockContent) {
+        const blockLines = block.rawText.split("\n");
+        blockContent = renderLinesToElements(blockLines, block.id, blockFrags);
+        blockRenderCacheRef.current.set(cacheKey, blockContent);
+      }
 
       elements.push(
         <div
