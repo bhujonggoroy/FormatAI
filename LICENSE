@@ -1,67 +1,212 @@
-FormatAI
+FormatAI Proprietary License
 
-MIT License
+Copyright © 2026 Bhujonggo Roy. All rights reserved.
 
-Copyright (c) 2025-2026 Bhujonggo Roy <bhujonggoroy@gmail.com> & FormatAI Contributors
-
-Project: FormatAI (Academic Mathematical Editor, LaTeX Typesetter & Document Formatter)
-
-Project Mission / Motto:
-"ChatGPT, Gemini, Claude, NotebookLM বা যেকোনো source থেকে পাওয়া AI-generated বা copy-pasted content-কে স্বয়ংক্রিয়ভাবে mathematical, scientific, textual এবং academic formatting সহ একটি clean, professional, editable DOCX document-এ রূপান্তর করা—শিক্ষার্থীদের জন্য সম্পূর্ণ বিনামূল্যে।"
-
-English Translation:
-"To automatically transform AI-generated or copy-pasted content from ChatGPT, Gemini, Claude, NotebookLM or any source into a clean, professional, editable DOCX document with mathematical, scientific, textual, and academic formatting—completely free of charge for students."
-
-Permission is hereby granted, free of charge, to any person obtaining a copy
-of this software and associated documentation files (the "Software"), to deal
-in the Software without restriction, including without limitation the rights
-to use, copy, modify, merge, publish, distribute, sublicense, and/or sell
-copies of the Software, and to permit persons to whom the Software is
-furnished to do so, subject to the following conditions:
-
-The above copyright notice, this mission notice, and this permission notice
-shall be included in all copies or substantial portions of the Software.
-
-THE SOFTWARE IS PROVIDED "AS IS", WITHOUT WARRANTY OF ANY KIND, EXPRESS OR
-IMPLIED, INCLUDING BUT NOT LIMITED TO THE WARRANTIES OF MERCHANTABILITY,
-FITNESS FOR A PARTICULAR PURPOSE AND NONINFRINGEMENT. IN NO EVENT SHALL THE
-AUTHORS OR COPYRIGHT HOLDERS BE LIABLE FOR ANY CLAIM, DAMAGES OR OTHER
-LIABILITY, WHETHER IN AN ACTION OF CONTRACT, TORT OR OTHERWISE, ARISING FROM,
-OUT OF OR IN CONNECTION WITH THE SOFTWARE OR THE USE OR OTHER DEALINGS IN THE
-SOFTWARE.
+Project: FormatAI
+Repository: https://github.com/bhujonggoroy/FormatAI
+Copyright Owner: Bhujonggo Roy
 
 ================================================================================
-THIRD-PARTY OPEN-SOURCE NOTICES & ATTRIBUTIONS
+1. OWNERSHIP
 ================================================================================
-This application integrates principles, formatting rules, and transformation
-algorithms adapted from four open-source GitHub repositories under permissive
-licenses. All four upstream licenses have been reviewed to ensure 100% legal
-compatibility and strict avoidance of copyright or licensing issues.
 
-1. docx-math-skill
-   - Upstream Repository: https://github.com/Future-3526038670/docx-math-skill
-   - Authors / Copyright: Copyright (c) 2024-2025 Future-3526038670
-   - License: MIT License
-   - Integration: LaTeX-to-native Word OMML / MathML equation translation,
-     balanced bracket parsing, fraction bars, square roots, and equation blocks.
+The original FormatAI source code, original documentation, original user interface
+and design assets, original graphics, and other original copyrightable materials
+created for or comprising this project are the exclusive intellectual property of:
 
-2. scientific-agent-skills
-   - Upstream Repository: https://github.com/K-Dense-AI/scientific-agent-skills
-   - Authors / Copyright: Copyright (c) 2024-2025 K-Dense-AI
-   - License: MIT / Apache-2.0 Compatible Permissive License
-   - Integration: Physical unit formatting (SI units), chemical formulas, IUPAC
-     notation, scientific constants, and metric typography.
+    Bhujonggo Roy
 
-3. pandoc-math-docx
-   - Upstream Repository: https://github.com/Kantyc/pandoc-math-docx
-   - Authors / Copyright: Copyright (c) 2024 Kantyc
-   - License: MIT License
-   - Integration: Pandoc Markdown math parsing, AST inline/block math normalization,
-     and math matrix syntax structures.
+Copyright © 2026 Bhujonggo Roy. All rights reserved.
 
-4. academic-manuscript-skill
-   - Upstream Repository: https://github.com/kchemorion/academic-manuscript-skill
-   - Authors / Copyright: Copyright (c) 2024-2025 kchemorion
-   - License: MIT License
-   - Integration: Publication-grade manuscript structure, Booktabs table standards,
-     IEEE/APA citation style harmonization, theorem/lemma/definition environments.
+================================================================================
+2. SCOPE OF PROTECTION & LEGAL ACCURACY
+================================================================================
+
+This License protects the original copyrightable expression, source code,
+architecture, textual documentation, user interface designs, and implementation
+of FormatAI.
+
+Under applicable copyright law, protection extends strictly to the original
+expression and software implementation contained within this project. Protection
+does not extend to abstract ideas, mathematical concepts, formulas, algorithms in
+the abstract, or general software functionality. Nothing in this License shall be
+construed as claiming copyright ownership over abstract mathematical principles
+or uncopyrightable concepts.
+
+================================================================================
+3. PUBLIC REPOSITORY VISIBILITY & NO PERMISSION BY DEFAULT
+================================================================================
+
+FormatAI is made visible in a public GitHub repository located at:
+https://github.com/bhujonggoroy/FormatAI
+
+The public availability, hosting, or accessibility of this repository is provided
+solely for personal viewing, evaluation, inspection, and reference. Public access
+does NOT constitute an open-source license, public domain dedication, or general
+permission to use the software.
+
+Except as expressly authorized by mandatory provisions of applicable statutory law
+(such as fair use or statutory fair dealing where strictly applicable), viewing or
+accessing this repository does NOT grant any right or license to:
+
+(a) copy, duplicate, or reproduce the source code or any part thereof;
+(b) modify, adapt, alter, or transform the software;
+(c) redistribute, republish, mirror, or broadcast the code or project materials;
+(d) publicly deploy, host, execute, or operate the software for third parties;
+(e) sell, sublicense, lease, rent, or commercially exploit the software;
+(f) create derivative works, forks, ports, or adaptations based on this project; or
+(g) incorporate the source code or substantial portions thereof into another project.
+
+All rights not expressly granted are reserved.
+
+================================================================================
+4. PRIOR WRITTEN PERMISSION REQUIRED
+================================================================================
+
+Any use, reproduction, modification, distribution, deployment, or exploitation of
+the FormatAI source code or substantial portions thereof beyond the narrow scope
+expressly permitted by applicable law requires prior written permission directly
+from Bhujonggo Roy.
+
+Prior written permission is strictly required for:
+
+- Using the source code or substantial portions thereof in any other project;
+- Copying substantial portions of the codebase or proprietary implementation;
+- Modifying or altering the source code;
+- Creating public or private forks for redistribution or deployment;
+- Creating derivative works, adaptations, or translations;
+- Public deployment or software-as-a-service (SaaS) hosting;
+- Any commercial use, commercial exploitation, or monetization;
+- Redistribution, republishing, or mirroring through any medium;
+- Incorporating code into any commercial or non-commercial product or package;
+- Selling, sublicensing, or distributing the software or any portion thereof.
+
+================================================================================
+5. UNAUTHORIZED COPYING & AUTHORSHIP INTEGRITY
+================================================================================
+
+No person, organization, or entity may present, market, or represent the original
+FormatAI source code, documentation, assets, or substantial copied portions thereof
+as their own original work.
+
+You may not falsely claim authorship, copyright ownership, or co-authorship of
+Bhujonggo Roy's original work. You may not remove, alter, or obscure any copyright
+notices, author attributions, or proprietary markers appearing in or on this project.
+
+================================================================================
+6. DERIVATIVE WORKS & FORKS
+================================================================================
+
+Unauthorized modified versions, forks, ports, adaptations, or derivative works
+based on the FormatAI copyrightable materials must not be distributed, published,
+or publicly deployed to the maximum extent permitted by applicable law.
+
+================================================================================
+7. ATTRIBUTION UPON AUTHORIZED USE
+================================================================================
+
+If prior written permission is granted by Bhujonggo Roy, such permission conveys
+only the specific rights defined in writing and does not transfer copyright
+ownership.
+
+Unless expressly agreed otherwise in writing, any authorized use must maintain
+clear and prominent attribution to:
+
+    Bhujonggo Roy — FormatAI
+
+together with a reference link to the official repository:
+https://github.com/bhujonggoroy/FormatAI
+
+================================================================================
+8. FORMATAI BRAND & INTELLECTUAL PROPERTY
+================================================================================
+
+The project name "FormatAI", the project logo, visual identity, graphic assets,
+and associated branding are proprietary project assets of Bhujonggo Roy.
+
+Permission to inspect or use the source code does not grant any trademark, trade
+name, or branding rights. Nothing herein claims statutory trademark rights unless
+such rights have been formally registered or established under applicable trademark
+law; however, all common-law, proprietary, and commercial identity rights are
+expressly reserved.
+
+You may not use the name "FormatAI" or any confusingly similar mark to endorse,
+promote, or brand any third-party software, service, or commercial offering without
+prior written authorization.
+
+================================================================================
+9. INDEPENDENT DEVELOPMENT
+================================================================================
+
+This License does not prohibit any individual or entity from independently
+developing software with similar functionality, mathematical formatting capabilities,
+or academic editing features, provided that such software is developed without
+copying, reproducing, decompiling, or deriving from the protected copyrightable
+expression, source code, designs, or proprietary materials of FormatAI, subject to
+any other applicable intellectual property rights.
+
+================================================================================
+10. THIRD-PARTY COMPONENTS & LICENSES
+================================================================================
+
+This License applies strictly and exclusively to original materials authored and
+owned by Bhujonggo Roy.
+
+FormatAI includes or interacts with third-party open-source libraries, packages,
+frameworks, fonts, icons, APIs, AI models, datasets, and external services. All
+such third-party components remain subject to their respective licenses, copyrights,
+and terms of service. Nothing in this License modifies, overrides, restricts, or
+supersedes the terms of any valid third-party open-source license.
+
+================================================================================
+11. TERMINATION
+================================================================================
+
+If written permission is granted and the recipient breaches or violates any term,
+condition, or limitation of this License or of the applicable permission agreement,
+such permission shall automatically terminate immediately to the maximum extent
+permitted by applicable law.
+
+Upon termination, the recipient must immediately cease all use, reproduction,
+distribution, and deployment of FormatAI materials and delete or destroy all copies
+in their possession or control.
+
+================================================================================
+12. DISCLAIMER OF WARRANTIES
+================================================================================
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, THE FORMATAI SOFTWARE AND ALL
+ACCOMPANYING MATERIALS ARE PROVIDED "AS IS" AND "AS AVAILABLE", WITHOUT WARRANTY
+OF ANY KIND, EITHER EXPRESS, IMPLIED, STATUTORY, OR OTHERWISE.
+
+THE COPYRIGHT OWNER EXPRESSLY DISCLAIMS ALL WARRANTIES, INCLUDING BUT NOT LIMITED
+TO THE IMPLIED WARRANTIES OF MERCHANTABILITY, FITNESS FOR A PARTICULAR PURPOSE,
+TITLE, NON-INFRINGEMENT, AND ACCURACY. THE COPYRIGHT OWNER DOES NOT WARRANT THAT
+THE SOFTWARE WILL OPERATE UNINTERRUPTED, SECURELY, OR ERROR-FREE.
+
+================================================================================
+13. LIMITATION OF LIABILITY
+================================================================================
+
+TO THE MAXIMUM EXTENT PERMITTED BY APPLICABLE LAW, IN NO EVENT SHALL BHUJONGGO ROY
+BE LIABLE FOR ANY DIRECT, INDIRECT, INCIDENTAL, SPECIAL, EXEMPLARY, CONSEQUENTIAL,
+OR PUNITIVE DAMAGES (INCLUDING, BUT NOT LIMITED TO, LOSS OF DATA, LOSS OF PROFITS,
+BUSINESS INTERRUPTION, PROCUREMENT OF SUBSTITUTE GOODS OR SERVICES, OR ACADEMIC
+DISPUTES) HOWEVER CAUSED AND ON ANY THEORY OF LIABILITY, WHETHER IN CONTRACT,
+STRICT LIABILITY, OR TORT (INCLUDING NEGLIGENCE OR OTHERWISE) ARISING IN ANY WAY
+OUT OF THE USE OF, INABILITY TO USE, OR DISTRIBUTION OF THIS SOFTWARE, EVEN IF
+ADVISED OF THE POSSIBILITY OF SUCH DAMAGE.
+
+================================================================================
+14. RESERVATION OF RIGHTS
+================================================================================
+
+All rights not expressly granted are reserved.
+
+================================================================================
+15. LICENSING & PERMISSION CONTACT
+================================================================================
+
+Licensing / Permission Contact:
+Bhujonggo Roy
+Email: [YOUR EMAIL ADDRESS]
