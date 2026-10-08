@@ -2,7 +2,7 @@ import fs from "node:fs";
 import path from "node:path";
 import { pathToFileURL } from "node:url";
 
-const distServer = path.join(process.cwd(), "dist", "server.cjs");
+const distServer = path.join(process.cwd(), "dist", "server.mjs");
 const hasDist = fs.existsSync(distServer);
 const isProduction = hasDist && process.env.NODE_ENV !== "development";
 

@@ -85,7 +85,9 @@ export function getPreviewRendererPreference(): "legacy" | "ast" {
       if (urlRenderer === "ast") return "ast";
       if (urlRenderer === "legacy") return "legacy";
 
-      const stored = window.localStorage?.getItem("preview_renderer");
+      const stored =
+        window.localStorage?.getItem("formatai_preview_renderer") ??
+        window.localStorage?.getItem("preview_renderer");
       if (stored === "ast") return "ast";
       if (stored === "legacy") return "legacy";
     } catch {

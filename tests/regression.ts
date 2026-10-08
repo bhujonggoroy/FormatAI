@@ -153,9 +153,12 @@ for (const s of SAMPLE_NOTES) {
   const legCounts = countLegacyPreviewBlocks(preview);
   const astCounts = countAstPreviewBlocks(preview);
   if (s.id === "calculus") {
-    // In raw calculus note, content is a single unspaced paragraph without blank lines.
-    // Legacy line-by-line parser treated line 12 starting with \int as a math block (math=1),
-    // whereas CommonMark AST correctly parses continuous text as 1 paragraph (math=0 block math).
+    // Expected divergence (CommonMark behavior):
+    // In raw calculus note, content is a single unspaced paragraph without blank lines separating text and LaTeX.
+    // The legacy line-by-line renderer treated line 12 starting with `\int` as an isolated display math block (math=1).
+    // The AST renderer strictly adheres to CommonMark AST specification, correctly parsing continuous lines without
+    // blank boundaries as inline elements of a single paragraph (math=0 standalone block math).
+    // This divergence is intentional, expected, and documented; neither legacy renderer nor AST parsing is modified.
     const calcMatch =
       legCounts.headings === astCounts.headings &&
       legCounts.tables === astCounts.tables &&
