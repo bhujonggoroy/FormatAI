@@ -1,5 +1,6 @@
 import {
   ManagerConfig,
+  AIEngineMode,
   UserProviderConfig,
   ClientProviderConfig,
   UserPreferences,
@@ -48,6 +49,7 @@ export const STORAGE_KEYS = {
 
 export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
   mode: "automatic",
+  aiEngineMode: "formatai_and_others",
   activeProviderId: "gemini",
   activeModel: "gemini-3.5-flash-lite",
   enableFallback: true,
@@ -56,6 +58,31 @@ export const DEFAULT_MANAGER_CONFIG: Readonly<ManagerConfig> = Object.freeze({
   enableModelFallback: true,
   defaultTimeoutMs: 45000,
 });
+
+/**
+ * Resolves the effective AIEngineMode from an aiConfig object, supporting legacy settings.
+ * - Unknown or missing value -> "formatai_and_others"
+ * - Legacy mapping when missing:
+ *   activeProviderId === "formatai" | "local" OR mode === "no_ai" | "formatai" -> "formatai_only"
+ */
+export function resolveAIEngineMode(aiConfig?: any): AIEngineMode {
+  if (aiConfig && typeof aiConfig === "object") {
+    const rawMode = aiConfig.aiEngineMode;
+    if (rawMode === "formatai_only" || rawMode === "formatai_and_others" || rawMode === "others_only") {
+      return rawMode;
+    }
+    // Legacy mapping when missing or unrecognized
+    if (
+      aiConfig.activeProviderId === "formatai" ||
+      aiConfig.activeProviderId === "local" ||
+      aiConfig.mode === "no_ai" ||
+      aiConfig.mode === "formatai"
+    ) {
+      return "formatai_only";
+    }
+  }
+  return "formatai_and_others";
+}
 
 export const DEFAULT_USER_PREFERENCES: Readonly<UserPreferences> = Object.freeze({
   docTitle: "FormatAI Document",

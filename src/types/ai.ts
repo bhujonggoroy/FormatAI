@@ -140,8 +140,21 @@ export interface ClientProviderConfig {
   lastError?: string;
 }
 
+export type AIEngineMode =
+  | "formatai_only"
+  | "formatai_and_others"
+  | "others_only";
+
+export type AISkippedReason =
+  | "no_provider"
+  | "provider_off"
+  | "no_api_key"
+  | "all_failed"
+  | "mode_formatai_only";
+
 export interface ManagerConfig {
   mode: "automatic" | "manual";
+  aiEngineMode?: AIEngineMode;
   activeProviderId: string;
   activeModel: string;
   activeKeyId?: string;

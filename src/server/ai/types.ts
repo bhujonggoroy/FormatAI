@@ -142,8 +142,39 @@ export interface ClientProviderConfig {
   lastError?: string;
 }
 
+export type AIEngineMode =
+  | "formatai_only"
+  | "formatai_and_others"
+  | "others_only";
+
+export type AISkippedReason =
+  | "no_provider"
+  | "provider_off"
+  | "no_api_key"
+  | "all_failed"
+  | "mode_formatai_only";
+
+export function resolveAIEngineMode(aiConfig?: any): AIEngineMode {
+  if (aiConfig && typeof aiConfig === "object") {
+    const rawMode = aiConfig.aiEngineMode;
+    if (rawMode === "formatai_only" || rawMode === "formatai_and_others" || rawMode === "others_only") {
+      return rawMode;
+    }
+    if (
+      aiConfig.activeProviderId === "formatai" ||
+      aiConfig.activeProviderId === "local" ||
+      aiConfig.mode === "no_ai" ||
+      aiConfig.mode === "formatai"
+    ) {
+      return "formatai_only";
+    }
+  }
+  return "formatai_and_others";
+}
+
 export interface ManagerConfig {
   mode: "automatic" | "manual";
+  aiEngineMode?: AIEngineMode;
   // Active AI Configuration section
   activeProviderId: string;
   activeModel: string;
@@ -223,6 +254,15 @@ export interface AIResponse {
   inputTokensEst?: number;
   outputTokensEst?: number;
   fallbackChain: FallbackStep[];
+}
+
+export interface AIStructuredResult {
+  success: boolean;
+  response?: AIResponse;
+  engineUsed: "formatai" | "ai";
+  aiSkippedReason: AISkippedReason | null;
+  fallbackChain: FallbackStep[];
+  errorMessage?: string;
 }
 
 export interface TestResult {

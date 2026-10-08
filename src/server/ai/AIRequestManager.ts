@@ -14,6 +14,8 @@ import type {
   AIErrorCode,
   AIRequest,
   AIResponse,
+  AIStructuredResult,
+  AISkippedReason,
   ApiKeyItem,
   ClientApiKeyItem,
   ClientProviderConfig,

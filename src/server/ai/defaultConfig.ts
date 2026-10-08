@@ -3,6 +3,7 @@ import { CENTRAL_CATALOG } from "../../shared/centralModelCatalog.ts";
 
 export const DEFAULT_MANAGER_CONFIG: ManagerConfig = {
   mode: "automatic",
+  aiEngineMode: "formatai_and_others",
   activeProviderId: "gemini",
   activeModel: "gemini-3.5-flash-lite",
   enableFallback: true,
